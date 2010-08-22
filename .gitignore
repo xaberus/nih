@@ -1,0 +1,6 @@
+*.so
+*.o
+*.sw?
+*.gcno
+*.gcda
+*.gcov
