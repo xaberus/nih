@@ -52,7 +52,7 @@ struct blob_flags {
   blob_t              * next;\
   blob_t              * child;\
   blob_reference_t    * refs;\
-  blob_vtable_t       * vtable;\
+  const blob_vtable_t * vtable;\
   size_t                size;\
   struct blob_flags     flags;\
 /*  const char          * name;\*/
@@ -80,10 +80,10 @@ struct blob_reference {
 #define ALIGN16(_size) (((_size) + 15L) & ~15L)
 #define ALIGN4096(_size) (((_size) + 4095L) & ~4095L)
 
-#define BLOB_HDR_SIZE ALIGN16(sizeof(blob_t))
-#define POOL_HDR_SIZE ALIGN16(sizeof(pool_t))
+#define BLOB_HDR_SIZE sizeof(blob_t)
+#define POOL_HDR_SIZE sizeof(pool_t)
 #define POOL_HDR_ADD  (POOL_HDR_SIZE-BLOB_HDR_SIZE)
-#define BLOB_REFERENCE_HDR_SIZE ALIGN16(sizeof(blob_reference_t))
+#define BLOB_REFERENCE_HDR_SIZE sizeof(blob_reference_t)
 #define BLOB_REFERENCE_HDR_ADD  (BLOB_REFERENCE_HDR_SIZE-BLOB_HDR_SIZE)
 
 pool_t *      pool_alloc(blob_t * ctx, size_t size);

@@ -11,8 +11,15 @@
 
 
 static
-bool blob_check_context(blob_t * ctx) {
-  return ctx->flags.check == BLOB_CHECK;
+blob_t * blob_check_context(blob_t * ctx) {
+  if (!ctx)
+    return NULL;
+  if (ctx->flags.check != BLOB_CHECK)
+    return NULL;
+  if (ctx->flags.free)
+    return NULL;
+
+  return ctx;
 }
 
 pool_t * pool_alloc(blob_t * ctx, size_t size)
@@ -37,9 +44,6 @@ blob_t * blob_plain_alloc(size_t size)
   if (!blob)
     return NULL;
 
-  if (size >= MAX_BLOB_SIZE)
-    return NULL;
-
   blob->flags = ((struct blob_flags){ .free=0, });
   blob->flags.first = 1;
   blob->flags.check = BLOB_CHECK;
@@ -61,18 +65,33 @@ blob_t * pool_blob_alloc(pool_t * pool, size_t size)
   blob_t * blob;
   size_t blob_size;
 
+  pool = (pool_t *)blob_check_context((blob_t *)pool);
+  if (!pool)
+    return NULL;
+
   space_left = ((char *)pool + POOL_HDR_SIZE + pool->size) - ((char *)pool->data);
   blob_size = ALIGN16(size);
 
   if (space_left < blob_size)
     return NULL;
 
-  blob =  pool->data;
+  blob = pool->data;
+  blob->size = size;
 
   pool->data = ((char *)blob + blob_size);
 
+  blob->flags = ((struct blob_flags){ .free=0, });
+  blob->flags.first = 1;
+  blob->flags.check = BLOB_CHECK;
   blob->flags.poolmem = 1;
   blob->pool = pool;
+
+  blob->vtable = NULL;
+  blob->child = NULL;
+  blob->refs = NULL;
+  blob->rev = NULL;
+  blob->next = NULL;
+  blob->rev = NULL;
 
   pool->count++;
 
@@ -81,7 +100,7 @@ blob_t * pool_blob_alloc(pool_t * pool, size_t size)
 
 
 static
-blob_t * _pool_blob_realloc(pool_t * pool, blob_t * ctx, blob_t * blob, size_t size, blob_t * null_ctx)
+blob_t * pool_blob_realloc(pool_t * pool, blob_t * ctx, blob_t * blob, size_t size, blob_t * null_ctx)
 {
   if (!blob || (blob_t *)pool != ctx || !size)
     return NULL;
@@ -159,14 +178,6 @@ blob_t * blob_context_alloc(blob_t * ctx, size_t size)
       return NULL;
   }
 
-  blob->size = size;
-  blob->vtable = NULL;
-  blob->child = NULL;
-  blob->refs = NULL;
-  blob->rev = NULL;
-  blob->next = NULL;
-  blob->rev = NULL;
-
   _blob_list_prepend(ctx, blob);
 
   return blob;
@@ -174,7 +185,12 @@ blob_t * blob_context_alloc(blob_t * ctx, size_t size)
 
 blob_t * blob_alloc(blob_t * ctx, size_t size)
 {
-  if (ctx && blob_check_context(ctx))
+  if (size >= MAX_BLOB_SIZE)
+    return NULL;
+
+  ctx = blob_check_context(ctx);
+
+  if (ctx)
     return blob_context_alloc(ctx, size);
   else
     return blob_plain_alloc(size);
@@ -200,14 +216,27 @@ blob_t * _blob_parent(blob_t * blob) {
 }
 
 inline static
-int _blob_is_parent(blob_t * parent, blob_t * blob) {
-  blob_t * p = _blob_parent(blob);
-  return parent == p;
+int _blob_is_parent(blob_t * ctx, blob_t * parent) {
+  if (!ctx)
+    return 0;
+
+  blob_t * p = blob_check_context(ctx);
+  while (p) {
+    if (p == parent)
+      return 1;
+    p = _blob_parent(p);
+  }
+
+  return 0;
 }
 
 static
 blob_t * _blob_steal(blob_t * new_ctx, blob_t * blob, blob_t * null_ctx)
 {
+  new_ctx = blob_check_context(new_ctx);
+  blob = blob_check_context(blob);
+  null_ctx = blob_check_context(null_ctx);
+
   if (!blob)
     return NULL;
 
@@ -230,14 +259,21 @@ blob_t * _blob_steal(blob_t * new_ctx, blob_t * blob, blob_t * null_ctx)
   return blob;
 }
 
+void blob_damp(blob_t * ctx, unsigned int max);
+
 static inline
 int _blob_free(blob_t * blob, blob_t * null_ctx)
 {
   if (!blob)
     return -1;
 
+  bt_log(">>>>>>>>>>>>>>>>>>>\n");
+  blob_damp(blob, 5);
+  bt_log("<<<<<<<<<<<<<<<<<<<\n");
+
   if (blob->refs) {
     int is_child = _blob_is_parent((blob_t *)blob->refs, blob);
+    _blob_steal(_blob_parent((blob_t *)blob->refs), blob, null_ctx);
     _blob_free((blob_t *)blob->refs, null_ctx);
     if (is_child)
       return _blob_free(blob, null_ctx);
@@ -265,6 +301,10 @@ int _blob_free(blob_t * blob, blob_t * null_ctx)
   blob->flags.loop = 1;
 
   while (blob->child) {
+    bt_log(">>--------------->>\n");
+    blob_damp(blob, 5);
+    bt_log("<<---------------<<\n");
+
     blob_t * child = blob->child;
     blob_t * new_parent = null_ctx;
     int ret;
@@ -312,6 +352,8 @@ int _blob_free(blob_t * blob, blob_t * null_ctx)
 
 int blob_free(blob_t * blob, blob_t * null_ctx)
 {
+  blob = blob_check_context(blob);
+
   if (!blob)
     return -1;
 
@@ -421,7 +463,8 @@ int blob_unreference(blob_t * ctx, blob_t * blob, blob_t * null_ctx)
   return _blob_unreference(ctx, blob, null_ctx);
 }
 
-static int _blob_unlink(blob_t * ctx, blob_t * blob, blob_t * null_ctx)
+static
+int _blob_unlink(blob_t * ctx, blob_t * blob, blob_t * null_ctx)
 {
   blob_t * new_parent;
 
@@ -452,6 +495,45 @@ static int _blob_unlink(blob_t * ctx, blob_t * blob, blob_t * null_ctx)
   return 0;
 }
 
+int _blob_free_r(blob_t * ctx, blob_t * blob, blob_t * null_ctx);
+
+static
+int _blob_free_r(blob_t * ctx, blob_t * blob, blob_t * null_ctx)
+{
+  blob = blob_check_context(blob);
+  ctx = blob_check_context(ctx);
+  null_ctx = blob_check_context(null_ctx);
+  int done = 0;
+
+  if (!blob)
+    return -1;
+
+  if (!ctx)
+    ctx = null_ctx;
+
+  /* unreference? */
+  {
+    blob_t * parent;
+    blob_reference_t * ref;
+
+    if (_blob_parent(blob) == ctx) {
+      if (blob->refs) {
+        while ((parent = _blob_parent((blob_t *)blob_refs)))
+      }
+    }
+    blob_reference_t * h;
+    blob_t * parent;
+    for (h = blob->refs; h; h = h->next_ref) {
+      parent = _blob_parent((blob_t *)h);
+    if (!parent && !ctx)
+      break;
+    else if (parent == ctx)
+      break;
+  }
+
+  }
+}
+
 static
 blob_t * _blob_realloc(blob_t * ctx, blob_t * blob, size_t size, blob_t * null_ctx)
 {
@@ -469,7 +551,9 @@ blob_t * _blob_realloc(blob_t * ctx, blob_t * blob, size_t size, blob_t * null_c
   if (!blob)
     return blob_alloc(ctx, size);
 
-  if (blob->refs || blob->flags.pool)
+  blob = blob_check_context(blob);
+
+  if (!blob || blob->refs || blob->flags.pool)
     return NULL;
 
   if ((size < blob->size) && ((blob->size - size) < 1024)) {
@@ -480,7 +564,7 @@ blob_t * _blob_realloc(blob_t * ctx, blob_t * blob, size_t size, blob_t * null_c
   blob->flags.free = 1;
 
   if (blob->flags.poolmem) {
-    new = _pool_blob_realloc(blob->pool, ctx, blob, size, null_ctx);
+    new = pool_blob_realloc(blob->pool, ctx, blob, size, null_ctx);
     blob->pool->count--;
 
     if (!new) {
@@ -521,6 +605,8 @@ size_t blob_total_blobs(blob_t * blob) {
   size_t total = 0;
   blob_t * c;
 
+  blob = blob_check_context(blob);
+
   if (!blob)
     return 0;
 
@@ -541,6 +627,8 @@ size_t blob_total_blobs(blob_t * blob) {
 size_t blob_total_size(blob_t * blob) {
   size_t total = 0;
   blob_t * c;
+
+  blob = blob_check_context(blob);
 
   if (!blob)
     return 0;
@@ -590,7 +678,16 @@ enum BLOB_TEST_ID {
   REF,
   REF1,
   REF2,
+  REF3,
   POOL,
+  C1,
+  TOP,
+  PARENT,
+  CHILD,
+  CHILD_OWNER,
+  REQ1,
+  REQ2,
+  REQ3,
 };
 
 const char * blob_test_names[] = {
@@ -611,17 +708,30 @@ const char * blob_test_names[] = {
   [REF] = "ref",
   [REF1] = "ref1",
   [REF2] = "ref2",
+  [REF3] = "ref3",
   [POOL] = "pool",
+  [C1] = "c1",
+  [TOP] = "top",
+  [PARENT] = "parent",
+  [CHILD] = "child",
+  [CHILD_OWNER] = "child_owner",
+  [REQ1] = "req1",
+  [REQ2] = "req2",
+  [REQ3] = "req3",
 };
 
 static inline
 void _blop_dump_level(unsigned int level)
 {
   for (unsigned int i = 0; i < level; i++)
-    bt_log(" ");
+    bt_log("  ");
 }
 
+#if 0
 const char * _blop_dumper_brak[2] = {"[", "]"};
+#else
+const char * _blop_dumper_brak[2] = {"", ""};
+#endif
 const char * _blop_dumper_angl[2] = {"~> <", ">"};
 
 static
@@ -636,6 +746,7 @@ void _blop_dumper(blob_t * blob, unsigned int level, const char * rep, const cha
   _blop_dump_level(level); bt_log("%s %s ", brk[0], rep?rep:"blob");
 
   {
+#if 0
     bt_log("[%4zu]{", blob->size);
     if (blob->flags.first)
       bt_log("\\");
@@ -645,12 +756,17 @@ void _blop_dumper(blob_t * blob, unsigned int level, const char * rep, const cha
     if (blob->flags.free) bt_log("f");
     if (blob->flags.loop) bt_log("l");
     bt_log("} ");
+#else
+    if (blob->flags.free) bt_log("{f} ");
+    if (blob->flags.loop) bt_log("{l} ");
+    if (blob->flags.reference) bt_log("{*} ");
+#endif
   }
 
 
   bt_log("[[ %s ]] ", blob_test_names[blob->flags.uid]);
 
-  if (blob->flags.first) {
+  /*if (blob->flags.first) {
     if (blob->rev)
       bt_log("parent='%s' ", blob_test_names[blob->rev->flags.uid]);
   } else {
@@ -662,7 +778,7 @@ void _blop_dumper(blob_t * blob, unsigned int level, const char * rep, const cha
   if (blob->child)
     bt_log("child='%s' ", blob_test_names[blob->child->flags.uid]);
   if (blob->flags.poolmem)
-    bt_log("pool='%s' ", blob_test_names[blob->pool->flags.uid]);
+    bt_log("pool='%s' ", blob_test_names[blob->pool->flags.uid]);*/
 
   bt_log("%s\n", brk[1]);
 }
@@ -674,6 +790,7 @@ void _blob_reference_dumper(blob_reference_t * ref, unsigned int level)
   if (parent) {
     _blop_dump_level(level+1); bt_log(" @ [ refed by ");
     bt_log(" '%s' ", blob_test_names[parent->flags.uid]);
+    bt_log(" [[ %s ]] ", blob_test_names[ref->flags.uid]);
     bt_log("]\n");
   }
 }
@@ -681,12 +798,33 @@ void _blob_reference_dumper(blob_reference_t * ref, unsigned int level)
 static 
 void _blob_reference_blob_dumper(blob_reference_t * ref, unsigned int level)
 {
-  _blop_dumper((blob_t *)ref, level, "ref ", NULL);
+  /*_blop_dumper((blob_t *)ref, level, "ref ", NULL);*/
   _blop_dumper(ref->blob_ref, level+1, NULL, _blop_dumper_angl);
 }
 
 static
-void _blop_dump(blob_t * blob, unsigned int level)
+void _blob_damp(blob_t * blob, unsigned int level, unsigned int max)
+{
+  blob_t * c;
+  blob_reference_t * ref;
+
+  if (!blob || level > max)
+    return;
+
+  _blop_dumper(blob, level, NULL, NULL);
+  for (ref = blob->refs; ref; ref = ref->next_ref) {
+    _blob_reference_dumper(ref, level+1);
+  }
+  for (c = blob->child; c; c = c->next) {
+    if (c->flags.reference)
+      _blob_reference_blob_dumper((blob_reference_t *)c, level+1);
+    else
+      _blob_damp(c, level+1, max);
+  }
+}
+
+static
+void _blob_dump(blob_t * blob, unsigned int level)
 {
   blob_t * c;
   blob_reference_t * ref;
@@ -698,24 +836,28 @@ void _blop_dump(blob_t * blob, unsigned int level)
     return;
 
   _blop_dumper(blob, level, NULL, NULL);
+  /*for (ref = blob->refs; ref; ref = ref->next_ref) {
+    _blob_reference_dumper(ref, level+1);
+  }*/
 
   blob->flags.loop = 1;
   for (c = blob->child; c; c = c->next) {
     if (c->flags.reference)
       _blob_reference_blob_dumper((blob_reference_t *)c, level+1);
     else
-      _blop_dump(c, level+1);
+      _blob_dump(c, level+1);
   }
   blob->flags.loop = 0;
+}
 
-  for (ref = blob->refs; ref; ref = ref->next_ref) {
-    _blob_reference_dumper(ref, level+1);
-  }
+void blob_damp(blob_t * ctx, unsigned int max)
+{
+  _blob_damp(ctx, 0, max);
 }
 
 void blob_dump(blob_t * ctx)
 {
-  _blop_dump(ctx, 0);
+  _blob_dump(ctx, 0);
 }
 
 struct blob_test {
@@ -765,6 +907,12 @@ blob_t * blob_test_reference(blob_t * ctx, blob_t * blob, uint32_t uid)
   return NULL;
 }
 
+static inline
+blob_t * blob_test_steal(blob_t * ctx, blob_t * blob, blob_t * null_ctx) 
+{
+  return _blob_steal(ctx, blob, null_ctx);
+}
+
 
 BT_SUITE_SETUP_DEF(blob)
 {
@@ -790,9 +938,37 @@ BT_TEST_DEF(blob, empty, "tests suite conditions")
     return BT_RESULT_FAIL;
 
   struct blob_test * test = object;
+  blob_t * blob;
 
   bt_assert_ptr_equal(
     (blob_test_alloc(test->root, 0x7fffffff, X1)),
+    NULL);
+
+  bt_assert_ptr_not_equal(
+    (blob = blob_test_alloc(test->root, 123, P1)),
+    NULL);
+  bt_assert_int_equal(blob->size, 123);
+  bt_assert_int_equal(blob_free(blob, test->null_ctx), 0);
+
+  bt_assert_int_equal(blob_free(NULL, test->null_ctx), -1);
+
+  blob_t c = {
+    .rev = NULL,
+    .flags = ((struct blob_flags){.first = 0}),
+    .pool = NULL,
+  };
+
+  bt_assert_ptr_equal(
+    blob_check_context(&c),
+    NULL);
+  c.flags.free = 1;
+  bt_assert_ptr_equal(
+    blob_check_context(&c),
+    NULL);
+  c.flags.free = 1;
+  c.flags.check = BLOB_CHECK;
+  bt_assert_ptr_equal(
+    blob_check_context(&c),
     NULL);
 
   return BT_RESULT_OK;
@@ -819,7 +995,7 @@ BT_TEST_DEF(blob, ref1, "single reference free")
   bt_assert_ptr_not_equal(
     (blob_test_alloc(p1, 1, X3)),
     NULL);
-  
+
   bt_assert_ptr_not_equal(
     (r1 = blob_test_alloc(root, 1, R1)),
     NULL);
@@ -849,9 +1025,9 @@ BT_TEST_DEF(blob, ref1, "single reference free")
   bt_log(">> freeing %s\n", blob_test_names[r1->flags.uid]);
   bt_assert_int_equal(blob_free(r1, null), 0);
   blob_dump(root);
-  
+
   bt_assert_ptr_equal(blob_test_reference(root, NULL, REF), NULL);
-  
+
   bt_assert_int_equal(blob_total_blobs(root), 1);
   bt_assert_int_equal(blob_total_size(root), 0);
 
@@ -1067,8 +1243,7 @@ BT_TEST_DEF(blob, unlink1, "unlink")
 
 static int fail_destructor(blob_t * ptr)
 {
-  if (!ptr)
-    return -1;
+  UNUSED_PARAM(ptr);
   return -1;
 }
 
@@ -1076,12 +1251,6 @@ static const blob_vtable_t fail_vtable = {
   .destructor = fail_destructor,
 };
 
-
-BT_TEST_DEF(blob, misc, "miscellaneous")
-{
-  UNUSED_PARAM(object);
-  return BT_RESULT_IGNORE;
-}
 
 BT_TEST_DEF(blob, realloc, "realloc")
 {
@@ -1166,14 +1335,319 @@ BT_TEST_DEF(blob, realloc, "realloc")
   return BT_RESULT_OK;
 }
 
+BT_TEST_DEF(blob, steal, "steal")
+{
+  struct blob_test * test = object;
+  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2;
+
+  bt_assert_ptr_not_equal(
+    (p1 = blob_test_alloc(root, 10, P1)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (p2 = blob_test_alloc(root, 20, P2)),
+    NULL);
+  bt_assert_int_equal(blob_total_size(p1), 10);
+  bt_assert_int_equal(blob_total_size(root), 30);
+
+  bt_assert_ptr_equal(
+    (blob_test_steal(p1, NULL, null)),
+    NULL);
+
+  bt_assert_ptr_equal(
+    (blob_test_steal(p1, p1, null)),
+    p1);
+  bt_assert_int_equal(blob_total_blobs(root), 3);
+  bt_assert_int_equal(blob_total_size(root), 30);
+
+  bt_assert_ptr_not_equal(
+    (blob_test_steal(NULL, p1, null)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (blob_test_steal(NULL, p2, null)),
+    NULL);
+  bt_assert_int_equal(blob_total_blobs(root), 1);
+  bt_assert_int_equal(blob_total_size(root), 0);
+
+  bt_assert_int_equal(blob_free(p1, null), 0);
+  bt_assert_ptr_not_equal(
+    (blob_test_steal(root, p2, null)),
+    NULL);
+  bt_assert_int_equal(blob_total_blobs(root), 2);
+  bt_assert_int_equal(blob_total_size(root), 20);
+  bt_assert_int_equal(blob_free(p2, null), 0);
+
+  bt_assert_int_equal(blob_total_blobs(root), 1);
+  bt_assert_int_equal(blob_total_size(root), 0);
+
+  return BT_RESULT_OK;
+}
+
+BT_TEST_DEF(blob, unref_reparent, "unreference after parent freed")
+{
+  struct blob_test * test = object;
+  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2, * c1;
+
+  bt_assert_ptr_not_equal(
+    (p1 = blob_test_alloc(root, 1, P1)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (p2 = blob_test_alloc(root, 1, P2)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (c1 = blob_test_alloc(p1, 1, C1)),
+    NULL);
+
+  bt_assert_ptr_not_equal(
+    (blob_test_reference(p2, c1, REF)),
+    NULL);
+  blob_dump(root);
+
+  bt_assert_ptr_equal(_blob_parent(c1), p1);
+
+  bt_assert_int_equal(blob_free(p1, null), 0);
+
+  blob_dump(root);
+
+  bt_assert_ptr_equal(_blob_parent(c1), p2);
+
+  bt_assert_int_equal(_blob_unlink(p2, c1, null), 0);
+
+  bt_assert_int_equal(blob_total_size(root), 1);
+
+  bt_assert_int_equal(blob_free(p2, null), 0);
+
+  return BT_RESULT_OK;
+}
+
+BT_TEST_DEF(blob, lifeless, "blob_unlink loop")
+{
+  struct blob_test * test = object;
+  blob_t * null = test->null_ctx, * root = test->root, * top, * parent, * child, * child_owner;
+
+  bt_assert_ptr_not_equal(
+    (top = blob_test_alloc(root, 0, TOP)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (child_owner = blob_test_alloc(root, 0, CHILD_OWNER)),
+    NULL);
+
+
+  bt_assert_ptr_not_equal(
+    (parent = blob_test_alloc(top, 100, PARENT)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (child = blob_test_alloc(top, 100, CHILD)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (blob_reference(child, parent)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (blob_reference(child_owner, child)),
+    NULL);
+  blob_dump(root);
+
+  bt_assert_int_equal(_blob_unlink(top, parent, null), 0);
+  bt_assert_int_equal(_blob_unlink(top, child, null), 0);
+  blob_dump(root);
+
+  bt_assert_int_equal(blob_free(child_owner, null), 0);
+  bt_assert_int_equal(blob_free(top, null), 0);
+
+  return BT_RESULT_OK;
+}
+
+static int loop_destructor_count;
+
+static int test_loop_destructor(blob_t * blob)
+{
+  UNUSED_PARAM(blob);
+  loop_destructor_count++;
+  bt_log("<< in test_loop_destructor()\n");
+  return 0;
+}
+
+static const blob_vtable_t loop_vtable = {
+  .destructor = test_loop_destructor,
+};
+
+BT_TEST_DEF(blob, loop, "loop destruction")
+{
+  struct blob_test * test = object;
+  blob_t * null = test->null_ctx, * root = test->root, * top, * parent;
+  struct req1 {
+    blob_t super;
+    blob_t *req2, *req3;
+  } *req1;
+
+  loop_destructor_count = 0;
+
+
+  bt_assert_ptr_not_equal(
+    (top = blob_test_alloc(root, 0, TOP)),
+    NULL);
+
+  bt_assert_ptr_not_equal(
+    (parent = blob_test_alloc(top, 100, PARENT)),
+    NULL);
+
+  bt_assert_ptr_not_equal(
+    (req1 = (struct req1 *)blob_test_alloc(parent, sizeof(struct req1)-BLOB_HDR_SIZE, REQ1)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (req1->req2 = blob_test_alloc((blob_t *)req1, 100, REQ2)),
+    NULL);
+  req1->req2->vtable = &loop_vtable;
+  bt_assert_ptr_not_equal(
+    (req1->req3 = blob_test_alloc((blob_t *)req1, 100, REQ3)),
+    NULL);
+
+  bt_assert_ptr_not_equal(
+    (blob_test_reference(req1->req3, (blob_t *)req1, REF)),
+    NULL);
+  blob_dump(root);
+
+  bt_assert_int_equal(blob_free(parent, null), 0);
+  blob_dump(root);
+
+  bt_assert_int_equal(blob_free(top, null), 0);
+  blob_dump(root);
+
+  bt_assert_int_equal(loop_destructor_count, 1);
+
+  return BT_RESULT_OK;
+}
+
+BT_TEST_DEF(blob, free_parent_deny_child, "talloc free parent deny child")
+{
+  struct blob_test * test = object;
+  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2, * p3;
+
+  bt_assert_ptr_not_equal(
+    (p1 = blob_test_alloc(root, 10, P1)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (p2 = blob_test_alloc(p1, 11, P2)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (p3 = blob_test_alloc(p2, 12, P3)),
+    NULL);
+  p3->vtable = &fail_vtable;
+
+  bt_assert_int_equal(blob_free(p1, null), 0);
+  blob_dump(root); blob_dump(null);
+
+  /* only p3 should be there */
+  bt_assert_int_equal(blob_total_blobs(null), 2);
+  bt_assert_int_equal(blob_total_size(null), 12);
+  bt_assert_int_equal(blob_total_blobs(root), 1);
+  bt_assert_int_equal(blob_total_size(root), 0);
+
+  p3->vtable = NULL;
+  bt_assert_int_equal(blob_free(p3, null), 0);
+
+  /* second run*/
+  null = NULL;
+  bt_assert_ptr_not_equal(
+    (p1 = blob_test_alloc(root, 10, P1)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (p2 = blob_test_alloc(p1, 11, P2)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (p3 = blob_test_alloc(p2, 12, P3)),
+    NULL);
+  p3->vtable = &fail_vtable;
+
+  bt_assert_int_equal(blob_free(p1, null), 0);
+  blob_dump(root);
+
+  /* only p3 should be there */
+  bt_assert_int_equal(blob_total_blobs(root), 1);
+  bt_assert_int_equal(blob_total_size(root), 0);
+
+  p3->vtable = NULL;
+  bt_assert_int_equal(blob_free(p3, null), 0);
+
+
+  return BT_RESULT_OK;
+}
+
+static int test_free_in_destructor_check;
+
+static
+int test_free_in_destructor(blob_t * blob)
+{
+  blob_free(*(void **)BLOB_TO_DATA(blob), NULL);
+  test_free_in_destructor_check++;
+  return 0;
+}
+
+static const blob_vtable_t test_free_in_destructor_vtable = {
+  .destructor = test_free_in_destructor,
+};
+
+BT_TEST_DEF(blob, free_in_destructor, "free in destructor")
+{
+  struct blob_test * test = object;
+  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4, * p5;
+
+  test_free_in_destructor_check = 0;
+
+  bt_assert_ptr_not_equal(
+    (p1 = blob_test_alloc(root, 10, P1)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (p2 = blob_test_alloc(p1, 10, P2)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (p3 = blob_test_alloc(p2, 10, P3)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (p4 = blob_test_alloc(p3, 10, P4)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (p5 = blob_test_alloc(p4, 10, P5)),
+    NULL);
+
+  *(void **)BLOB_TO_DATA(p5) = p3;
+
+  bt_assert_ptr_not_equal(
+    (blob_test_reference(root, p3, REF1)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (blob_test_reference(p3, p3, REF2)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (blob_test_reference(p5, p3, REF3)),
+    NULL);
+
+  p5->vtable = &test_free_in_destructor_vtable;
+
+  blob_dump(root);
+  bt_assert_int_equal(blob_free(p1, null), 0);
+  blob_dump(root);
+  
+  bt_assert_int_equal(test_free_in_destructor_check, 1);
+
+  bt_log("###### FIN #####\n");
+
+  return BT_RESULT_OK;
+}
+
+
 BT_TEST_DEF(blob, pool, "pool")
 {
   struct blob_test * test = object;
-  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4;
-  pool_t * pool;
+  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4, * p5;
+  pool_t * pool = NULL;
 
   bt_assert_ptr_equal(
     (pool_test_alloc(root, 0x7fffffff, POOL)),
+    NULL);
+
+  /* fail */
+  bt_assert_ptr_equal(
+    (pool_blob_realloc(pool, NULL, NULL, 0, null)),
     NULL);
 
   bt_assert_ptr_not_equal(
@@ -1188,6 +1662,13 @@ BT_TEST_DEF(blob, pool, "pool")
     NULL);
   bt_assert_ptr_not_equal(
     (p3 = blob_test_alloc((blob_t *)pool, 40, P3)),
+    NULL);
+  bt_assert_ptr_not_equal(
+    (blob_test_realloc((blob_t *)pool, p3, 55, null, 0)),
+    NULL);
+
+  bt_assert_ptr_not_equal(
+    (p5 = blob_test_alloc(p1, 40, P5)),
     NULL);
 
   blob_dump(root);
@@ -1215,6 +1696,7 @@ BT_TEST_DEF(blob, pool, "pool")
   bt_assert_bool_equal(p1->flags.poolmem, true); bt_assert_ptr_equal(p1->pool, pool);
   bt_assert_bool_equal(p2->flags.poolmem, true); bt_assert_ptr_equal(p2->pool, pool);
   bt_assert_bool_equal(p3->flags.poolmem, true); bt_assert_ptr_equal(p3->pool, pool);
+  bt_assert_bool_equal(p5->flags.poolmem, true); bt_assert_ptr_equal(p5->pool, pool);
 
   bt_assert_bool_equal(p4->flags.poolmem, false);
 
@@ -1282,7 +1764,6 @@ BT_TEST_DEF(blob, list, "checks inline list functions")
   bt_assert_int_equal(blob_free(p4, null), 0);
 
   _blob_list_unlink(root, p2); bt_assert_int_equal(blob_free(p2, null), 0);
-  bt_assert_int_equal(blob_free(p4, null), 0);
   blob_dump(root);
 
   return BT_RESULT_OK;
