@@ -497,13 +497,33 @@ int _blob_unlink(blob_t * ctx, blob_t * blob, blob_t * null_ctx)
 
 int _blob_free_r(blob_t * ctx, blob_t * blob, blob_t * null_ctx);
 
-static
+static inline
+blob_t * _blob_unreference_reparent(blob_t * old_parent, blob_reference_t * ref, blob_t * blob, blob_t * null_ctx)
+{
+  blob_t * new_parent = _blob_parent((blob_t *)ref);
+
+  /* self reference? */
+  if (blob == new_parent) {
+    _blob_free_r(blob, (blob_t *)ref, null_ctx);
+    /* this was not a real reference and blob cannot be a parent */
+    return NULL;
+  }
+
+  if (!_blob_free_r(new_parent, (blob_t *)ref, null_ctx)) {
+    _blob_consume(blob);
+    _blob_list_prepend(new_parent, blob);
+    return blob;
+  }
+  return NULL;
+}
+
 int _blob_free_r(blob_t * ctx, blob_t * blob, blob_t * null_ctx)
 {
+  blob_t * parent;
+
   blob = blob_check_context(blob);
   ctx = blob_check_context(ctx);
   null_ctx = blob_check_context(null_ctx);
-  int done = 0;
 
   if (!blob)
     return -1;
@@ -511,27 +531,108 @@ int _blob_free_r(blob_t * ctx, blob_t * blob, blob_t * null_ctx)
   if (!ctx)
     ctx = null_ctx;
 
-  /* unreference? */
-  {
-    blob_t * parent;
+  if (blob->refs) {
     blob_reference_t * ref;
+    blob_reference_t * next_ref;
 
+    /* if ctx is parent... */
     if (_blob_parent(blob) == ctx) {
-      if (blob->refs) {
-        while ((parent = _blob_parent((blob_t *)blob_refs)))
+      /* ... find another "parent" != NULL and unref_reparent (may corrupt ref pointer!)*/
+      for (ref = blob->refs, next_ref=ref?ref->next_ref:NULL;
+            ref; ref = next_ref, next_ref=ref?ref->next_ref:NULL) {
+        if ((parent = _blob_parent((blob_t *)ref))) {
+          if (_blob_unreference_reparent(ctx, ref, blob, null_ctx) == blob)
+            /* we are done */
+            return 0;
+        }
       }
     }
-    blob_reference_t * h;
-    blob_t * parent;
-    for (h = blob->refs; h; h = h->next_ref) {
-      parent = _blob_parent((blob_t *)h);
-    if (!parent && !ctx)
-      break;
-    else if (parent == ctx)
-      break;
+
+    /* ctx is not a parent, is ctx a "parent"*/
+    for (ref = blob->refs, next_ref=ref?ref->next_ref:NULL;
+          ref; ref = next_ref, next_ref=ref?ref->next_ref:NULL) {
+      /* ctx is ref "parent" */
+      if ((parent = _blob_parent((blob_t *)ref)) == ctx) {
+        _blob_unreference(parent, blob, null_ctx);
+        /* we are done */
+        return 0;
+      }
+    }
+  } else {
+    parent = _blob_parent(blob);
+    if (parent)
+      _blob_consume(blob);
   }
 
+  /* here ctx is neither ref parent nor a real parent - blob is an orphane */
+
+  if (blob->flags.loop)
+    return 0;
+
+  /* TODO: XXX failing destructor */
+  if (blob->vtable && blob->vtable->destructor && !blob->flags.destr) {
+    int ret;
+    blob_destructor_t * d = blob->vtable->destructor;
+    if (blob->flags.dmark)
+      return -1;
+    blob->flags.dmark = 1;
+    if ((ret = d(blob))) {
+      blob->flags.dmark = 0;
+      if (null_ctx)
+        _blob_list_prepend(null_ctx, blob);
+      /* XXX LEAK */
+      return -1;
+    }
+    blob->flags.destr = 1;
   }
+
+  int ret = 0;
+
+  blob->flags.loop = 1;
+  if (blob->child) {
+    blob_t * child;
+    blob_t * next_child;
+
+    for (child = blob->child, next_child=child?child->next:NULL;
+          child; child = next_child, next_child=child?child->next:NULL) {
+      if ((ret |= _blob_free_r(blob, child, null_ctx))) {
+        /* XXX LEAK */
+        if (null_ctx)
+          _blob_list_prepend(null_ctx, blob);
+      }
+    }
+  }
+  blob->flags.free = 1;
+
+    blob->flags.free = 1;
+
+  if (blob->flags.pool || blob->flags.poolmem) {
+    pool_t * pool;
+
+    if (blob->flags.pool)
+      pool = (pool_t *)blob;
+    else if (blob->flags.poolmem)
+      pool = blob->pool;
+
+    if (!pool) {
+      /* XXX LEAK */
+      if (null_ctx)
+        _blob_list_prepend(null_ctx, blob);
+      return -1;
+    }
+
+    if (pool->count == 0)
+      return ret;
+
+    pool->count -= 1;
+
+    if (pool->count == 0)
+      free(pool);
+  } else
+    free(blob);
+
+  return ret;
+
 }
 
 static
@@ -798,6 +899,7 @@ void _blob_reference_dumper(blob_reference_t * ref, unsigned int level)
 static 
 void _blob_reference_blob_dumper(blob_reference_t * ref, unsigned int level)
 {
+  UNUSED_PARAM(ref);
   /*_blop_dumper((blob_t *)ref, level, "ref ", NULL);*/
   _blop_dumper(ref->blob_ref, level+1, NULL, _blop_dumper_angl);
 }
@@ -827,7 +929,7 @@ static
 void _blob_dump(blob_t * blob, unsigned int level)
 {
   blob_t * c;
-  blob_reference_t * ref;
+  /*blob_reference_t * ref;*/
 
   if (!blob)
     return;
@@ -1577,7 +1679,7 @@ static int test_free_in_destructor_check;
 static
 int test_free_in_destructor(blob_t * blob)
 {
-  blob_free(*(void **)BLOB_TO_DATA(blob), NULL);
+  //blob_free(*(void **)BLOB_TO_DATA(blob), NULL);
   test_free_in_destructor_check++;
   return 0;
 }
@@ -1624,7 +1726,7 @@ BT_TEST_DEF(blob, free_in_destructor, "free in destructor")
   p5->vtable = &test_free_in_destructor_vtable;
 
   blob_dump(root);
-  bt_assert_int_equal(blob_free(p1, null), 0);
+  bt_assert_int_equal(_blob_free_r(root, p1, null), 0);
   blob_dump(root);
   
   bt_assert_int_equal(test_free_in_destructor_check, 1);
@@ -1763,7 +1865,7 @@ BT_TEST_DEF(blob, list, "checks inline list functions")
   _blob_list_unlink(root, p4);
   bt_assert_int_equal(blob_free(p4, null), 0);
 
-  _blob_list_unlink(root, p2); bt_assert_int_equal(blob_free(p2, null), 0);
+  //_blob_list_unlink(root, p2); bt_assert_int_equal(blob_free(p2, null), 0);
   blob_dump(root);
 
   return BT_RESULT_OK;
@@ -1775,8 +1877,8 @@ BT_SUITE_TEARDOWN_DEF(blob)
 
   bt_assert_int_equal(blob_total_size(test->root), 0);
   bt_assert_int_equal(blob_total_size(test->null_ctx), 0);
-  bt_assert_int_equal(blob_free(test->root, test->null_ctx), 0);
-  bt_assert_int_equal(blob_free(test->null_ctx, NULL), 0);
+  bt_assert_int_equal(_blob_free_r(NULL, test->root, test->null_ctx), 0);
+  bt_assert_int_equal(_blob_free_r(NULL, test->null_ctx, NULL), 0);
 
   free(*object);
 
