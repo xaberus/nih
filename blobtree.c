@@ -541,9 +541,11 @@ int _blob_free_r(blob_t * ctx, blob_t * blob, blob_t * null_ctx)
       for (ref = blob->refs, next_ref=ref?ref->next_ref:NULL;
             ref; ref = next_ref, next_ref=ref?ref->next_ref:NULL) {
         if ((parent = _blob_parent((blob_t *)ref))) {
-          if (_blob_unreference_reparent(ctx, ref, blob, null_ctx) == blob)
+          if (!_blob_is_parent(parent, blob)) {
+            if (_blob_unreference_reparent(ctx, ref, blob, null_ctx) == blob)
             /* we are done */
             return 0;
+          }
         }
       }
     }
@@ -566,8 +568,8 @@ int _blob_free_r(blob_t * ctx, blob_t * blob, blob_t * null_ctx)
 
   /* here ctx is neither ref parent nor a real parent - blob is an orphane */
 
-  if (blob->flags.loop)
-    return 0;
+  /*if (blob->flags.loop)
+    return 0;*/
 
   /* TODO: XXX failing destructor */
   if (blob->vtable && blob->vtable->destructor && !blob->flags.destr) {
@@ -588,7 +590,7 @@ int _blob_free_r(blob_t * ctx, blob_t * blob, blob_t * null_ctx)
 
   int ret = 0;
 
-  blob->flags.loop = 1;
+  /*blob->flags.loop = 1;*/
   if (blob->child) {
     blob_t * child;
     blob_t * next_child;
@@ -1728,6 +1730,8 @@ BT_TEST_DEF(blob, free_in_destructor, "free in destructor")
   blob_dump(root);
   bt_assert_int_equal(_blob_free_r(root, p1, null), 0);
   blob_dump(root);
+  bt_assert_int_equal(_blob_free_r(root, p3, null), 0);
+  blob_dump(root);
   
   bt_assert_int_equal(test_free_in_destructor_check, 1);
 
@@ -1865,7 +1869,7 @@ BT_TEST_DEF(blob, list, "checks inline list functions")
   _blob_list_unlink(root, p4);
   bt_assert_int_equal(blob_free(p4, null), 0);
 
-  //_blob_list_unlink(root, p2); bt_assert_int_equal(blob_free(p2, null), 0);
+  _blob_list_unlink(root, p2); bt_assert_int_equal(blob_free(p2, null), 0);
   blob_dump(root);
 
   return BT_RESULT_OK;
