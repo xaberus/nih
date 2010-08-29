@@ -319,7 +319,7 @@ int blob_free(blob_t * blob, blob_t * null_ctx)
 }
 
 static inline
-blob_t * _blob_realloc(blob_t * ctx, blob_t * blob, size_t size, blob_t * null_ctx)
+blob_t * _blob_realloc(blob_t * ctx, blob_t * blob, size_t size)
 {
   blob_t * new;
   bool malloced = false;
@@ -386,7 +386,7 @@ blob_t * blob_realloc(blob_t * ctx, blob_t * blob, size_t size, blob_t * null_ct
     return blob;
   }
 
-  return _blob_realloc(ctx, blob, size, null_ctx);
+  return _blob_realloc(ctx, blob, size);
 }
 
 
