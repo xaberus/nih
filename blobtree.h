@@ -1,4 +1,3 @@
-
 #ifndef _BLOBLTREE_H
 #define _BLOBLTREE_H
 
@@ -25,7 +24,7 @@ typedef int (blob_destructor_t)(BLOB_DESTRUCTOR_ARGS);
 
 typedef struct blob_vtable blob_vtable_t;
 struct blob_vtable {
-  blob_destructor_t   * destructor;
+  blob_destructor_t * destructor;
 };
 
 struct blob_flags {
@@ -45,43 +44,38 @@ struct blob_flags {
 
 
 #define BLOBTREE_RECORD \
-  blob_t              * rev;\
-  blob_t              * next;\
-  blob_t              * child;\
-  const blob_vtable_t * vtable;\
-  size_t                size;\
-  struct blob_flags     flags;\
-  const char          * name;\
+  blob_t              * rev; \
+  blob_t              * next; \
+  blob_t              * child; \
+  const blob_vtable_t * vtable; \
+  size_t                size; \
+  struct blob_flags     flags; \
+  const char          * name; \
 
 
 /* blob hierarchy */
 struct blob {
   BLOBTREE_RECORD
-  pool_t              * pool;
+  pool_t * pool;
 };
 
 struct pool {
   BLOBTREE_RECORD
-  void                * data;
+  void * data;
 };
 
 #define ALIGN16(_size) (((_size) + 15L) & ~15L)
 #define ALIGN4096(_size) (((_size) + 4095L) & ~4095L)
 
-#define BLOB_HDR_SIZE sizeof(blob_t)
-#define POOL_HDR_SIZE sizeof(pool_t)
-#define POOL_HDR_ADD  (POOL_HDR_SIZE-BLOB_HDR_SIZE)
+pool_t * pool_alloc(blob_t * ctx, size_t size);
 
-pool_t *      pool_alloc(blob_t * ctx, size_t size);
+blob_t * blob_alloc(blob_t * ctx, size_t size);
+int      blob_free(blob_t * ctx, blob_t * null_ctx);
+blob_t * blob_realloc(blob_t * ctx, blob_t * blob, size_t size, blob_t * null_ctx);
 
-blob_t *      blob_alloc(blob_t * ctx, size_t size);
-int           blob_free(blob_t * ctx, blob_t * null_ctx);
-blob_t *      blob_realloc(blob_t * ctx, blob_t * blob, size_t size, blob_t * null_ctx);
-
-size_t        blob_total_blobs(blob_t * blob);
-size_t        blob_total_size(blob_t * blob);
+size_t   blob_total_blobs(blob_t * blob);
+size_t   blob_total_size(blob_t * blob);
 
 #endif /* _BLOBLTREE_H */
 
 // vim: filetype=c:expandtab:shiftwidth=2:tabstop=4:softtabstop=2:encoding=utf-8:textwidth=100
-

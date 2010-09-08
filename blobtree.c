@@ -1,18 +1,18 @@
-
 #include "blobtree.h"
 #include <string.h>
 
 #include <sexp.h>
 
-#define MIN(a,b) (((a)<(b)) ? (a) : (b))
+#define MIN(a, b) (((a)<(b)) ? (a) : (b))
 #define MAX_BLOB_SIZE 0x10000000
 #define BLOB_CHECK 0xd731 /* == 0y1101011100110001 */
 
-//#define BLOB_TO_DATA(_blob) ((void *)(BLOB_HDR_SIZE + (char*)(_blob)))
+// #define BLOB_TO_DATA(_blob) ((void *)(BLOB_HDR_SIZE + (char*)(_blob)))
 
 
 static inline
-blob_t * blob_check_context(blob_t * ctx) {
+blob_t * blob_check_context(blob_t * ctx)
+{
   if (!ctx)
     return NULL;
   if (ctx->flags.check != BLOB_CHECK)
@@ -23,8 +23,9 @@ blob_t * blob_check_context(blob_t * ctx) {
   return ctx;
 }
 
-size_t blob_total_blobs(blob_t * blob) {
-  size_t total = 0;
+size_t blob_total_blobs(blob_t * blob)
+{
+  size_t   total = 0;
   blob_t * c;
 
   blob = blob_check_context(blob);
@@ -39,8 +40,9 @@ size_t blob_total_blobs(blob_t * blob) {
   return total;
 }
 
-size_t blob_total_size(blob_t * blob) {
-  size_t total = 0;
+size_t blob_total_size(blob_t * blob)
+{
+  size_t   total = 0;
   blob_t * c;
 
   blob = blob_check_context(blob);
@@ -60,24 +62,25 @@ pool_t * pool_alloc(blob_t * ctx, size_t size)
 {
   size = ALIGN4096(size + sizeof(pool_t));
 
-  pool_t * pool = (pool_t *)blob_alloc(ctx, size);
+  pool_t * pool = (pool_t *) blob_alloc(ctx, size);
   if (!pool)
     return NULL;
 
   pool->flags.pool = 1;
-  pool->data = (char *)pool + sizeof(pool_t);
+  pool->data = (char *) pool + sizeof(pool_t);
 
-  return  pool;
+  return pool;
 }
 
 static inline
 blob_t * blob_plain_alloc(size_t size)
 {
   blob_t * blob = size ? malloc(size) : NULL;
+
   if (!blob)
     return NULL;
 
-  blob->flags = ((struct blob_flags){ .free=0, });
+  blob->flags = ((struct blob_flags) {.free = 0, });
   blob->flags.first = 1;
   blob->flags.check = BLOB_CHECK;
 
@@ -86,7 +89,8 @@ blob_t * blob_plain_alloc(size_t size)
   blob->child = NULL;
   blob->rev = NULL;
   blob->next = NULL;
-  blob->rev = NULL;
+
+  blob->name = NULL;
 
   return blob;
 }
@@ -94,15 +98,15 @@ blob_t * blob_plain_alloc(size_t size)
 static inline
 blob_t * pool_blob_alloc(pool_t * pool, size_t size)
 {
-  size_t space_left;
+  size_t   space_left;
   blob_t * blob;
-  size_t blob_size;
+  size_t   blob_size;
 
-  pool = (pool_t *)blob_check_context((blob_t *)pool);
+  pool = (pool_t *) blob_check_context((blob_t *) pool);
   if (!pool)
     return NULL;
 
-  space_left = ((char *)pool + pool->size - sizeof(pool_t)) - ((char *)pool->data);
+  space_left = ((char *) pool + pool->size - sizeof(pool_t)) - ((char *) pool->data);
   blob_size = ALIGN16(size);
 
   if (space_left < blob_size)
@@ -111,9 +115,9 @@ blob_t * pool_blob_alloc(pool_t * pool, size_t size)
   blob = pool->data;
   blob->size = size;
 
-  pool->data = ((char *)blob + blob_size);
+  pool->data = ((char *) blob + blob_size);
 
-  blob->flags = ((struct blob_flags){ .free=0, });
+  blob->flags = ((struct blob_flags) {.free = 0, });
   blob->flags.first = 1;
   blob->flags.check = BLOB_CHECK;
   blob->flags.poolmem = 1;
@@ -123,7 +127,8 @@ blob_t * pool_blob_alloc(pool_t * pool, size_t size)
   blob->child = NULL;
   blob->rev = NULL;
   blob->next = NULL;
-  blob->rev = NULL;
+
+  blob->name = NULL;
 
   return blob;
 }
@@ -132,7 +137,7 @@ blob_t * pool_blob_alloc(pool_t * pool, size_t size)
 static inline
 blob_t * pool_blob_realloc(pool_t * pool, blob_t * ctx, blob_t * blob, size_t size)
 {
-  if (!blob || (blob_t *)pool != ctx || !size)
+  if (!blob || (blob_t *) pool != ctx || !size)
     return NULL;
 
   return pool_blob_alloc(pool, size);
@@ -142,7 +147,7 @@ static inline
 blob_t * blob_pool_alloc(blob_t * ctx, size_t size)
 {
   if (ctx->flags.pool)
-    return pool_blob_alloc((pool_t *)ctx, size);
+    return pool_blob_alloc((pool_t *) ctx, size);
   else if (ctx->flags.poolmem)
     return pool_blob_alloc(ctx->pool, size);
 
@@ -153,6 +158,7 @@ static inline
 void _blob_list_prepend(blob_t * parent, blob_t * blob)
 {
   blob_t ** list = &parent->child;
+
   if (!*list) {
     *list = blob;
     blob->flags.first = 1;
@@ -172,6 +178,7 @@ static inline
 void _blob_list_unlink(blob_t * parent, blob_t * blob)
 {
   blob_t ** list = &parent->child;
+
   if (blob == *list && blob->flags.first) {
     *list = blob->next;
     if (*list) {
@@ -179,10 +186,10 @@ void _blob_list_unlink(blob_t * parent, blob_t * blob)
       (*list)->rev = parent;
     }
   } else {
-      if (blob->rev)
-        blob->rev->next = blob->next;
-      if (blob->next)
-        blob->next->rev = blob->rev;
+    if (blob->rev)
+      blob->rev->next = blob->next;
+    if (blob->next)
+      blob->next->rev = blob->rev;
   }
   /* cleanup */
   if (blob && (blob != *list)) {
@@ -234,7 +241,8 @@ void _blob_consume(blob_t * blob)
 }
 
 static inline
-blob_t * _blob_parent(blob_t * blob) {
+blob_t * _blob_parent(blob_t * blob)
+{
   while (blob && !blob->flags.first)
     blob = blob->rev;
   return blob->rev;
@@ -242,7 +250,8 @@ blob_t * _blob_parent(blob_t * blob) {
 
 #if 0
 static inline
-int _blob_is_parent(blob_t * ctx, blob_t * parent) {
+int _blob_is_parent(blob_t * ctx, blob_t * parent)
+{
   if (!ctx)
     return 0;
 
@@ -261,7 +270,8 @@ static inline
 int _blob_free_r(blob_t * root, blob_t * parent, blob_t * blob, blob_t * null_ctx)
 {
   blob_t * child;
-  int err = 0, ret = 0;
+  int      err = 0, ret = 0;
+
   UNUSED_PARAM(parent);
 
   if (blob->vtable && blob->vtable->destructor && !blob->flags.destructed) {
@@ -290,19 +300,15 @@ int _blob_free_r(blob_t * root, blob_t * parent, blob_t * blob, blob_t * null_ct
     }
   }
 
-  if (blob->flags.pool || blob->flags.poolmem) {
-    pool_t * pool;
+  if (blob->flags.pool && blob->child)
+    return 1;
 
-    if (blob->flags.pool)
-      pool = (pool_t *)blob;
-    else if (blob->flags.poolmem)
-      pool = blob->pool;
+  blob->flags.free = 1;
 
-    blob->flags.free = 1;
-  } else {
-    blob->flags.free = 1;
-    free(blob);
-  }
+  if (blob->flags.poolmem)
+    return 0;
+
+  free(blob);
 
   return ret;
 }
@@ -322,7 +328,7 @@ static inline
 blob_t * _blob_realloc(blob_t * ctx, blob_t * blob, size_t size)
 {
   blob_t * new;
-  bool malloced = false;
+  bool     malloced = false;
 
   blob->flags.free = 1;
 
