@@ -6,3 +6,7 @@
 *.gcov
 colorgcc
 colorgccrc.txt
+Makefile
+CMakeFiles/*
+CMakeCache.txt
+cmake_install.cmake
