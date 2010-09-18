@@ -16,6 +16,7 @@ static inline
 int _blob_sexp_wrap(blob_t * blob, sexp_t * value)
 {
   int err = 0;
+
   if (value->ty == SEXP_VALUE && (strncmp(value->val, "nill", value->val_used) == 0)) {
     err = !(blob == NULL);
   } else if (value->ty == SEXP_LIST && value->list) {
@@ -30,9 +31,9 @@ fail:
 static inline
 int _blob_sexp_record_check(blob_t * blob, sexp_t * c)
 {
-  int err = 0;
+  int      err = 0;
   sexp_t * key, * value;
-  size_t s;
+  size_t   s;
   blob_t * b;
 
   if (c->ty != SEXP_LIST || !c->list) goto fail; key = c->list;
@@ -54,8 +55,11 @@ int _blob_sexp_record_check(blob_t * blob, sexp_t * c)
     for (value = key->next; !err && value; value = value->next) {
       if (value->ty != SEXP_VALUE) goto fail;
       if (strncmp(value->val, "free", value->val_used) == 0) {
+        /* noop */
       } else if (strncmp(value->val, "pool", value->val_used) == 0) {
+        /* noop */
       } else if (strncmp(value->val, "poolmem", value->val_used) == 0) {
+        /* noop */
       } else if (strncmp(value->val, "first", value->val_used) == 0) {
         err = !blob->flags.first;
       } else if (strncmp(value->val, "destructed", value->val_used) == 0) {
@@ -68,7 +72,9 @@ int _blob_sexp_record_check(blob_t * blob, sexp_t * c)
     value = key->next; if (!value || value->ty != SEXP_VALUE) goto fail;
     err = !(strncmp(value->val, blob->name, value->val_used) == 0);
   } else if (strncmp(key->val, "child", key->val_used) == 0) {
-    for (value = key->next, b=blob->child; !err && value; value = value->next, b = b?b->next:NULL) {
+    for (value = key->next, b = blob->child;
+         !err && value;
+         value = value->next, b = b ? b->next : NULL) {
       if (!b) goto fail;
       err = _blob_sexp_wrap(b, value);
     }
@@ -81,7 +87,7 @@ fail:
 
 int _blob_sexp_check_r(blob_t * blob, sexp_t * sx)
 {
-  int err = 0;
+  int      err = 0;
   sexp_t * sblob, * c;
 
   if (sx->ty != SEXP_LIST || !sx->list) goto fail; sblob = sx->list;
@@ -102,11 +108,11 @@ fail:
 
 int blob_sexp_check(blob_t * blob, const char spec[])
 {
-  int err = 1;
-  size_t len = strlen(spec);
+  int       err = 1;
+  size_t    len = strlen(spec);
   sexp_t  * sx = NULL;
   pcont_t * cont = NULL;
-  char buff[len];
+  char      buff[len];
 
 
 
@@ -139,7 +145,7 @@ const char * _blop_dumper_brak[2] = {"", ""};
 const char * _blop_dumper_angl[2] = {"~> <", ">"};
 
 static
-void _blob_dumper(blob_t * blob, unsigned int level, const char * rep, const char *brk[2])
+void _blob_dumper(blob_t * blob, unsigned int level, const char * rep, const char * brk[2])
 {
   if (!brk)
     brk = _blop_dumper_brak;
@@ -147,10 +153,11 @@ void _blob_dumper(blob_t * blob, unsigned int level, const char * rep, const cha
   if (blob->flags.pool && !rep)
     rep = "pool";
 
-  _blop_dump_level(level); bt_log("%s %s ", brk[0], rep?rep:"blob");
+  _blop_dump_level(level); bt_log("%s %s ", brk[0], rep ? rep : "blob");
 
   {
-    bt_log("[%4zu]{", blob->flags.pool ? (blob->size - sizeof(pool_t)):(blob->size - sizeof(blob_t)));
+    bt_log("[%4zu]{",
+        blob->flags.pool ? (blob->size - sizeof(pool_t)) : (blob->size - sizeof(blob_t)));
     if (blob->flags.first)
       bt_log("\\");
     else
@@ -189,7 +196,7 @@ void _blob_dump(blob_t * blob, unsigned int level)
     _blob_dumper(blob, level, NULL, NULL);
 
     for (c = blob->child; c; c = c->next) {
-      _blob_dump(c, level+1);
+      _blob_dump(c, level + 1);
     }
   }
 }
@@ -208,6 +215,7 @@ static inline
 blob_t * blob_test_alloc(blob_t * ctx, size_t size, const char * name)
 {
   blob_t * blob = blob_alloc(ctx, sizeof(blob_t) + size);
+
   if (blob)
     blob->name = name;
 
@@ -215,9 +223,14 @@ blob_t * blob_test_alloc(blob_t * ctx, size_t size, const char * name)
 }
 
 static inline
-blob_t * blob_test_realloc(blob_t * ctx, blob_t * blob, size_t size, blob_t * null_ctx, const char * name)
+blob_t * blob_test_realloc(blob_t * ctx,
+    blob_t * blob,
+    size_t size,
+    blob_t * null_ctx,
+    const char * name)
 {
-  blob_t * re =  blob_realloc(ctx, blob, size?(sizeof(blob_t) + size):0, null_ctx);
+  blob_t * re =  blob_realloc(ctx, blob, size ? (sizeof(blob_t) + size) : 0, null_ctx);
+
   if (re && !blob)
     re->name = name;
   return re;
@@ -228,6 +241,7 @@ static inline
 pool_t * pool_test_alloc(blob_t * ctx, size_t size, const char * name)
 {
   pool_t * pool = pool_alloc(ctx, size);
+
   if (pool)
     pool->name = name;
 
@@ -237,15 +251,16 @@ pool_t * pool_test_alloc(blob_t * ctx, size_t size, const char * name)
 BT_SUITE_SETUP_DEF(blob)
 {
   struct blob_test * test = calloc(1, sizeof(struct blob_test));
+
   if (!test)
     return BT_RESULT_FAIL;
 
   bt_assert_ptr_not_equal(
-    (test->null_ctx = blob_test_alloc(NULL, 0, "null_ctx")),
-    NULL);
+      (test->null_ctx = blob_test_alloc(NULL, 0, "null_ctx")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (test->root = blob_test_alloc(NULL, 0, "root")),
-    NULL);
+      (test->root = blob_test_alloc(NULL, 0, "root")),
+      NULL);
 
   *object = test;
 
@@ -255,60 +270,61 @@ BT_SUITE_SETUP_DEF(blob)
 BT_TEST_DEF(blob, pre, "tests preconditions and uncommon errors")
 {
   struct blob_test * test = object;
-  blob_t * blob, * ptr;
+  blob_t           * blob, * ptr;
 
   bt_assert_ptr_not_equal(
-    (blob = blob_test_alloc(test->root, 10, "n1")),
-    NULL); ptr = blob;
+      (blob = blob_test_alloc(test->root, 10, "n1")),
+      NULL); ptr = blob;
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c1.1")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c1.1")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c1.2")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c1.2")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c1.3")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c1.3")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (ptr = blob_test_alloc(ptr, 10, "n2")),
-    NULL);
+      (ptr = blob_test_alloc(ptr, 10, "n2")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c2.1")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c2.1")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c2.2")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c2.2")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c2.3")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c2.3")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (ptr = blob_test_alloc(ptr, 10, "n3")),
-    NULL);
+      (ptr = blob_test_alloc(ptr, 10, "n3")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c3.1")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c3.1")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c3.2")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c3.2")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c3.3")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c3.3")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (ptr = blob_test_alloc(ptr, 10, "n4")),
-    NULL);
+      (ptr = blob_test_alloc(ptr, 10, "n4")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c4.1")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c4.1")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c4.2")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c4.2")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(ptr, 10, "c4.3")),
-    NULL);
+      (blob_test_alloc(ptr, 10, "c4.3")),
+      NULL);
 
   blob_dump(test->root);
   bt_assert_int_equal(
-    blob_sexp_check(test->root,"\
+      blob_sexp_check(test->root,
+          "\
       (blob (rev nill) (next nill) (size 0) (flags first) (name root) (child\
         (blob (rev (name root)) (next nill) (size 10) (flags first) (name n1) (child\
           (blob (rev (name n1)) (size 10) (name n2) (child\
@@ -320,14 +336,14 @@ BT_TEST_DEF(blob, pre, "tests preconditions and uncommon errors")
         ))\
       ))\
     "),
-  0);
+      0);
 
   bt_assert_int_equal(
-    blob_sexp_check(test->root, "(blob (name root) (child (blob (name n1) (child blah! ))))"),
-  1);
+      blob_sexp_check(test->root, "(blob (name root) (child (blob (name n1) (child blah! ))))"),
+      1);
   bt_assert_int_equal(
-    blob_sexp_check(test->root, "(blob (name root) (child (blAb (name n1) (child blah! ))))"),
-  1);
+      blob_sexp_check(test->root, "(blob (name root) (child (blAb (name n1) (child blah! ))))"),
+      1);
 
 
   bt_assert_int_equal(blob_free(blob, test->null_ctx), 0);
@@ -339,16 +355,16 @@ BT_TEST_DEF(blob, pre, "tests preconditions and uncommon errors")
   bt_assert_int_equal(blob_total_blobs(NULL), 0);
 
   bt_assert_ptr_equal(
-    (blob_plain_alloc(0)),
-    NULL);
+      (blob_plain_alloc(0)),
+      NULL);
 
   bt_assert_ptr_equal(
-    (pool_blob_alloc(NULL, 0)),
-    NULL);
+      (pool_blob_alloc(NULL, 0)),
+      NULL);
 
   bt_assert_ptr_equal(
-    (blob_alloc(test->root, 0)),
-    NULL);
+      (blob_alloc(test->root, 0)),
+      NULL);
 
 
   return BT_RESULT_OK;
@@ -357,15 +373,15 @@ BT_TEST_DEF(blob, pre, "tests preconditions and uncommon errors")
 BT_TEST_DEF(blob, empty, "tests suite conditions and overflows")
 {
   struct blob_test * test = object;
-  blob_t * blob;
+  blob_t           * blob;
 
   bt_assert_ptr_equal(
-    (blob_test_alloc(test->root, 0x7fffffff, "inpossible")),
-    NULL);
+      (blob_test_alloc(test->root, 0x7fffffff, "inpossible")),
+      NULL);
 
   bt_assert_ptr_not_equal(
-    (blob = blob_test_alloc(test->root, 123, "p1")),
-    NULL);
+      (blob = blob_test_alloc(test->root, 123, "p1")),
+      NULL);
   bt_assert_int_equal(blob->size, sizeof(blob_t) * 1 + 123);
   bt_assert_int_equal(blob_free(blob, test->null_ctx), 0);
 
@@ -373,22 +389,22 @@ BT_TEST_DEF(blob, empty, "tests suite conditions and overflows")
 
   blob_t c = {
     .rev = NULL,
-    .flags = ((struct blob_flags){.first = 0}),
+    .flags = ((struct blob_flags) {.first = 0}),
     .pool = NULL,
   };
 
   bt_assert_ptr_equal(
-    blob_check_context(&c),
-    NULL);
+      blob_check_context(&c),
+      NULL);
   c.flags.free = 1;
   bt_assert_ptr_equal(
-    blob_check_context(&c),
-    NULL);
+      blob_check_context(&c),
+      NULL);
   c.flags.free = 1;
   c.flags.check = BLOB_CHECK;
   bt_assert_ptr_equal(
-    blob_check_context(&c),
-    NULL);
+      blob_check_context(&c),
+      NULL);
 
   return BT_RESULT_OK;
 }
@@ -409,25 +425,25 @@ static const blob_vtable_t fail_vtable = {
 BT_TEST_DEF(blob, failing_destructor, "what happens after a failing destructor?")
 {
   struct blob_test * test = object;
-  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4;
+  blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4;
 
   bt_assert_ptr_not_equal(
-    (p1 = blob_test_alloc(root, 10, "p1")),
-    NULL);
+      (p1 = blob_test_alloc(root, 10, "p1")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p2 = blob_test_alloc(p1, 10, "p2")),
-    NULL);
+      (p2 = blob_test_alloc(p1, 10, "p2")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p3 = blob_test_alloc(p2, 10, "p3")),
-    NULL);
+      (p3 = blob_test_alloc(p2, 10, "p3")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p4 = blob_test_alloc(p3, 10, "p4")),
-    NULL);
+      (p4 = blob_test_alloc(p3, 10, "p4")),
+      NULL);
 
   p3->vtable = &fail_vtable;
   blob_dump(root);
 
-  int r ;
+  int r;
 
   r = blob_free(p1, null);
   bt_assert_int_equal(r, 1);
@@ -445,60 +461,63 @@ BT_TEST_DEF(blob, failing_destructor, "what happens after a failing destructor?"
 BT_TEST_DEF(blob, realloc, "what happens on reallocation")
 {
   struct blob_test * test = object;
-  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2;
+  blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2;
 
   bt_assert_ptr_not_equal(
-    (p1 = blob_test_alloc(root, 10, "p1")),
-    NULL);
+      (p1 = blob_test_alloc(root, 10, "p1")),
+      NULL);
   blob_dump(root);
   bt_assert_int_equal(blob_total_size(root), sizeof(blob_t) * 2 + 10);
   bt_assert_int_equal(
-    blob_sexp_check(root, "\
+      blob_sexp_check(root,
+          "\
       (blob (rev nill) (next nill) (size 0) (flags first) (name root) (child\
         (blob (rev (name root)) (next nill) (size 10) (flags first) (name p1) (child\
           ))\
       ))\
     "),
-  0);
+      0);
 
 
   bt_log(">> realloc p1\n");
   bt_assert_ptr_not_equal(
-    (p1 = blob_test_realloc(NULL, p1, 28, null, "impossible")),
-    NULL);
+      (p1 = blob_test_realloc(NULL, p1, 28, null, "impossible")),
+      NULL);
   blob_dump(root);
   bt_assert_int_equal(blob_total_size(root), sizeof(blob_t) * 2 + 28);
   bt_assert_int_equal(
-    blob_sexp_check(root, "\
+      blob_sexp_check(root,
+          "\
       (blob (rev nill) (next nill) (size 0) (flags first) (name root) (child\
         (blob (rev (name root)) (next nill) (size 28) (flags first) (name p1) (child\
           ))\
       ))\
     "),
-  0);
+      0);
 
 
   bt_log(">> alloc x1\n");
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(p1, 7, "x1")),
-    NULL);
+      (blob_test_alloc(p1, 7, "x1")),
+      NULL);
 
   bt_log(">> alloc p2 on p1\n");
   bt_assert_ptr_not_equal(
-    (p2 = blob_test_realloc(p1, NULL, 30, null, "p2")),
-    NULL);
+      (p2 = blob_test_realloc(p1, NULL, 30, null, "p2")),
+      NULL);
 
   bt_log(">> alloc x2 on p1\n");
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(p1, 1, "x2")),
-    NULL);
+      (blob_test_alloc(p1, 1, "x2")),
+      NULL);
   bt_log(">> alloc x3 on p2\n");
   bt_assert_ptr_not_equal(
-    (blob_test_alloc(p2, 3, "x3")),
-    NULL);
+      (blob_test_alloc(p2, 3, "x3")),
+      NULL);
   blob_dump(root);
   bt_assert_int_equal(
-    blob_sexp_check(root, "\
+      blob_sexp_check(root,
+          "\
       (blob (name root) (rev nill) (next nill) (size 0) (flags first) (child\
         (blob (name p1) (rev (name root)) (next nill) (size 28) (flags first) (child\
           (blob (name x2) (size 1))\
@@ -509,16 +528,17 @@ BT_TEST_DEF(blob, realloc, "what happens on reallocation")
         ))\
       ))\
     "),
-  0);
+      0);
 
 
   bt_log(">> realloc p2\n");
   bt_assert_ptr_not_equal(
-    (p2 = blob_test_realloc(p1, p2, 40, null, 0)),
-    NULL);
+      (p2 = blob_test_realloc(p1, p2, 40, null, 0)),
+      NULL);
   blob_dump(root);
   bt_assert_int_equal(
-    blob_sexp_check(root, "\
+      blob_sexp_check(root,
+          "\
       (blob (name root) (rev nill) (next nill) (size 0) (flags first) (child\
         (blob (name p1) (rev (name root)) (next nill) (size 28) (flags first) (child\
           (blob (name x2) (size 1))\
@@ -529,7 +549,7 @@ BT_TEST_DEF(blob, realloc, "what happens on reallocation")
         ))\
       ))\
     "),
-  0);
+      0);
 
 
   bt_assert_int_equal(blob_total_size(p2), sizeof(blob_t) * 2 + 43);
@@ -538,12 +558,13 @@ BT_TEST_DEF(blob, realloc, "what happens on reallocation")
 
   bt_log(">> realloc p1\n");
   bt_assert_ptr_not_equal(
-    (p1 = blob_test_realloc(NULL, p1, 22, null, 0)),
-    NULL);
+      (p1 = blob_test_realloc(NULL, p1, 22, null, 0)),
+      NULL);
   blob_dump(root);
   bt_assert_int_equal(blob_total_size(p1), sizeof(blob_t) * 5 + 73);
   bt_assert_int_equal(
-    blob_sexp_check(root, "\
+      blob_sexp_check(root,
+          "\
       (blob (name root) (rev nill) (next nill) (size 0) (flags first) (child\
         (blob (name p1) (rev (name root)) (next nill) (size 22) (flags first) (child\
           (blob (name x2) (size 1))\
@@ -554,17 +575,18 @@ BT_TEST_DEF(blob, realloc, "what happens on reallocation")
         ))\
       ))\
     "),
-  0);
+      0);
 
 
   bt_log(">> realloc p2\n");
   bt_assert_ptr_not_equal(
-    (blob_test_realloc(NULL, p2, 5, null, 0)),
-    NULL);
+      (blob_test_realloc(NULL, p2, 5, null, 0)),
+      NULL);
   blob_dump(root);
   bt_assert_int_equal(blob_total_blobs(p1), 5);
   bt_assert_int_equal(
-    blob_sexp_check(root, "\
+      blob_sexp_check(root,
+          "\
       (blob (name root) (rev nill) (next nill) (size 0) (flags first) (child\
         (blob (name p1) (rev (name root)) (next nill) (size 22) (flags first) (child\
           (blob (name x2) (size 1))\
@@ -575,16 +597,17 @@ BT_TEST_DEF(blob, realloc, "what happens on reallocation")
         ))\
       ))\
     "),
-  0);
+      0);
 
 
   bt_log(">> realloc free p2\n");
   bt_assert_ptr_equal(
-    (blob_test_realloc(NULL, p2, 0, null, 0)),
-    NULL);
+      (blob_test_realloc(NULL, p2, 0, null, 0)),
+      NULL);
   blob_dump(root);
   bt_assert_int_equal(
-    blob_sexp_check(root, "\
+      blob_sexp_check(root,
+          "\
       (blob (name root) (rev nill) (next nill) (size 0) (flags first) (child\
         (blob (name p1) (rev (name root)) (next nill) (size 22) (flags first) (child\
           (blob (name x2) (size 1))\
@@ -592,15 +615,15 @@ BT_TEST_DEF(blob, realloc, "what happens on reallocation")
         ))\
       ))\
     "),
-  0);
+      0);
 
 
   bt_assert_int_equal(blob_total_blobs(p1), 3);
 
   bt_log(">> realloc free p1\n");
   bt_assert_ptr_equal(
-    (blob_test_realloc(NULL, p1, 0, null, 0)),
-    NULL);
+      (blob_test_realloc(NULL, p1, 0, null, 0)),
+      NULL);
   blob_dump(root);
   bt_assert_int_equal(blob_total_blobs(root), 1);
 
@@ -611,17 +634,17 @@ BT_TEST_DEF(blob, realloc, "what happens on reallocation")
 BT_TEST_DEF(blob, free_parent_deny_child, "talloc free parent deny child")
 {
   struct blob_test * test = object;
-  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2, * p3;
+  blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2, * p3;
 
   bt_assert_ptr_not_equal(
-    (p1 = blob_test_alloc(root, 10, P1)),
-    NULL);
+      (p1 = blob_test_alloc(root, 10, P1)),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p2 = blob_test_alloc(p1, 11, P2)),
-    NULL);
+      (p2 = blob_test_alloc(p1, 11, P2)),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p3 = blob_test_alloc(p2, 12, P3)),
-    NULL);
+      (p3 = blob_test_alloc(p2, 12, P3)),
+      NULL);
   p3->vtable = &fail_vtable;
 
   bt_assert_int_equal(blob_free(p1, null), 0);
@@ -639,14 +662,14 @@ BT_TEST_DEF(blob, free_parent_deny_child, "talloc free parent deny child")
   /* second run*/
   null = NULL;
   bt_assert_ptr_not_equal(
-    (p1 = blob_test_alloc(root, 10, P1)),
-    NULL);
+      (p1 = blob_test_alloc(root, 10, P1)),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p2 = blob_test_alloc(p1, 11, P2)),
-    NULL);
+      (p2 = blob_test_alloc(p1, 11, P2)),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p3 = blob_test_alloc(p2, 12, P3)),
-    NULL);
+      (p3 = blob_test_alloc(p2, 12, P3)),
+      NULL);
   p3->vtable = &fail_vtable;
 
   bt_assert_int_equal(blob_free(p1, null), 0);
@@ -681,28 +704,29 @@ static const blob_vtable_t test_free_in_destructor_vtable = {
 BT_TEST_DEF(blob, free_in_destructor, "what happens after a free in destructor?")
 {
   struct blob_test * test = object;
-  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4, * p5;
+  blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4, * p5;
 
   test_free_in_destructor_check = 0;
 
   bt_assert_ptr_not_equal(
-    (p1 = blob_test_alloc(root, 10, "p1")),
-    NULL);
+      (p1 = blob_test_alloc(root, 10, "p1")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p2 = blob_test_alloc(p1, 11, "p2")),
-    NULL);
+      (p2 = blob_test_alloc(p1, 11, "p2")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p3 = blob_test_alloc(p2, 12, "p3")),
-    NULL);
+      (p3 = blob_test_alloc(p2, 12, "p3")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p4 = blob_test_alloc(p3, 13, "p4")),
-    NULL);
+      (p4 = blob_test_alloc(p3, 13, "p4")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p5 = blob_test_alloc(p4, 14, "p5")),
-    NULL);
+      (p5 = blob_test_alloc(p4, 14, "p5")),
+      NULL);
 
   bt_assert_int_equal(
-    blob_sexp_check(root, "\
+      blob_sexp_check(root,
+          "\
       (blob (name root) (child\
         (blob (name p1) (size 10) (child\
           (blob (name p2) (size 11) (child\
@@ -710,7 +734,7 @@ BT_TEST_DEF(blob, free_in_destructor, "what happens after a free in destructor?"
               (blob (name p4) (size 13) (child\
                 (blob (name p5) (size 14))))))))))))\
     "),
-  0);
+      0);
 
   p3->vtable = &test_free_in_destructor_vtable;
   bt_assert_int_equal(blob_free(p1, null), 0);
@@ -723,67 +747,67 @@ BT_TEST_DEF(blob, free_in_destructor, "what happens after a free in destructor?"
 BT_TEST_DEF(blob, pool, "does our scapegoat (double free) 'pool' behave as expected?")
 {
   struct blob_test * test = object;
-  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4, * p5;
-  pool_t * pool = NULL;
+  blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4, * p5;
+  pool_t           * pool = NULL;
 
   bt_assert_ptr_equal(
-    (pool_test_alloc(root, 0x7fffffff, "imposible")),
-    NULL);
+      (pool_test_alloc(root, 0x7fffffff, "imposible")),
+      NULL);
 
   /* fail */
   bt_assert_ptr_equal(
-    (pool_blob_realloc(pool, NULL, NULL, 0)),
-    NULL);
+      (pool_blob_realloc(pool, NULL, NULL, 0)),
+      NULL);
 
   bt_assert_ptr_not_equal(
-    (pool = pool_test_alloc(root, 1024, "pool")),
-    NULL);
+      (pool = pool_test_alloc(root, 1024, "pool")),
+      NULL);
 
   bt_assert_ptr_not_equal(
-    (p1 = blob_test_alloc((blob_t *)pool, 80, "p1")),
-    NULL);
+      (p1 = blob_test_alloc((blob_t *) pool, 80, "p1")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p2 = blob_test_alloc((blob_t *)pool, 20, "p2")),
-    NULL);
+      (p2 = blob_test_alloc((blob_t *) pool, 20, "p2")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p3 = blob_test_alloc((blob_t *)pool, 40, "p3")),
-    NULL);
+      (p3 = blob_test_alloc((blob_t *) pool, 40, "p3")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p3 = blob_test_realloc((blob_t *)pool, p3, 55, null, 0)),
-    NULL);
+      (p3 = blob_test_realloc((blob_t *) pool, p3, 55, null, 0)),
+      NULL);
 
   bt_assert_ptr_not_equal(
-    (p5 = blob_test_alloc(p1, 40, "p5")),
-    NULL);
+      (p5 = blob_test_alloc(p1, 40, "p5")),
+      NULL);
 
   blob_dump(root);
 
   bt_log(">> realloc p3\n");
   bt_assert_ptr_not_equal(
-    (p3 = blob_test_realloc((blob_t *)pool, p3, 90, null, 0)),
-    NULL);
+      (p3 = blob_test_realloc((blob_t *) pool, p3, 90, null, 0)),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p3 = blob_test_realloc((blob_t *)pool, p3, 10, null, 0)),
-    NULL);
+      (p3 = blob_test_realloc((blob_t *) pool, p3, 10, null, 0)),
+      NULL);
   bt_assert_ptr_equal(
-    (blob_test_realloc((blob_t *)pool, p3, 0x7fffffff, null, 0)),
-    NULL);
+      (blob_test_realloc((blob_t *) pool, p3, 0x7fffffff, null, 0)),
+      NULL);
   blob_dump(root);
 
   bt_assert_ptr_not_equal(
-    (p4 = blob_test_alloc((blob_t *)pool, 4096, "p4")),
-    NULL);
+      (p4 = blob_test_alloc((blob_t *) pool, 4096, "p4")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p3 = blob_test_realloc((blob_t *)pool, p3, 4096, null, "p3")),
-    NULL);
+      (p3 = blob_test_realloc((blob_t *) pool, p3, 4096, null, "p3")),
+      NULL);
 
 
   bt_assert_ptr_equal(
-    (blob_test_realloc(root, (blob_t *)pool, 9999, null, "impossible")),
-    NULL);
+      (blob_test_realloc(root, (blob_t *) pool, 9999, null, "impossible")),
+      NULL);
   bt_assert_ptr_equal(
-    (blob_test_alloc((blob_t *)pool, 0x7fffffff, "x1")),
-    NULL);
+      (blob_test_alloc((blob_t *) pool, 0x7fffffff, "x1")),
+      NULL);
 
   bt_assert_bool_equal(p1->flags.poolmem, true); bt_assert_ptr_equal(p1->pool, pool);
   bt_assert_bool_equal(p2->flags.poolmem, true); bt_assert_ptr_equal(p2->pool, pool);
@@ -803,7 +827,7 @@ BT_TEST_DEF(blob, pool, "does our scapegoat (double free) 'pool' behave as expec
   /* double free */
   bt_assert_int_equal(blob_free(p5, null), 1);
 
-  bt_assert_int_equal(blob_free((blob_t *)pool, null), 0);
+  bt_assert_int_equal(blob_free((blob_t *) pool, null), 0);
 
   return BT_RESULT_OK;
 }
@@ -811,23 +835,23 @@ BT_TEST_DEF(blob, pool, "does our scapegoat (double free) 'pool' behave as expec
 BT_TEST_DEF(blob, list, "do our inlined list functions preform as expected?")
 {
   struct blob_test * test = object;
-  blob_t * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4, * p5;
+  blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4, * p5;
 
   bt_assert_ptr_not_equal(
-    (p1 = blob_test_alloc(root, 1, "p1")),
-    NULL);
+      (p1 = blob_test_alloc(root, 1, "p1")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p2 = blob_test_alloc(root, 1, "p2")),
-    NULL);
+      (p2 = blob_test_alloc(root, 1, "p2")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p3 = blob_test_alloc(root, 1, "p3")),
-    NULL);
+      (p3 = blob_test_alloc(root, 1, "p3")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p4 = blob_test_alloc(root, 1, "p4")),
-    NULL);
+      (p4 = blob_test_alloc(root, 1, "p4")),
+      NULL);
   bt_assert_ptr_not_equal(
-    (p5 = blob_test_alloc(root, 1, "p5")),
-    NULL);
+      (p5 = blob_test_alloc(root, 1, "p5")),
+      NULL);
 
 
   bt_assert_ptr_equal(_blob_parent(p1), root);
