@@ -1,5 +1,5 @@
 #ifdef TEST
-# include <bt.h>
+#include <bt.h>
 
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢*/
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢▢▢▢▢▢▢▢▢▢▢*/
@@ -25,7 +25,7 @@ void sx_pool_print(struct sx_pool * pool)
     for (d = sx_chunk_first_data(c); d; d = sx_chunk_next_data(c, d)) {
       if ((count) % 8 == 0)
         bt_log("\n  ");
-      bt_log("[s: %zu%s%s]", d->size, 
+      bt_log("[s: %zu%s%s]", d->size,
           d->flags & SX_POOL_DATA_FLAG_CACHE ? " c" : "",
           d->flags & SX_POOL_DATA_FLAG_FREE ? " F" : "");
       count++;
@@ -42,7 +42,7 @@ void sx_pool_print_cache(struct sx_pool * pool)
   bt_log("{(cache)\n");
   for (unsigned int i = 0; i < SX_POOL_FCACHE_UBITS_MAX; i++) {
     if (pool->fcache[i].size)
-      bt_log("  [s: %u] * %zu\n", ((i+1)<<4), pool->fcache[i].size);
+      bt_log("  [s: %u] * %zu\n", ((i + 1) << 4), pool->fcache[i].size);
   }
   bt_log("}\n");
 
@@ -51,14 +51,14 @@ void sx_pool_print_cache(struct sx_pool * pool)
 
 BT_SUITE_DEF(sx_util, "s-expression utils tests");
 
-# define N 32
-# define M 128
+#define N 32
+#define M 128
 BT_TEST_DEF_PLAIN(sx_util, sx_pool, "sx_pool")
 {
   struct sx_pool * pool = malloc(sizeof(struct sx_pool));
   char           * arr[N];
   char           * barr[M];
-  unsigned int k;
+  unsigned int     k;
 
   if (!pool)
     return BT_RESULT_FAIL;
@@ -95,8 +95,8 @@ BT_TEST_DEF_PLAIN(sx_util, sx_pool, "sx_pool")
   for (unsigned int i = 0; i < k; i++)
     sx_pool_retmem(pool, arr[i]);
 
-  //sx_pool_print(pool);
-  //sx_pool_print_cache(pool);
+  // sx_pool_print(pool);
+  // sx_pool_print_cache(pool);
 
   bt_log(">> allocate same datums again\n"); k = 0;
   arr[k] = sx_pool_getmem(pool, 16);
@@ -118,8 +118,8 @@ BT_TEST_DEF_PLAIN(sx_util, sx_pool, "sx_pool")
   arr[k] = sx_pool_getmem(pool, 16);
   bt_assert_ptr_not_equal(arr[k++], NULL);
 
-  //sx_pool_print(pool);
-  //sx_pool_print_cache(pool);
+  // sx_pool_print(pool);
+  // sx_pool_print_cache(pool);
 #endif
 #ifdef TEST_S
   bt_log(">> allocate %u datums\n", N);
@@ -128,20 +128,20 @@ BT_TEST_DEF_PLAIN(sx_util, sx_pool, "sx_pool")
     bt_assert_ptr_not_equal(arr[i], NULL);
     memset(arr[i], 0, N);
   }
-  //sx_pool_print(pool);
+  // sx_pool_print(pool);
 
   bt_log(">> free some datums\n");
   for (unsigned int i = 0; i < N; i++) {
     if (i % 4 && i!=6)
       sx_pool_retmem(pool, arr[i]);
   }
-  //sx_pool_print(pool);
-  //sx_pool_print_cache(pool);
+  // sx_pool_print(pool);
+  // sx_pool_print_cache(pool);
 
   bt_log(">> normalize pool\n");
   sx_pool_normalize(pool);
-  //sx_pool_print(pool);
-  //sx_pool_print_cache(pool);
+  // sx_pool_print(pool);
+  // sx_pool_print_cache(pool);
   bt_log(">> allocate 3 datums\n");
   arr[0] = sx_pool_getmem(pool, 256);
   bt_assert_ptr_not_equal(arr[0], NULL);
@@ -153,15 +153,15 @@ BT_TEST_DEF_PLAIN(sx_util, sx_pool, "sx_pool")
   bt_assert_ptr_not_equal(arr[0], NULL);
   arr[12] = sx_pool_getmem(pool, 256);
   bt_assert_ptr_not_equal(arr[0], NULL);
-  //sx_pool_print(pool);
-  //sx_pool_print_cache(pool);
+  // sx_pool_print(pool);
+  // sx_pool_print_cache(pool);
 
   bt_log(">> free %u datums & normalize pool\n", 2);
   sx_pool_retmem(pool, arr[3]);
   sx_pool_retmem(pool, arr[5]);
   sx_pool_normalize(pool);
-  //sx_pool_print(pool);
-  //sx_pool_print_cache(pool);
+  // sx_pool_print(pool);
+  // sx_pool_print_cache(pool);
 
   bt_log(">> clear pool\n");
   sx_pool_clear(pool);
@@ -169,12 +169,12 @@ BT_TEST_DEF_PLAIN(sx_util, sx_pool, "sx_pool")
   bt_log(">> allocate big datum\n");
   arr[0] = sx_pool_getmem(pool, 4032);
   bt_assert_ptr_not_equal(arr[0], NULL);
-  //sx_pool_print(pool);
+  // sx_pool_print(pool);
 
   bt_log(">> allocate _really_ big datum\n");
   arr[0] = sx_pool_getmem(pool, 65536);
   bt_assert_ptr_not_equal(arr[0], NULL);
-  //sx_pool_print(pool);
+  // sx_pool_print(pool);
 
   bt_log(">> clear pool\n");
   sx_pool_clear(pool);
@@ -183,8 +183,8 @@ BT_TEST_DEF_PLAIN(sx_util, sx_pool, "sx_pool")
   arr[0] = sx_pool_getmem(pool, 4001);
   bt_assert_ptr_not_equal(arr[0], NULL);
   sx_pool_normalize(pool);
-  //sx_pool_print(pool);
-  //sx_pool_print_cache(pool);
+  // sx_pool_print(pool);
+  // sx_pool_print_cache(pool);
 
   bt_log(">> clear pool\n");
   sx_pool_clear(pool);
@@ -192,32 +192,32 @@ BT_TEST_DEF_PLAIN(sx_util, sx_pool, "sx_pool")
 #ifdef TEST_B
   bt_log(">> burst allocate \n");
   memset(barr, 0, M * sizeof(char *));
-  for (unsigned int i = 0, j = 0, k=0xffffffff, h = 0xbe8de71f; i < 1024; i++) {
-    j = (h + ((i^h) + 0xff))%M;
+  for (unsigned int i = 0, j = 0, k = 0xffffffff, h = 0xbe8de71f; i < 1024; i++) {
+    j = (h + ((i ^ h) + 0xff)) % M;
     if (barr[j]) {
       sx_pool_retmem(pool, barr[j]);
       barr[j] = NULL;
     } else {
-      while(!(h = ((((h) + 0xaaaaaaaa) ^ 0xeda726ae) & (k-- & 0x3ff)) + 1));
+      while (!(h = ((((h) + 0xaaaaaaaa) ^ 0xeda726ae) & (k-- & 0x3ff)) + 1)) ;
       barr[j] = sx_pool_getmem(pool, h);
       bt_assert_ptr_not_equal(barr[j], NULL);
     }
   }
-  //sx_pool_print(pool);
-  //sx_pool_print_cache(pool);
+  // sx_pool_print(pool);
+  // sx_pool_print_cache(pool);
 
   bt_log(">> clear pool\n");
   sx_pool_clear(pool);
 #endif
 #ifdef TEST_M
   bt_log(">> grow allocate \n");
-  for (unsigned int i = 16; i < 4096*4; i+=16) {
+  for (unsigned int i = 16; i < 4096 * 4; i += 16) {
     barr[0] = sx_pool_getmem(pool, i);
     bt_assert_ptr_not_equal(barr[0], NULL);
     sx_pool_retmem(pool, barr[0]);
   }
   sx_pool_normalize(pool);
-  //sx_pool_print(pool);
+  // sx_pool_print(pool);
 
   bt_log(">> clear pool\n");
   sx_pool_clear(pool);

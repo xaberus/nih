@@ -43,10 +43,10 @@ struct sx_pool {
   struct cache_array fcache[SX_POOL_FCACHE_UBITS_MAX];
 };
 
-void sx_pool_init(struct sx_pool * pool);
-void sx_pool_clear(struct sx_pool * pool);
+void   sx_pool_init(struct sx_pool * pool);
+void   sx_pool_clear(struct sx_pool * pool);
 
 void * sx_pool_getmem(struct sx_pool * pool, size_t size);
 
-void sx_pool_normalize(struct sx_pool * pool);
-void sx_pool_retmem(struct sx_pool * pool, void * data);
+void   sx_pool_normalize(struct sx_pool * pool);
+void   sx_pool_retmem(struct sx_pool * pool, void * data);

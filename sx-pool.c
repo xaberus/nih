@@ -184,7 +184,7 @@ void * sx_pool_getmem(struct sx_pool * pool, size_t size)
   }
 
   if (size >= SX_POOL_FCACHE_MIN && size <= SX_POOL_FCACHE_MAX) {
-    struct cache_array * array = &pool->fcache[(size>>4) - 1];
+    struct cache_array * array = &pool->fcache[(size >> 4) - 1];
     if (array->size) {
       d = array->data[0];
       memmove(array->data, &array->data[1], (array->size - 1) * sizeof(struct data_header *));
@@ -254,7 +254,7 @@ struct data_header * sx_chunk_owns_data(struct chunk_header * chunk, void * data
 static inline
 int sx_pool_chunk_empty(struct chunk_header * chunk)
 {
-  struct data_header  * d;
+  struct data_header * d;
 
   d = sx_chunk_first_data(chunk);
 
@@ -302,7 +302,7 @@ void sx_pool_normalize(struct sx_pool * pool)
         if (!(p->flags & SX_POOL_DATA_FLAG_CACHE)) {
 
           if (p->size >= SX_POOL_FCACHE_MIN && p->size <= SX_POOL_FCACHE_MAX) {
-            struct cache_array * array = &pool->fcache[(p->size>>4) - 1];
+            struct cache_array * array = &pool->fcache[(p->size >> 4) - 1];
             if (array->size < SX_POOL_FCACHE_SIZE) {
               array->data[array->size] = p;
               p->flags |= SX_POOL_DATA_FLAG_CACHE;
@@ -354,7 +354,7 @@ void sx_pool_retmem(struct sx_pool * pool, void * data)
   d->flags |= SX_POOL_DATA_FLAG_FREE;
 
   if (d->size >= SX_POOL_FCACHE_MIN && d->size <= SX_POOL_FCACHE_MAX) {
-    struct cache_array * array = &pool->fcache[(d->size>>4) - 1];
+    struct cache_array * array = &pool->fcache[(d->size >> 4) - 1];
     if (array->size < SX_POOL_FCACHE_SIZE) {
       array->data[array->size] = d;
       d->flags |= SX_POOL_DATA_FLAG_CACHE;
