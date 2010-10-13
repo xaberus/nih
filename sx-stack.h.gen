@@ -11,27 +11,27 @@
 #if defined (SX_STACK_NAME) && defined (SX_STACK_TYPE) && defined (SX_STACK_STATES_PER_PAGE)
 /*
  * one time stack template:
- *
- * (echo -e '#include <stdlib.h>\n#include "sx-pool.h"\n'; gcc -E - <sx-stack.h.gen\
- *  -DSX_STACK_NAME=sx\
- *  -DSX_STACK_TYPE="sx_t *"\
- *  -DSX_STACK_STATES_PER_PAGE=128\
- *  -DSX_STACK_ALLOCATOR=sx_pool_getmem\
- *  -DSX_STACK_DEALLOCATOR=sx_pool_retmem\
- *  -DSX_STACK_ALLOCATOR_TYPE="sx_pool_t *"\
- | sed -e '/#[[:space:]]\+[[:digit:]]\+/d' -e '/^$/d' \
- | ) > sx-stack.h &&\
- | (gcc -E - <sx-stack.h.gen\
- |  -DSX_STACK_NAME=sx_str\
- |  -DSX_STACK_TYPE="sx_str_t *"\
- |  -DSX_STACK_STATES_PER_PAGE=16\
- |  -DSX_STACK_ALLOCATOR=sx_pool_getmem\
- |  -DSX_STACK_DEALLOCATOR=sx_pool_retmem\
- |  -DSX_STACK_ALLOCATOR_TYPE="sx_pool_t *"\
- | sed -e '/#[[:space:]]\+[[:digit:]]\+/d' -e '/^$/d' \
- | ) > sx-str-stack.h
- |
- |
+
+  (echo -e '#include <stdlib.h>\n#include "sx-pool.h"\n'; gcc -E - <sx-stack.h.gen\
+    -DSX_STACK_NAME=sx\
+    -DSX_STACK_TYPE="sx_t *"\
+    -DSX_STACK_STATES_PER_PAGE=128\
+    -DSX_STACK_ALLOCATOR=sx_pool_getmem\
+    -DSX_STACK_DEALLOCATOR=sx_pool_retmem\
+    -DSX_STACK_ALLOCATOR_TYPE="sx_pool_t *"\
+       | sed -e '/#[[:space:]]\+[[:digit:]]\+/d' -e '$!N; /^\(\)\n\1$/!P; D' \
+  ) > sx-stack.h &&\
+ (gcc -E - <sx-stack.h.gen\
+    -DSX_STACK_NAME=sx_str\
+    -DSX_STACK_TYPE="sx_str_t *"\
+    -DSX_STACK_STATES_PER_PAGE=16\
+    -DSX_STACK_ALLOCATOR=sx_pool_getmem\
+    -DSX_STACK_DEALLOCATOR=sx_pool_retmem\
+    -DSX_STACK_ALLOCATOR_TYPE="sx_pool_t *"\
+       | sed -e '/#[[:space:]]\+[[:digit:]]\+/d' -e '$!N; /^\(\)\n\1$/!P; D' \
+  ) > sx-str-stack.h
+
+
  */
 
 # ifndef SX_STACK_TYPE
@@ -54,18 +54,18 @@
 # define __SX_TMP__TYPENAME(__name) __name ## _stack_t
 # define __SX_TMP_TYPENAME(__name) __SX_TMP__TYPENAME(__name)
 
-__SX_TMP_CHUNK(SX_STACK_NAME){
+__SX_TMP_CHUNK(SX_STACK_NAME) {
   __SX_TMP_CHUNK(SX_STACK_NAME) * next;
 };
 
 
-__SX_TMP_PAGE(SX_STACK_NAME){
+__SX_TMP_PAGE(SX_STACK_NAME) {
   __SX_TMP_PAGE(SX_STACK_NAME) * prev;
   unsigned int  count;
   SX_STACK_TYPE data[SX_STACK_STATES_PER_PAGE];
 };
 
-__SX_TMP_STACK(SX_STACK_NAME){
+__SX_TMP_STACK(SX_STACK_NAME) {
   __SX_TMP_PAGE(SX_STACK_NAME) * tail;
 
   __SX_TMP_CHUNK(SX_STACK_NAME) * free;
@@ -78,18 +78,14 @@ typedef __SX_TMP_STACK (SX_STACK_NAME) __SX_TMP_TYPENAME (SX_STACK_NAME);
 # define __SX_TMP__INIT(__name) __name ## _stack_init
 # define __SX_TMP_INIT(__name) __SX_TMP__INIT(__name)
 
-static inline __SX_TMP_STACK(SX_STACK_NAME) *
-__SX_TMP_INIT(SX_STACK_NAME) (SX_STACK_ALLOCATOR_TYPE allocator, __SX_TMP_TYPENAME(SX_STACK_NAME) *
-    stack)
+static inline __SX_TMP_STACK(SX_STACK_NAME) * __SX_TMP_INIT(SX_STACK_NAME)(SX_STACK_ALLOCATOR_TYPE allocator, __SX_TMP_TYPENAME(SX_STACK_NAME) * stack)
 {
   stack->tail = SX_STACK_ALLOCATOR(allocator, sizeof(__SX_TMP_PAGE(SX_STACK_NAME)));
   if (!stack->tail)
     return NULL;
   stack->tail->prev = NULL;
   stack->tail->count = 0;
-
   stack->free = NULL;
-
   stack->allocator = allocator;
 
   return stack;
@@ -101,8 +97,7 @@ __SX_TMP_INIT(SX_STACK_NAME) (SX_STACK_ALLOCATOR_TYPE allocator, __SX_TMP_TYPENA
 # define __SX_TMP__PUSHN(__name) __name ## _stack_pushn
 # define __SX_TMP_PUSHN(__name) __SX_TMP__PUSHN(__name)
 
-static inline SX_STACK_TYPE * __SX_TMP_PUSHN(SX_STACK_NAME) (__SX_TMP_TYPENAME(SX_STACK_NAME) *
-    stack)
+static inline SX_STACK_TYPE* __SX_TMP_PUSHN(SX_STACK_NAME)(__SX_TMP_TYPENAME(SX_STACK_NAME) * stack)
 {
   __SX_TMP_PAGE(SX_STACK_NAME) * page = NULL;
 
@@ -115,7 +110,7 @@ static inline SX_STACK_TYPE * __SX_TMP_PUSHN(SX_STACK_NAME) (__SX_TMP_TYPENAME(S
 
   /* might be allocated by previous calls */
   if (stack->free) {
-    page = (__SX_TMP_PAGE(SX_STACK_NAME) *)stack->free;
+    page = (__SX_TMP_PAGE(SX_STACK_NAME) *) stack->free;
     stack->free = stack->free->next;
   }
 
@@ -136,12 +131,11 @@ static inline SX_STACK_TYPE * __SX_TMP_PUSHN(SX_STACK_NAME) (__SX_TMP_TYPENAME(S
 # define __SX_TMP__PUSH(__name) __name ## _stack_push
 # define __SX_TMP_PUSH(__name) __SX_TMP__PUSH(__name)
 
-static inline SX_STACK_TYPE * __SX_TMP_PUSH(SX_STACK_NAME) (__SX_TMP_TYPENAME(SX_STACK_NAME) *
-    stack, SX_STACK_TYPE data)
+static inline SX_STACK_TYPE* __SX_TMP_PUSH(SX_STACK_NAME)(__SX_TMP_TYPENAME(SX_STACK_NAME) * stack, SX_STACK_TYPE data)
 {
-  SX_STACK_TYPE * d = NULL;
+  SX_STACK_TYPE* d = NULL;
 
-  d = __SX_TMP_PUSHN(SX_STACK_NAME) (stack);
+  d = __SX_TMP_PUSHN(SX_STACK_NAME)(stack);
   if (d)
     *d = data;
 
@@ -157,7 +151,7 @@ static inline SX_STACK_TYPE * __SX_TMP_PUSH(SX_STACK_NAME) (__SX_TMP_TYPENAME(SX
 # define __SX_TMP__TOP(__name) __name ## _stack_top
 # define __SX_TMP_TOP(__name) __SX_TMP__TOP(__name)
 
-static inline SX_STACK_TYPE __SX_TMP_TOP(SX_STACK_NAME) (__SX_TMP_TYPENAME(SX_STACK_NAME) * stack)
+static inline SX_STACK_TYPE __SX_TMP_TOP(SX_STACK_NAME)(__SX_TMP_TYPENAME(SX_STACK_NAME) * stack)
 {
   if (!stack->tail || !stack->tail->count)
     return NULL;
@@ -171,7 +165,7 @@ static inline SX_STACK_TYPE __SX_TMP_TOP(SX_STACK_NAME) (__SX_TMP_TYPENAME(SX_ST
 # define __SX_TMP__POP(__name) __name ## _stack_pop
 # define __SX_TMP_POP(__name) __SX_TMP__POP(__name)
 
-static inline void __SX_TMP_POP(SX_STACK_NAME) (__SX_TMP_TYPENAME(SX_STACK_NAME) * stack)
+static inline void __SX_TMP_POP(SX_STACK_NAME)(__SX_TMP_TYPENAME(SX_STACK_NAME) * stack)
 {
   __SX_TMP_CHUNK(SX_STACK_NAME) * chunk = NULL;
 
@@ -182,7 +176,7 @@ static inline void __SX_TMP_POP(SX_STACK_NAME) (__SX_TMP_TYPENAME(SX_STACK_NAME)
 
   if (stack->tail->prev) {
     if (!stack->tail->count) {
-      chunk = (__SX_TMP_CHUNK(SX_STACK_NAME) *)stack->tail;
+      chunk = (__SX_TMP_CHUNK(SX_STACK_NAME) *) stack->tail;
       stack->tail = stack->tail->prev;
     }
   }
@@ -199,7 +193,7 @@ static inline void __SX_TMP_POP(SX_STACK_NAME) (__SX_TMP_TYPENAME(SX_STACK_NAME)
 # define __SX_TMP__CLEAR(__name) __name ## _stack_clear
 # define __SX_TMP_CLEAR(__name) __SX_TMP__CLEAR(__name)
 
-static inline void __SX_TMP_CLEAR(SX_STACK_NAME) (__SX_TMP_TYPENAME(SX_STACK_NAME) * stack)
+static inline void __SX_TMP_CLEAR(SX_STACK_NAME)(__SX_TMP_TYPENAME(SX_STACK_NAME) * stack)
 {
   {
     __SX_TMP_PAGE(SX_STACK_NAME) * page = NULL;
