@@ -11,57 +11,16 @@
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢*/
 
 
-static inline
-void sx_pool_print(struct sx_pool * pool)
-{
-  struct chunk_header * c;
-  struct data_header  * d;
-  int                   count;
-
-  bt_log("{\n");
-  for (c = pool->tail; c; c = c->prev) {
-    bt_log(" (s: %zu)", c->size);
-    count = 0;
-    for (d = sx_chunk_first_data(c); d; d = sx_chunk_next_data(c, d)) {
-      if ((count) % 8 == 0)
-        bt_log("\n  ");
-      bt_log("[s: %zu%s%s]", d->size,
-          d->flags & SX_POOL_DATA_FLAG_CACHE ? " c" : "",
-          d->flags & SX_POOL_DATA_FLAG_FREE ? " F" : "");
-      count++;
-    }
-    bt_log("\n");
-  }
-  bt_log("}\n");
-}
-
-static inline
-void sx_pool_print_cache(struct sx_pool * pool)
-{
-
-  bt_log("{(cache)\n");
-  for (unsigned int i = 0; i < SX_POOL_FCACHE_UBITS_MAX; i++) {
-    if (pool->fcache[i].size)
-      bt_log("  [s: %u] * %zu\n", ((i + 1) << 4), pool->fcache[i].size);
-  }
-  bt_log("}\n");
-
-}
-
-
 BT_SUITE_DEF(sx_util, "s-expression utils tests");
 
 #define N 32
 #define M 128
 BT_TEST_DEF_PLAIN(sx_util, sx_pool, "sx_pool")
 {
-  struct sx_pool * pool = malloc(sizeof(struct sx_pool));
-  char           * arr[N];
-  char           * barr[M];
-  unsigned int     k;
-
-  if (!pool)
-    return BT_RESULT_FAIL;
+  sx_pool_t    pool[1];
+  char       * arr[N];
+  char       * barr[M];
+  unsigned int k;
 
   sx_pool_init(pool);
 
@@ -224,8 +183,6 @@ BT_TEST_DEF_PLAIN(sx_util, sx_pool, "sx_pool")
 #endif
   bt_log(">> clear pool\n");
   sx_pool_clear(pool);
-
-  free(pool);
 
   return BT_RESULT_OK;
 }

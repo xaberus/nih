@@ -2,7 +2,9 @@
 #include <string.h>
 #include "sx-pool.h"
 
-void sx_pool_init(struct sx_pool * pool)
+/*#define VERBOSETEST*/
+
+void sx_pool_init(sx_pool_t * pool)
 {
   pool->head = pool->tail = NULL;
   pool->counter = 0;
@@ -12,7 +14,7 @@ void sx_pool_init(struct sx_pool * pool)
   }
 }
 
-void sx_pool_clear(struct sx_pool * pool)
+void sx_pool_clear(sx_pool_t * pool)
 {
   struct chunk_header * c;
   struct chunk_header * prev;
@@ -29,7 +31,7 @@ void sx_pool_clear(struct sx_pool * pool)
 #define ALIGN4096(_size) (((_size) + 4095L) & ~4095L)
 #define ALIGN16(_size) (((_size) + 15L) & ~15L)
 
-struct chunk_header * sx_pool_chunk_allocate(struct sx_pool * pool, size_t size)
+struct chunk_header * sx_pool_chunk_allocate(sx_pool_t * pool, size_t size)
 {
   if (!pool || !size)
     return NULL;
@@ -167,10 +169,55 @@ void * sx_pool_data_to_pointer(struct data_header * data)
   return NULL;
 }
 
-void * sx_pool_getmem(struct sx_pool * pool, size_t size)
+#ifdef TEST
+# include <bt.h>
+static inline
+void sx_pool_print(sx_pool_t * pool)
+{
+  struct chunk_header * c;
+  struct data_header  * d;
+  int                   count;
+
+  bt_log("{\n");
+  for (c = pool->tail; c; c = c->prev) {
+    bt_log(" (s: %zu)", c->size);
+    count = 0;
+    for (d = sx_chunk_first_data(c); d; d = sx_chunk_next_data(c, d)) {
+      if ((count) % 8 == 0)
+        bt_log("\n  ");
+      bt_log("[s: %zu%s%s]", d->size,
+          d->flags & SX_POOL_DATA_FLAG_CACHE ? " c" : "",
+          d->flags & SX_POOL_DATA_FLAG_FREE ? " F" : "");
+      count++;
+    }
+    bt_log("\n");
+  }
+  bt_log("}\n");
+}
+
+static inline
+void sx_pool_print_cache(sx_pool_t * pool)
+{
+
+  bt_log("{(cache)\n");
+  for (unsigned int i = 0; i < SX_POOL_FCACHE_UBITS_MAX; i++) {
+    if (pool->fcache[i].size)
+      bt_log("  [s: %u] * %zu\n", ((i + 1) << 4), pool->fcache[i].size);
+  }
+  bt_log("}\n");
+
+}
+
+#endif /* TEST */
+
+void * sx_pool_getmem(sx_pool_t * pool, size_t size)
 {
   if (!pool || !size)
     return NULL;
+
+#if defined (TEST) && defined (VERBOSETEST)
+  sx_pool_print(pool);
+#endif
 
   size = ALIGN16(size);
 
@@ -229,6 +276,11 @@ void * sx_pool_getmem(struct sx_pool * pool, size_t size)
   if (d)
     d->flags = 0;
 
+#if defined (TEST) && defined (VERBOSETEST)
+  sx_pool_print(pool);
+  bt_log("END\n");
+#endif
+
   return sx_pool_data_to_pointer(d);
 }
 
@@ -265,7 +317,7 @@ int sx_pool_chunk_empty(struct chunk_header * chunk)
   return 0;
 }
 
-void sx_pool_normalize(struct sx_pool * pool)
+void sx_pool_normalize(sx_pool_t * pool)
 {
   struct chunk_header * chunk;
   struct chunk_header * chunk_next;
@@ -336,10 +388,15 @@ void sx_pool_normalize(struct sx_pool * pool)
   }
 }
 
-void sx_pool_retmem(struct sx_pool * pool, void * data)
+void sx_pool_retmem(sx_pool_t * pool, void * data)
 {
   struct chunk_header * c, * p;
   struct data_header  * d;
+
+
+#if defined (TEST) && defined (VERBOSETEST)
+  sx_pool_print(pool);
+#endif
 
   for (c = pool->tail, p = NULL; c; c = c->prev) {
     if ((d = sx_chunk_owns_data(c, data))) {
@@ -364,6 +421,12 @@ void sx_pool_retmem(struct sx_pool * pool, void * data)
 
   if (pool->counter++ % 32 == 0)
     sx_pool_normalize(pool);
+
+#if defined (TEST) && defined (VERBOSETEST)
+  sx_pool_print(pool);
+  bt_log("END\n");
+#endif
+
 }
 
 #include "sx-pool-test.c"

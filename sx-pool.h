@@ -1,4 +1,8 @@
+#ifndef _SX_POOL_H
+#define _SX_POOL_H
+
 #include <stdlib.h>
+#include <stdint.h>
 
 /*
  * [[#next#][#size#]{#size#}{data ...}{#size#}{data ...}....
@@ -34,6 +38,7 @@ struct cache_array {
   struct data_header * data[SX_POOL_FCACHE_SIZE];
 };
 
+
 struct sx_pool {
   struct chunk_header * head;
   struct chunk_header * tail;
@@ -42,11 +47,14 @@ struct sx_pool {
 
   struct cache_array fcache[SX_POOL_FCACHE_UBITS_MAX];
 };
+typedef struct sx_pool sx_pool_t;
 
-void   sx_pool_init(struct sx_pool * pool);
-void   sx_pool_clear(struct sx_pool * pool);
+void   sx_pool_init(sx_pool_t * pool);
+void   sx_pool_clear(sx_pool_t * pool);
 
-void * sx_pool_getmem(struct sx_pool * pool, size_t size);
+void * sx_pool_getmem(sx_pool_t * pool, size_t size);
 
-void   sx_pool_normalize(struct sx_pool * pool);
-void   sx_pool_retmem(struct sx_pool * pool, void * data);
+void   sx_pool_normalize(sx_pool_t * pool);
+void   sx_pool_retmem(sx_pool_t * pool, void * data);
+
+#endif /* _SX_POOL_H */
