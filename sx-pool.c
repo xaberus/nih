@@ -438,4 +438,4 @@ void sx_pool_retmem(sx_pool_t * pool, void * data)
 
 }
 
-#include "sx-pool-test.c"
+#include "tests/sx-pool-tests.c"

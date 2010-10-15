@@ -396,6 +396,6 @@ blob_t * blob_realloc(blob_t * ctx, blob_t * blob, size_t size, blob_t * null_ct
 }
 
 
-#include "blobtree-test.c"
+#include "tests/blobtree-tests.c"
 
 // vim: filetype=c:expandtab:shiftwidth=2:tabstop=4:softtabstop=2:encoding=utf-8:textwidth=100
