@@ -109,6 +109,7 @@ void sx_strgen_clear(sx_strgen_t * gen)
     sx_pool_retmem(gen->allocator, sxstr);
     sx_str_stack_pop(gen->stack);
   }
+  sx_str_stack_clear(gen->stack);
 }
 
 struct sx_strgen * sx_strgen_reset(sx_strgen_t * gen)
@@ -185,7 +186,7 @@ BT_TEST_DEF_PLAIN(sx_util, sx_strgen, "strgen")
   sx_str_t         * str = NULL;
   char               buff[10], * p;
 
-  sx_pool_init(test->pool);
+  bt_assert_ptr_not_equal(sx_pool_init(test->pool), NULL);
   bt_assert_ptr_not_equal(sx_strgen_init(test->pool, test->gen), NULL);
 
   for (unsigned int n = 0; n < 3; n++) {
@@ -208,6 +209,7 @@ BT_TEST_DEF_PLAIN(sx_util, sx_strgen, "strgen")
         return BT_RESULT_FAIL;
       }
     }
+    sx_pool_retmem(test->pool, str);
     sx_strgen_reset(test->gen);
   }
 
