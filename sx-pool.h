@@ -49,7 +49,7 @@ struct sx_pool {
 };
 typedef struct sx_pool sx_pool_t;
 
-void   sx_pool_init(sx_pool_t * pool);
+sx_pool_t * sx_pool_init(sx_pool_t * pool);
 void   sx_pool_clear(sx_pool_t * pool);
 
 void * sx_pool_getmem(sx_pool_t * pool, size_t size);

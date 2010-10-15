@@ -4,7 +4,7 @@
 
 /*#define VERBOSETEST*/
 
-void sx_pool_init(sx_pool_t * pool)
+sx_pool_t * sx_pool_init(sx_pool_t * pool)
 {
   pool->head = pool->tail = NULL;
   pool->counter = 0;
@@ -12,6 +12,8 @@ void sx_pool_init(sx_pool_t * pool)
   for (unsigned int i = 0; i < SX_POOL_FCACHE_UBITS_MAX; i++) {
     memset(&pool->fcache[i], 0, sizeof(struct cache_array));
   }
+
+  return pool;
 }
 
 void sx_pool_clear(sx_pool_t * pool)
@@ -212,6 +214,9 @@ void sx_pool_print_cache(sx_pool_t * pool)
 
 void * sx_pool_getmem(sx_pool_t * pool, size_t size)
 {
+#ifdef NPOOL
+  return malloc(size);
+#endif
   if (!pool || !size)
     return NULL;
 
@@ -390,6 +395,10 @@ void sx_pool_normalize(sx_pool_t * pool)
 
 void sx_pool_retmem(sx_pool_t * pool, void * data)
 {
+#ifdef NPOOL
+  free(data);
+  return;
+#endif
   struct chunk_header * c, * p;
   struct data_header  * d;
 
