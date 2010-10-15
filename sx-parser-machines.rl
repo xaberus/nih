@@ -57,13 +57,15 @@
   iden = alnum|[_:@\.];
 
   int = 
-      ((('-' @a_int_sign)? (
+      ((('-' @a_int_sign | '+' @a_int_psign)? (
           ('0y' (bdigit @a_int_bin)+)
         | ('0o' (odigit @a_int_oct)+)
         | (     (digit  @a_int_dec)+)
         | ('0x' (xdigit @a_int_hex)+)
       )) >a_int_in @a_int_out );
 
-  plain = ((iden - ([\-]|digit)) iden*) >a_plain_in;
+  plain = ((iden - ([\-+]|digit)) iden*) >a_plain_in;
 
 }%%
+
+// vim: filetype=c:syn=ragel

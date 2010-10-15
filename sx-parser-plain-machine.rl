@@ -84,6 +84,11 @@
     sx->isuint = 0;
     sx->issint = 1;
   }
+  action a_int_psign {
+    sign = 0;
+    sx->isuint = 0;
+    sx->issint = 1;
+  }
   action a_int_in {
     u = 0;
     sign = 0;
@@ -103,7 +108,7 @@
     else if (sx->issint)
       if (!sign && u <= INT64_MAX)
         sx->atom.sint = (int64_t)u;
-      else if (sign && (u < 0x7ffffffffffffffe))
+      else if (sign && (u <= 0x7ffffffffffffffe))
         sx->atom.sint = (int64_t)(-u);
       else {
         sx->issint = sx->isuint = 0;
@@ -153,3 +158,5 @@ err_t sx_parser_atom_plain_fsm(sx_parser_t * parser, sx_t * sx, sx_str_t * str)
 
   return parser->err;
 }
+
+// vim: filetype=c:syn=ragel
