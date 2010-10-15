@@ -39,4 +39,3 @@ unsigned int sx_parser_encode_utf8(uint64_t u, uint8_t b[6])
   }
   return 0;
 }
-

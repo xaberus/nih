@@ -148,7 +148,7 @@ err_t sx_atom_init_string(sx_t * sx, sx_parser_t * parser, sx_str_t * str)
         sx->atom.string = str;
         parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
         goto out;
-      } else 
+      } else
         goto atom_quote_garbage;
 
 atom_quote_garbage:
@@ -433,6 +433,7 @@ err_t sx_parser_read(sx_parser_t * parser, const char * buffer, size_t length)
 const char * sx_parser_strerror(sx_parser_t * parser)
 {
   enum sx_parser_error error = parser->err.extra;
+
   switch (error) {
     case SX_ERROR_SUCCESS:
       return "success";
@@ -454,4 +455,79 @@ const char * sx_parser_strerror(sx_parser_t * parser)
   return NULL;
 }
 
-#include "sx-parser-tests.c"
+static inline
+sx_t * sx_get_last(sx_t * sx)
+{
+  while (sx && sx->next)
+    sx = sx->next;
+
+  return sx;
+}
+
+void sx_parser_free_nodes(sx_parser_t * parser, sx_t * sx)
+{
+  /*
+   *  assertion: no stack tracher needed!
+   *  assumptions:
+   *  - top level list is shorter than bottom level
+   *  - o(n) performance on rach level is still better than stack overflows
+   */
+  sx_t * f;
+  sx_t * l;
+
+  while (sx) {
+    f = sx; sx = sx->next;
+
+    if (f->isatom)
+      sx_atom_clear(f, parser);
+    else if (f->islist) {
+      l = sx_get_last(f);
+      if (l != f)
+        l->next = f->list;
+      else
+        sx = f->list;
+    }
+
+    sx_pool_retmem(parser->pool, f);
+  }
+  /* q.e.d */
+}
+
+
+sx_parser_t * sx_parser_init(sx_parser_t * parser)
+{
+  if (!parser)
+    return NULL;
+
+  memset(parser, 0, sizeof(sx_parser_t));
+
+  parser->s = SX_PARSER_INTERMEDIATE;
+  parser->line = 1;
+
+
+  if (!sx_pool_init(parser->pool))
+    return NULL;
+
+  if (!sx_stack_init(parser->pool, parser->stack)) {
+    sx_pool_clear(parser->pool);
+    return NULL;
+  }
+
+  if (!sx_strgen_init(parser->pool, parser->gen)) {
+    sx_stack_clear(parser->stack);
+    sx_pool_clear(parser->pool);
+    return NULL;
+  }
+
+  return parser;
+}
+
+void sx_parser_clear(sx_parser_t * parser)
+{
+  sx_parser_free_nodes(parser, parser->root);
+  sx_strgen_clear(parser->gen);
+  sx_stack_clear(parser->stack);
+  sx_pool_clear(parser->pool);
+}
+
+#include "tests/sx-parser-tests.c"

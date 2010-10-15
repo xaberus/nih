@@ -39,4 +39,3 @@ uint32_t sx_parser_decode_utf8(uint32_t * state, uint32_t * codep, uint8_t byte)
   *state = utf8d[256 + *state * 16 + type];
   return *state;
 }
-

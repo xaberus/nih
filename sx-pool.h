@@ -50,11 +50,11 @@ struct sx_pool {
 typedef struct sx_pool sx_pool_t;
 
 sx_pool_t * sx_pool_init(sx_pool_t * pool);
-void   sx_pool_clear(sx_pool_t * pool);
+void        sx_pool_clear(sx_pool_t * pool);
 
-void * sx_pool_getmem(sx_pool_t * pool, size_t size);
+void *      sx_pool_getmem(sx_pool_t * pool, size_t size);
 
-void   sx_pool_normalize(sx_pool_t * pool);
-void   sx_pool_retmem(sx_pool_t * pool, void * data);
+void        sx_pool_normalize(sx_pool_t * pool);
+void        sx_pool_retmem(sx_pool_t * pool, void * data);
 
 #endif /* _SX_POOL_H */
