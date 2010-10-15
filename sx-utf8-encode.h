@@ -1,5 +1,11 @@
 #include <stdint.h>
 
+/*
+ * TODO: check if this compies with:
+ *  http://www.unicode.org/versions/Unicode5.0.0/ch03.pdf#G7404
+ */
+
+
 static inline
 unsigned int sx_parser_encode_utf8(uint64_t u, uint8_t b[6])
 {
