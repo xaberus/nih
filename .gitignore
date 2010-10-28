@@ -7,7 +7,7 @@
 colorgcc
 colorgccrc.txt
 Makefile
-CMakeFiles/*
+*CMakeFiles*
 CMakeCache.txt
 cmake_install.cmake
 sx-parser-sq-machine.c
