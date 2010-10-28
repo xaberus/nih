@@ -19,4 +19,6 @@ FIELD(sx_t *, root)
 FIELD(unsigned int, depth)
 FIELD(unsigned int, line)
 
+FIELD(unsigned int, aline)
+
 FIELD(err_t, err)

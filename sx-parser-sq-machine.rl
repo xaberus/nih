@@ -11,7 +11,26 @@
 
   action a_escape_char {
     /*bt_log("escape <%c>\n", *p);*/
-    *w = (unsigned char)*p; w++;
+    switch (*p) {
+      case '0':
+        *w = '\0'; w++; break;
+      case 'a':
+        *w = '\a'; w++; break;
+      case 'b':
+        *w = '\b'; w++; break;
+      case 'f':
+        *w = '\f'; w++; break;
+      case 'n':
+        *w = '\n'; w++; break;
+      case 'r':
+        *w = '\r'; w++; break;
+      case 't':
+        *w = '\t'; w++; break;
+      case 'v':
+        *w = '\v'; w++; break;
+      default:
+        *w = (unsigned char)*p; w++;
+    }
   }
   action a_escape_clear {
     u = 0;

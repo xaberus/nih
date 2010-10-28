@@ -4,6 +4,8 @@
 
 /*#define VERBOSETEST*/
 
+#define REDZONE 16
+
 sx_pool_t * sx_pool_init(sx_pool_t * pool)
 {
   pool->head = pool->tail = NULL;
@@ -26,11 +28,18 @@ void sx_pool_clear(sx_pool_t * pool)
     free(c);
   }
 
-  sx_pool_init(pool);
+  for (unsigned int i = 0; i < SX_POOL_FCACHE_UBITS_MAX; i++) {
+    memset(&pool->fcache[i], 0, sizeof(struct cache_array));
+  }
+
+  pool->head = pool->tail = NULL;
+  pool->counter = 0;
+
 }
 
 
 #define ALIGN4096(_size) (((_size) + 4095L) & ~4095L)
+#define ALIGN8192(_size) (((_size) + 8191L) & ~8191L)
 #define ALIGN16(_size) (((_size) + 15L) & ~15L)
 
 struct chunk_header * sx_pool_chunk_allocate(sx_pool_t * pool, size_t size)
@@ -42,7 +51,7 @@ struct chunk_header * sx_pool_chunk_allocate(sx_pool_t * pool, size_t size)
   struct chunk_header * h;
   struct data_header  * d;
 
-  size = ALIGN4096(size);
+  size = ALIGN8192(size);
 
   p = malloc(size);
   if (!p)
@@ -113,7 +122,7 @@ struct data_header * sx_chunk_next_data(struct chunk_header * chunk, struct data
 {
   char * start = (char *) chunk + sizeof(struct chunk_header);
   char * end = start + chunk->size;
-  char * pos = (char *) data + sizeof(struct data_header) + data->size;
+  char * pos = (char *) data + sizeof(struct data_header) + (data->size + REDZONE);
 
   if (pos < end && (size_t) (end - pos) > sizeof(struct data_header))
     return (struct data_header *) pos;
@@ -124,7 +133,7 @@ struct data_header * sx_chunk_next_data(struct chunk_header * chunk, struct data
 static inline
 int sx_data_splitable(struct data_header * data, size_t size)
 {
-  if (data->size > sizeof(struct data_header) + size)
+  if (data->size > (sizeof(struct data_header) + size + REDZONE))
     return 1;
 
   return 0;
@@ -142,8 +151,8 @@ struct data_header * sx_chunk_data_split(struct chunk_header * chunk,
 
   char * part_a = (char *) data;
   size_t part_a_size = size;
-  char * part_b = (char *) data + sizeof(struct data_header) + size;
-  size_t part_b_size = data->size - size - sizeof(struct data_header);
+  char * part_b = (char *) data + sizeof(struct data_header) + (size + REDZONE);
+  size_t part_b_size = data->size - size - sizeof(struct data_header) - REDZONE;
 
   if (part_a + sizeof(struct data_header) + part_a_size < end) {
     if (part_b + sizeof(struct data_header) + part_b_size <= end) {
@@ -221,6 +230,7 @@ void * sx_pool_getmem(sx_pool_t * pool, size_t size)
     return NULL;
 
 #if defined (TEST) && defined (VERBOSETEST)
+  bt_log("<<START alloc %zu\n", size);
   sx_pool_print(pool);
 #endif
 
@@ -235,6 +245,9 @@ void * sx_pool_getmem(sx_pool_t * pool, size_t size)
     pool->head = pool->tail;
   }
 
+  if (pool->counter > 10)
+    sx_pool_normalize(pool);
+
   if (size >= SX_POOL_FCACHE_MIN && size <= SX_POOL_FCACHE_MAX) {
     struct cache_array * array = &pool->fcache[(size >> 4) - 1];
     if (array->size) {
@@ -246,6 +259,9 @@ void * sx_pool_getmem(sx_pool_t * pool, size_t size)
 
   struct chunk_header * c;
   if (!d) {
+    /* search was needed */
+    pool->counter++;
+
     struct data_header * t;
 
     c = pool->tail;
@@ -254,7 +270,8 @@ void * sx_pool_getmem(sx_pool_t * pool, size_t size)
       while (!d && t) {
         if (!(t->flags & SX_POOL_DATA_FLAG_FREE) || (t->flags & SX_POOL_DATA_FLAG_CACHE)) {
           t = sx_chunk_next_data(c, t);
-        } else if (t->size + sizeof(struct data_header) < size) {
+        } else if (t->size < sizeof(struct data_header) 
+          || t->size - sizeof(struct data_header) < size) {
           t = sx_chunk_next_data(c, t);
         } else {
           if (t->size == size)
@@ -282,8 +299,9 @@ void * sx_pool_getmem(sx_pool_t * pool, size_t size)
     d->flags = 0;
 
 #if defined (TEST) && defined (VERBOSETEST)
+  bt_log("<<AND\n");
   sx_pool_print(pool);
-  bt_log("END\n");
+  bt_log("<<END\n");
 #endif
 
   return sx_pool_data_to_pointer(d);
@@ -328,6 +346,17 @@ void sx_pool_normalize(sx_pool_t * pool)
   struct chunk_header * chunk_next;
   struct chunk_header * chunk_prev;
   struct data_header  * d, * p;
+  unsigned int min = 0;
+
+  /* check cache */
+  for (unsigned int i = 0; i < SX_POOL_FCACHE_UBITS_MAX; i++) {
+    struct cache_array * array = &pool->fcache[i];
+    min = array->size < min ? array->size : min;
+  }
+
+  /* seach was needed not doue to empty caches */
+  if (min > 1)
+    return;
 
   /* drop chache */
   for (unsigned int i = 0; i < SX_POOL_FCACHE_UBITS_MAX; i++) {
@@ -337,6 +366,8 @@ void sx_pool_normalize(sx_pool_t * pool)
     }
     memset(&pool->fcache[i], 0, sizeof(struct cache_array));
   }
+
+  pool->counter = 0;
 
   chunk = pool->tail;
   chunk_next = NULL;
@@ -404,6 +435,7 @@ void sx_pool_retmem(sx_pool_t * pool, void * data)
 
 
 #if defined (TEST) && defined (VERBOSETEST)
+  bt_log(">>START\n");
   sx_pool_print(pool);
 #endif
 
@@ -428,12 +460,13 @@ void sx_pool_retmem(sx_pool_t * pool, void * data)
     }
   }
 
-  if (pool->counter++ % 32 == 0)
+  if (pool->counter > 10)
     sx_pool_normalize(pool);
 
 #if defined (TEST) && defined (VERBOSETEST)
+  bt_log(">>AND\n");
   sx_pool_print(pool);
-  bt_log("END\n");
+  bt_log(">>END\n");
 #endif
 
 }

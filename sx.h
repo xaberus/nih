@@ -14,7 +14,7 @@ typedef struct sx sx_t;
 union sx_atom {
   sx_str_t * string;
   uint64_t uint;
-  uint64_t sint;
+  int64_t sint;
 };
 
 #include "sx-utf8-decode.h"

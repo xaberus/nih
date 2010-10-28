@@ -24,7 +24,7 @@ int sx_is_whitespace(uint32_t uc)
 }
 
 static inline
-const char * sx_utf8_readon(const char * ba, const char * be, struct sx_ucr * ucr)
+const char * sx_utf8_readon(const char * br, const char * be, struct sx_ucr * ucr)
 {
   struct sx_ucr u = *ucr;
   char          c;
@@ -35,9 +35,9 @@ const char * sx_utf8_readon(const char * ba, const char * be, struct sx_ucr * uc
   if (u.s == 0)
     u.l = 0;
 
-  if (ba < be) {
-    while (ba < be) {
-      c = *(ba++);
+  if (br < be) {
+    while (br < be) {
+      c = *(br++);
       if (sx_parser_decode_utf8(&u.s, &u.c, c) != 0) {
         if (u.s != 1) {
           u.n[u.l++] = c;
@@ -49,13 +49,17 @@ const char * sx_utf8_readon(const char * ba, const char * be, struct sx_ucr * uc
       u.n[u.l++] = c;
       break;
     }
+    /* we obviusly could not read the whole sequence */
+    if (u.s > 1) {
+      u.eob = 1;
+    }
   } else {
     u.eob = 1;
   }
 
   *ucr = u;
 
-  return ba;
+  return br;
 utf8_error:
   u.err = 1;
   *ucr = u;
@@ -81,11 +85,12 @@ utf8_error:
     })
 
 
-#define SETTRANS(_target, _state) \
+#define GTRANS(_state, _label) \
   __extension__({ \
-      parser->bp = _target; \
       parser->s = _state; \
+      goto _label;\
     })
+
 
 static inline
 void sx_list_init(sx_t * sx)
@@ -118,7 +123,7 @@ err_t sx_atom_init_string(sx_t * sx, sx_parser_t * parser, sx_str_t * str)
   memset(sx, 0, sizeof(sx_t));
   sx->isatom = 1;
 
-  sx->line = parser->line;
+  sx->line = parser->aline;
 
   switch (parser->at) {
     case SX_ATOM_PLAIN:
@@ -132,8 +137,10 @@ err_t sx_atom_init_string(sx_t * sx, sx_parser_t * parser, sx_str_t * str)
         sx->isdquot = 1;
 
 
-        if (sx_parser_atom_dq_fsm(parser, str).composite != 0)
+        if (sx_parser_atom_dq_fsm(parser, str).composite != 0) {
+          sx_pool_retmem(parser->pool, str);
           goto out;
+        }
 
         sx->atom.string = str;
 
@@ -142,8 +149,10 @@ err_t sx_atom_init_string(sx_t * sx, sx_parser_t * parser, sx_str_t * str)
       } else if (parser->ss == '\'') {
         sx->issquot = 1;
 
-        if (sx_parser_atom_sq_fsm(parser, str).composite != 0)
+        if (sx_parser_atom_sq_fsm(parser, str).composite != 0) {
+          sx_pool_retmem(parser->pool, str);
           goto out;
+        }
 
         sx->atom.string = str;
         parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
@@ -168,48 +177,61 @@ out:
 err_t sx_parser_events(sx_parser_t * parser, sx_event_function_t * ef)
 {
   while (parser->bp < parser->be) {
-    switch (parser->s) {
-      case SX_PARSER_INTERMEDIATE:
-        UTF8_READ(parser->bp);
 
-        if (sx_is_whitespace(parser->u.c)) {
-          if (parser->u.c == '\n')
-            parser->line++;
-          parser->bp = parser->ba;
-          continue;
-        } else if (parser->u.c == ';') {
+    UTF8_READ(parser->bp);
+
+    if (parser->u.c == '\n')
+      parser->line++;
+
+
+    switch (parser->s) {
+      /************************************/
+      case SX_PARSER_INTERMEDIATE:
+intermediate:
+        if (sx_is_whitespace(parser->u.c))
+          TRANS(parser->ba, SX_PARSER_INTERMEDIATE);
+        else if (parser->u.c == ';') {
           TRANS(parser->ba, SX_PARSER_COMMENT);
         }
 
-        if (parser->u.c == '(') {
-          TRANS(parser->bp, SX_PARSER_LIST_START);
-        } else if (parser->u.c == ')') {
-          TRANS(parser->bp, SX_PARSER_LIST_END);
-        }
+        if (parser->u.c == '(')
+          GTRANS(SX_PARSER_LIST_START, list_start);
+        else if (parser->u.c == ')')
+          GTRANS(SX_PARSER_LIST_END, list_end);
 
-        TRANS(parser->bp, SX_PARSER_ATOM_START);
+        GTRANS(SX_PARSER_ATOM_START, atom_start);
+
+      /************************************/
       case SX_PARSER_COMMENT:
-        UTF8_READ(parser->bp);
         if (parser->u.c != '\n')
           TRANS(parser->ba, SX_PARSER_COMMENT);
-        TRANS(parser->ba, SX_PARSER_INTERMEDIATE);
+        GTRANS(SX_PARSER_INTERMEDIATE, intermediate);
+
+      /************************************/
       case SX_PARSER_LIST_START:
+list_start:
         if (ef(parser).composite)
           goto error_in_event;
         parser->depth++;
         TRANS(parser->ba, SX_PARSER_INTERMEDIATE);
+
+      /************************************/
       case SX_PARSER_LIST_END:
+list_end:
         if (parser->depth == 0)
           goto paren_mismatch;
         parser->depth--;
         if (ef(parser).composite)
           goto error_in_event;
         TRANS(parser->ba, SX_PARSER_INTERMEDIATE);
-      case SX_PARSER_ATOM_START:
-        UTF8_READ(parser->bp);
 
+      /************************************/
+      case SX_PARSER_ATOM_START:
+atom_start:
         if (!sx_strgen_reset(parser->gen))
           goto out_of_memory;
+
+        parser->aline = parser->line;
 
         if (ef(parser).composite)
           goto error_in_event;
@@ -219,21 +241,21 @@ err_t sx_parser_events(sx_parser_t * parser, sx_event_function_t * ef)
           parser->at = SX_ATOM_QUOTE;
           if (parser->u.l != sx_strgen_append(parser->gen, parser->u.n, parser->u.l))
             goto out_of_memory;
-          SETTRANS(parser->ba, SX_PARSER_ESTRING);
-        } else {
-          parser->at = SX_ATOM_PLAIN;
-          SETTRANS(parser->bp, SX_PARSER_STRING);
+          TRANS(parser->ba, SX_PARSER_ESTRING);
         }
 
-        continue;
+        parser->at = SX_ATOM_PLAIN;
+        GTRANS(SX_PARSER_STRING, string);
+
+      /************************************/
       case SX_PARSER_STRING:
-        UTF8_READ(parser->bp);
+string:
         if (!sx_is_whitespace(parser->u.c)) {
           if (parser->u.c == ')')
-            TRANS(parser->bp, SX_PARSER_ATOM_END);
+            GTRANS(SX_PARSER_ATOM_END, atom_end);
           else if (parser->u.c == '"' || parser->u.c == '\'')
-            goto malformed_atom;
-          else if (parser->u.c >=32 /*&& parser->u.c <= 126*/) {
+            GTRANS(SX_PARSER_ATOM_END, atom_end);
+          else {
             if (parser->u.l != sx_strgen_append(parser->gen, parser->u.n, parser->u.l))
               goto out_of_memory;
             TRANS(parser->ba, SX_PARSER_STRING);
@@ -241,10 +263,10 @@ err_t sx_parser_events(sx_parser_t * parser, sx_event_function_t * ef)
           goto malformed_atom;
         }
 
-        TRANS(parser->bp, SX_PARSER_ATOM_END);
-      case SX_PARSER_ESTRING:
-        UTF8_READ(parser->bp);
+        GTRANS(SX_PARSER_ATOM_END, atom_end);
 
+      /************************************/
+      case SX_PARSER_ESTRING:
         if (parser->es == 0 && parser->u.c == parser->ss) {
           if (parser->u.l != sx_strgen_append(parser->gen, parser->u.n, parser->u.l))
             goto out_of_memory;
@@ -256,19 +278,21 @@ err_t sx_parser_events(sx_parser_t * parser, sx_event_function_t * ef)
           if (parser->u.l != sx_strgen_append(parser->gen, parser->u.n, parser->u.l))
             goto out_of_memory;
         } else {
-          if (parser->u.c == '\n')
-            parser->line++;
-
           if (parser->u.l != sx_strgen_append(parser->gen, parser->u.n, parser->u.l))
             goto out_of_memory;
           parser->es = 0;
         }
 
         TRANS(parser->ba, SX_PARSER_ESTRING);
+
+      /************************************/
       case SX_PARSER_ATOM_END:
+atom_end:
         if (ef(parser).composite)
           goto error_in_event;
-        TRANS(parser->bp, SX_PARSER_INTERMEDIATE);
+        GTRANS(SX_PARSER_INTERMEDIATE, intermediate);
+
+      /************************************/
       case SX_PARSER_ERROR:
         parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_UNHANDLED);
     }

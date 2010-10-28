@@ -32,6 +32,7 @@
         (
           (((string_char >a_string_char_in @a_string_char_out)+ -- ('\\') | escape)+ -- ("'"|"\\'"))
           | ("\\'" @a_escape_char)
+          | ('\\"' @a_escape_char)
           | ("\\\\" @a_escape_char)
         )*
       "'"
@@ -43,6 +44,7 @@
         (
           (((string_char >a_string_char_in @a_string_char_out)+ -- ('\\') | escape)+ -- ('"'|'\\"'))
           | ("\\'" @a_escape_char)
+          | ('\\"' @a_escape_char)
           | ("\\\\" @a_escape_char)
         )*
       '"'
@@ -54,7 +56,7 @@
   bdigit = ('0'..'1');
 
   # this was >> iden = utf8_char -- ([\t\n\r\v ]); << but did not make too mauch sense...
-  iden = alnum|[_:@\.];
+  iden = alnum|[_:@\.\-!,#];
 
   int = 
       ((('-' @a_int_sign | '+' @a_int_psign)? (

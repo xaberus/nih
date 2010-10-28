@@ -11,7 +11,8 @@ struct sx_str {
   char buffer[];
 };
 
-#define SX_STR_ALLOC_SIZE(length) (sizeof(struct sx_str) + length)
+#define SX_STR_ALLOC_SIZE(length) (sizeof(struct sx_str) + (length))
+#define SX_STR_SIZE_FROM_ALLOC(_alloc) ((_alloc) - sizeof(struct sx_str))
 
 typedef struct sx_str sx_str_t;
 

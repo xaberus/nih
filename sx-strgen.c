@@ -37,7 +37,7 @@ size_t sx_strgen_append(sx_strgen_t * gen, const char * str, size_t length)
     return 0;
 
 append:
-  if (length + sxstr->used < sxstr->length) {
+  if (length + sxstr->used + 1 < sxstr->length) {
     memcpy(sxstr->buffer + sxstr->used, str, length);
     sxstr->used += length;
     return length;
@@ -51,7 +51,7 @@ append:
     sx_pool_retmem(gen->allocator, sxstr);
     return 0;
   }
-  sxstr->length = alloc;
+  sxstr->length = SX_STR_SIZE_FROM_ALLOC(alloc);
   sxstr->used = 0;
 
   goto append;
