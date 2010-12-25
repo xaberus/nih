@@ -22,6 +22,7 @@ enum err_major {
   ERR_MAJ_INVALID,
   ERR_MAJ_ALLOC,
   ERR_MAJ_IO,
+  ERR_MAJ_MEMORY,
   ERR_TEST_FAILED,
 };
 
@@ -44,6 +45,7 @@ enum err_minor {
   ERR_MIN_REALLOC,
   ERR_MIN_FREE,
   ERR_MIN_IO_NO_FILE,
+  ERR_MIN_MEMORY_ALLOC,
 };
 
 typedef void (err_log_t)(void *, char format[], ...);
@@ -85,9 +87,10 @@ err_t reconstruct_error(err_t err, uint16_t extra)
 # include <bt.h>
 #define bt_chkerr(__err) \
   __extension__ ({ \
-    err_t err = __err; \
+    err_t _err = __err; \
     if (err.composite) { \
-      bt_log("Error %u.%u.%u\n", err.major, err.minor, err.extra); \
+      bt_log("Error %u.%u.%u at %s:%s:%d\n", _err.major, _err.minor, _err.extra,\
+        __FILE__, __FUNCTION__, __LINE__); \
       return BT_RESULT_FAIL; \
     } \
   })
