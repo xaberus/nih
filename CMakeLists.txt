@@ -33,6 +33,7 @@ add_library(nih SHARED
   ${RAGEL_sx-parser-dq-machine_OUTPUTS}
   ${RAGEL_sx-parser-plain-machine_OUTPUTS}
   sr.c
+  trie.c
 )
 
 target_link_libraries(nih sexp m)
