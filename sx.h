@@ -120,6 +120,12 @@ err_t         sx_parser_events(sx_parser_t * parser, sx_event_function_t * ef);
 
 err_t         sx_parser_read(sx_parser_t * parser, const char * buffer, size_t length);
 
+const char *  sx_parser_strerror(sx_parser_t * parser);
+
+# ifdef TEST
+int sx_test_print(sx_t * sx, unsigned int level, int len, unsigned int brk, int sl);
+# endif /* TEST */
+
 #endif /* _SX_H */
 
 // vim: filetype=c:expandtab:shiftwidth=2:tabstop=4:softtabstop=2:encoding=utf-8:textwidth=100

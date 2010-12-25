@@ -3,6 +3,7 @@
 #include "sx-pool.h"
 
 /*#define VERBOSETEST*/
+#define TEST
 
 #define REDZONE 16
 
@@ -182,7 +183,7 @@ void * sx_pool_data_to_pointer(struct data_header * data)
 
 #ifdef TEST
 # include <bt.h>
-static inline
+static
 void sx_pool_print(sx_pool_t * pool)
 {
   struct chunk_header * c;
@@ -206,7 +207,7 @@ void sx_pool_print(sx_pool_t * pool)
   bt_log("}\n");
 }
 
-static inline
+static
 void sx_pool_print_cache(sx_pool_t * pool)
 {
 
@@ -291,7 +292,7 @@ void * sx_pool_getmem(sx_pool_t * pool, size_t size)
     if (c) {
       c->prev = pool->tail;
       pool->tail = c;
-      return sx_pool_getmem(pool, size);
+      return sx_pool_getmem(pool, size + sizeof(struct data_header));
     }
   }
 

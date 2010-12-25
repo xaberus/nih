@@ -29,6 +29,9 @@ BT_TEST_DEF_PLAIN(sx_util, sx_pool, "sx_pool")
 #define TEST_B
 #define TEST_M
 
+  arr[0] = sx_pool_getmem(pool, 8160);
+  sx_pool_retmem(pool, arr[0]);
+
 #ifdef TEST_C
   bt_log(">> allocate some datums\n"); k = 0;
   arr[k] = sx_pool_getmem(pool, 16);

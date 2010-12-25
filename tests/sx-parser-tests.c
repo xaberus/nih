@@ -11,32 +11,30 @@
 # include <bt.h>
 # include <string.h>
 
+#define PRINT(...) dprintf(STDOUT_FILENO, __VA_ARGS__)
+
 int sx_atom_test_escape_print(sx_t * sx, int deuni)
 {
   char ss = 0, * p;
   struct sx_ucr u;
+  int len = 0;
 
   memset(&u, 0, sizeof(u));
 
   if (sx->isatom) {
     if (sx->isplain)
-      bt_log("%.*s%s",
-          sx->atom.string->used, sx->atom.string->buffer, sx->atom.string->used > 30 ? "\n" : "");
-    else if (sx->isuint) {
-      bt_log("%lu", sx->atom.uint);
-      if (sx->atom.uint > 100000000)
-        return 1;
-    } else if (sx->issint) {
-      bt_log("%ld", sx->atom.sint);
-      if (sx->atom.sint > 100000000 || sx->atom.sint < -100000000)
-        return 1;
-    } else if (sx->issquot || sx->isdquot) {
+      return PRINT("%.*s", sx->atom.string->used, sx->atom.string->buffer);
+    else if (sx->isuint)
+      return PRINT("%lu", sx->atom.uint);
+    else if (sx->issint)
+      return PRINT("%ld", sx->atom.sint);
+    else if (sx->issquot || sx->isdquot) {
       if (sx->issquot)
         ss = '\'';
       else if (sx->isdquot)
         ss = '\"';
 
-      bt_log("%c", ss);
+      len += PRINT("%c", ss);
 
       p = sx->atom.string->buffer;
       for (unsigned int i = 0; i < sx->atom.string->used; i++) {
@@ -51,58 +49,78 @@ int sx_atom_test_escape_print(sx_t * sx, int deuni)
 
         switch (u.c) {
           case '\0':
-            bt_log("\\0"); break;
+            len += PRINT("\\0"); break;
           case '\a':
-            bt_log("\\a"); break;
+            len += PRINT("\\a"); break;
           case '\b':
-            bt_log("\\b"); break;
+            len += PRINT("\\b"); break;
           case '\f':
-            bt_log("\\f"); break;
+            len += PRINT("\\f"); break;
           case '\n':
-            bt_log("\\n"); break;
+            len += PRINT("\\n"); break;
           case '\r':
-            bt_log("\\r"); break;
+            len += PRINT("\\r"); break;
           case '\t':
-            bt_log("\\t"); break;
+            len += PRINT("\\t"); break;
           case '\v':
-            bt_log("\\v"); break;
+            len += PRINT("\\v"); break;
           case '\\':
-            bt_log("\\\\"); break;
+            len += PRINT("\\\\"); break;
           default:
             if (p[i] == ss)
-              bt_log("\\%c", u.c);
+              len += PRINT("\\%c", u.c);
             else {
               if (u.c <= 127)
-                bt_log("%c", u.c);
+                len += PRINT("%c", u.c);
               else {
                 if (deuni)
-                  bt_log("\\u%04x", u.c);
-                else
-                  bt_log("%.*s", u.l, u.n);
+                  len += PRINT("\\u%04x", u.c);
+                else {
+                  PRINT("%.*s", u.l, u.n);
+                  len ++;
+                }
               }
             }
         }
         u.l = 0;
       }
 
-      bt_log("%c", ss);
+      len += PRINT("%c", ss);
 
-      if (sx->atom.string->used > 28)
-        return 1;
+      return len;
     }
   }
   return 0;
 }
 
-void sx_test_print(sx_t * sx, unsigned int level)
+static inline
+int sx_is_lspa(sx_t * sx)
+{
+  int spa = 0;
+  if (!sx || !sx->next)
+      return 0;
+
+  sx = sx->next;
+
+  while (sx) {
+    if (!sx->islist)
+      return 0;
+    sx = sx->next;
+    spa ++;
+  }
+  return spa > 1;
+}
+
+int sx_test_print(sx_t * sx, unsigned int level, int len, unsigned int brk, int sl)
 {
   int lila = 0;
 #if 1
   while (sx) {
     if (lila) {
-      bt_log(" ");
+      len += PRINT(" ");
       lila = 0;
     }
+
     if (sx->isatom) {
         /*bt_log("atom(%s%s%s%s%s%s)",
           (sx->isplain? "p" : ""),
@@ -111,22 +129,38 @@ void sx_test_print(sx_t * sx, unsigned int level)
           (sx->issint? "I" : ""),
           (sx->isuint? "U" : ""),
           (sx->isdouble? "D" : ""));*/
-      if (sx_atom_test_escape_print(sx, 0))
-        bt_log("\n%*.0s", level, "");
-      else
-        bt_log(" ");
+      len += sx_atom_test_escape_print(sx, 0);
     } else if (sx->islist) {
-      if (!lila)
-        bt_log("\n%*.0s(", level, "");
-      else
-        bt_log("(");
-      sx_test_print(sx->list, level + 1);
-      bt_log(")");
+      if (sl != level && (len > 40 || sx->list && sx->list->islist
+        || (sx_is_lspa(sx->list)))) {
+        len += PRINT("\n%*.0s(", level, "");
+        len = 0;
+        brk = level;
+      } else
+        len += PRINT("(");
+      len += sx_test_print(sx->list, level + 1, len, brk,  sl + 1);
+      len += PRINT(")");
       lila = 1;
     }
-    sx = sx->next;
+
+
+    if (sx->next && !lila) {
+      if (
+        (len >= 70 || (sx->isatom && (sx->issquot || sx->isdquot)
+        && sx->atom.string->used > 30))) {
+      len = 0;
+      PRINT("\n%*.0s", level, "");
+    } else if (len > 0)
+      len += PRINT(" ");
+    }
+
+    if (sl > 0)
+      sx = sx->next;
+    else
+      break;
   }
 #endif
+  return len;
 }
 
 BT_TEST_DEF_PLAIN(sx_util, sx_parser, "pokes sx parser and watches out for errors (prequisite only)")
@@ -168,7 +202,7 @@ BT_TEST_DEF_PLAIN(sx_util, sx_parser, "pokes sx parser and watches out for error
     }
     bt_assert_int_equal(err.composite, 0);
   }
-  sx_test_print(parser->root, 0);
+  sx_test_print(parser->root, 0, 0, 0, 1);
 
 out:
   sx_parser_clear(parser);
