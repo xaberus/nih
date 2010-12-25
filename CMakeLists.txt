@@ -10,7 +10,7 @@ include_directories(
 	/usr/include/sexpr
 )
 
-set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -pedantic -g -ggdb -DTEST  -fPIC")
+set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -pedantic -g -ggdb -DTEST -DNPOOL -fPIC")
 set(CMAKE_SHARED_LIBRARY_C_FLAGS "-Wl,--no-undefined")
 #-Werror -fprofile-arcs -ftest-coverage
 
@@ -32,6 +32,7 @@ add_library(nih SHARED
   ${RAGEL_sx-parser-sq-machine_OUTPUTS}
   ${RAGEL_sx-parser-dq-machine_OUTPUTS}
   ${RAGEL_sx-parser-plain-machine_OUTPUTS}
+  sr.c
 )
 
 target_link_libraries(nih sexp m)

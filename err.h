@@ -14,7 +14,7 @@ union err {
 };
 typedef union err err_t;
 
-enum {
+enum err_major {
   ERR_MAJ_SUCCESS = 0,
   ERR_MAJ_ERRNO,
   ERR_MAJ_NULL_POINTER,
@@ -22,9 +22,10 @@ enum {
   ERR_MAJ_INVALID,
   ERR_MAJ_ALLOC,
   ERR_MAJ_IO,
+  ERR_TEST_FAILED,
 };
 
-enum {
+enum err_minor {
   ERR_MIN_SUCCESS = 0,
   ERR_MIN_IN_NULL_POINTER,
   ERR_MIN_OUT_NULL_POINTER,
@@ -32,6 +33,7 @@ enum {
   ERR_MIN_MID_OVERFLOW,
   ERR_MIN_CALC_OVERFLOW,
   ERR_MIN_OUT_OVERFLOW,
+  ERR_MIN_DIVIDE_BY_ZERO,
   ERR_MIN_BUFFER_OVERFLOW,
   ERR_MIN_IN_INVALID,
   ERR_MIN_NOT_FOUND,
@@ -53,11 +55,10 @@ extern void      * err_logger_data;
 static inline
 err_t err_construct(uint8_t major, uint8_t minor, uint16_t extra)
 {
-  err_t err = {{
-                 .major = major,
-                 .minor = minor,
-                 .extra = extra,
-               }};
+  err_t err;
+  err.major = major;
+  err.minor = minor;
+  err.extra = extra;
 
   return err;
 }
@@ -65,11 +66,10 @@ err_t err_construct(uint8_t major, uint8_t minor, uint16_t extra)
 static inline
 err_t err_from_errno()
 {
-  err_t err = {{
-                 .major = ERR_MAJ_ERRNO,
-                 .minor = (errno >> 16) & (0xFF),
-                 .extra = (errno & 0xFFFF),
-               }};
+  err_t err;
+  err.major = ERR_MAJ_ERRNO;
+  err.minor = (errno >> 16) & (0xFF);
+  err.extra = (errno & 0xFFFF);
 
   return err;
 }
@@ -80,5 +80,17 @@ err_t reconstruct_error(err_t err, uint16_t extra)
   err.extra = extra;
   return err;
 }
+
+#ifdef TEST
+# include <bt.h>
+#define bt_chkerr(__err) \
+  __extension__ ({ \
+    err_t err = __err; \
+    if (err.composite) { \
+      bt_log("Error %u.%u.%u\n", err.major, err.minor, err.extra); \
+      return BT_RESULT_FAIL; \
+    } \
+  })
+#endif /* TEST */
 
 #endif /* __ERR_H__ */
