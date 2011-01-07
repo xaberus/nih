@@ -1,4 +1,3 @@
-
 #include "trie.h"
 
 #include <string.h>
@@ -17,6 +16,7 @@ struct tnode_tuple tnode_tuple(struct tnode * node, uint16_t index)
     .node = node,
     .index = index,
   };
+
   return ret;
 }
 
@@ -25,14 +25,14 @@ struct tnode_tuple tnode_iter_get(struct tnode_iter * iter, uint16_t index, int 
   if (!index)
     return tnode_tuple(NULL, 0);
 
-  index --;
+  index--;
 
-  uint16_t id = index / TNODE_BANK_SIZE;
-  uint16_t idx = index % TNODE_BANK_SIZE;
+  uint16_t            id = index / TNODE_BANK_SIZE;
+  uint16_t            idx = index % TNODE_BANK_SIZE;
   struct tnode_bank * bank = iter->bank;
-  struct tnode * node;
+  struct tnode      * node;
 
-  index ++;
+  index++;
 
   /* rewind */
   while (bank && bank->id != id) {
@@ -80,11 +80,8 @@ void trie_clear(trie_t * trie)
   if (!trie)
     return;
 
-  for (
-    bank = trie->nodes, next = bank ? bank->next : NULL;
-    bank;
-    bank = next, next = bank ? bank->next : NULL
-  ) {
+  for (bank = trie->nodes, next = bank ? bank->next : NULL; bank;
+       bank = next, next = bank ? bank->next : NULL) {
     free(bank);
   }
 
@@ -93,14 +90,12 @@ void trie_clear(trie_t * trie)
 
 struct tnode_tuple trie_mknode(trie_t * trie)
 {
-  struct tnode_tuple tuple;
-  struct tnode_iter iter = {
+  struct tnode_bank * bank;
+  struct tnode_tuple  tuple;
+  struct tnode_iter   iter = {
     .bank = trie->nodes,
     .pos = 0,
   };
-
-
-  struct tnode_bank * bank;
 
 
   tuple = tnode_iter_get(&iter, trie->size + 1, 1);
@@ -121,23 +116,24 @@ struct tnode_tuple trie_mknode(trie_t * trie)
     }
 
     trie->nodes = bank;
-    trie->size ++;
+    trie->size++;
     return tnode_tuple(tuple.node, tuple.index);
   }
 
-  trie->size ++;
+  trie->size++;
   return tnode_tuple(tuple.node, tuple.index);
 }
 
 void trie_print_r(trie_t * trie, struct tnode_iter * iter, uint16_t index)
 {
   struct tnode_tuple tuple = tnode_iter_get(iter, index, 0);
-  uint16_t last;
+  uint16_t           last;
 
   printf(" subgraph \"cluster%u\" {\n", tuple.index);
   while (tuple.node) {
     printf(" \"node%u\" [ shape = record, label = \"", tuple.index);
-    printf("<f0> %u:%s%s", tuple.index, tuple.node->iskey?"k":"", tuple.node->isdata?"d":"");
+    printf("<f0> %u:%s%s", tuple.index,
+        tuple.node->iskey ? "k" : "", tuple.node->isdata ? "d" : "");
     printf("| <f1> \\{ %c \\} ", tuple.node->c);
     if (tuple.node->next)
       printf("| <f2> →%u", tuple.node->next);
@@ -154,19 +150,22 @@ void trie_print_r(trie_t * trie, struct tnode_iter * iter, uint16_t index)
 
     last = tuple.index;
     tuple = tnode_iter_get(iter, tuple.node->next, 0);
-    /*if (tuple.index)
-      printf(" \"node%u\":f2 -> \"node%u\":f0 [color=blue];\n", last, tuple.index);*/
+#if 0
+    if (tuple.index)
+      printf(" \"node%u\":f2 -> \"node%u\":f0 [color=blue];\n", last, tuple.index);
+#endif
   }
   printf(" }\n");
 
-  /*printf(" { rank=same ");
+#if 0
+  printf(" { rank=same ");
   tuple = tnode_iter_get(iter, index, 0);
   while (tuple.node) {
     printf(" \"node%u\" ", tuple.index);
     tuple = tnode_iter_get(iter, tuple.node->next, 0);
   }
-  printf(" }\n");*/
-
+  printf(" }\n");
+#endif
 }
 void trie_print(trie_t * trie)
 {
@@ -191,12 +190,12 @@ void trie_print(trie_t * trie)
 
 err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t data)
 {
-  int out = 4;
-  int i = 0, n = 0, rest;
-  uint8_t c = word[i];
+  int                out = 4;
+  int                i = 0, n = 0, rest;
+  uint8_t            c = word[i];
   struct tnode_tuple tuple;
   struct tnode_tuple new, tmp;
-  struct tnode_iter iter = {
+  struct tnode_iter  iter = {
     .bank = trie->nodes,
     .pos = 0,
   };
@@ -206,9 +205,9 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t da
 
   if (trie->root) {
     tuple = tnode_iter_get(&iter, trie->root, 0);
-    for  (i = 0, c = word[i], out = 0; tuple.node && i < len; c = word[i]) {
+    for (i = 0, c = word[i], out = 0; tuple.node && i < len; c = word[i]) {
       if (c == tuple.node->c) {
-        i ++;
+        i++;
         if (i == len) {
           if (tuple.node->isdata) /* duplicte */
             return err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, TRIE_ERROR_DUPLICATE);
@@ -222,7 +221,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t da
         if (tmp.node)
           tuple = tmp;
         else {
-          /* if we end up here, it means, that we already have a key, 
+          /* if we end up here, it means, that we already have a key,
            * which is a prefix of our new key, so we use the free child field! */
           out = 3;
           break;
@@ -241,7 +240,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t da
   if (!out)
     return err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, TRIE_ERROR_CORRUPTION);
 
-  /* allocate space for the rest of our key 
+  /* allocate space for the rest of our key
    * and roll back on failure... */
   struct tnode_tuple stride[rest = len - i];
 
@@ -259,7 +258,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t da
   if (out == 1) {
     /* append child, then tail */
 
-    for (uint16_t m = i, n=0; m < len; m++) {
+    for (uint16_t m = i, n = 0; m < len; m++) {
       new = stride[n++];
       new.node->iskey = 1;
       new.node->c = word[m];
@@ -279,7 +278,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t da
   if (out == 3) {
     /* append tail to empty root */
 
-    for (uint16_t m = i, n=0; m < len; m++) {
+    for (uint16_t m = i, n = 0; m < len; m++) {
       new = stride[n++];
       new.node->iskey = 1;
       new.node->c = word[m];
@@ -297,7 +296,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t da
   if (out == 4) {
     /* append tail to empty root */
 
-    for (uint16_t m = 0, n=0; m < len; m++) {
+    for (uint16_t m = 0, n = 0; m < len; m++) {
       new = stride[n++];
       new.node->iskey = 1;
       new.node->c = word[m];
@@ -319,20 +318,20 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t da
 
 struct tnode_tuple trie_find_i(trie_t * trie, const uint8_t word[], uint16_t len)
 {
-  int out = 0;
-  int i = 0;
-  uint8_t c = word[i];
+  int                out = 0;
+  int                i = 0;
+  uint8_t            c = word[i];
   struct tnode_tuple tuple;
-  struct tnode_iter iter = {
+  struct tnode_iter  iter = {
     .bank = trie->nodes,
     .pos = 0,
   };
 
   if (trie->root) {
     tuple = tnode_iter_get(&iter, trie->root, 0);
-    for  (i = 0, c = word[i], out = 0; tuple.node && i < len; c = word[i]) {
+    for (i = 0, c = word[i], out = 0; tuple.node && i < len; c = word[i]) {
       if (c == tuple.node->c) {
-        i ++;
+        i++;
         if (i == len) {
           if (tuple.node->isdata)
             return tuple;
