@@ -18,19 +18,21 @@ struct tnode {
     unsigned int isdata : 1;
     unsigned int _reserved : 6;
   };
-  uint16_t next;
-  uint16_t child;
-  uint16_t data;
+  unsigned next : 24;
+  unsigned child : 24;
+  uint64_t data;
 };
 
-#define TNODE_BANK_SIZE 35
+#define TNODE_BANK_SIZE 32
 
 struct tnode_bank {
   struct tnode nodes[TNODE_BANK_SIZE];
 
-  /* index * TNODE_BANK_SIZE + length == pos */
-  uint16_t id;
-  uint16_t length;
+  uint32_t id;
+  uint32_t length;
+
+  /* bitmask for bank usage */
+  uint32_t usage;
 
   struct tnode_bank * prev;
   struct tnode_bank * next;
@@ -38,27 +40,30 @@ struct tnode_bank {
 
 struct tnode_iter {
   struct tnode_bank * bank;
-  uint16_t pos;
+  uint32_t pos;
 };
 
 struct tnode_tuple {
   struct tnode * node;
-  uint16_t index;
+  uint32_t index;
 };
 
 struct trie {
   struct tnode_bank * nodes;
-  uint16_t size;
+  uint32_t size;
 
   /* root key */
-  uint16_t root;
+  uint32_t root;
+
+  uint32_t freelist;
 };
 
 typedef struct trie trie_t;
 
 trie_t * trie_init(trie_t * trie);
 void     trie_clear(trie_t * trie);
-err_t    trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t data);
-err_t    trie_find(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t * data);
+err_t    trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t data);
+err_t    trie_delete(trie_t * trie, const uint8_t word[], uint16_t len);
+err_t    trie_find(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t * data);
 
 #endif /* _TRIE_H */

@@ -10,7 +10,7 @@
 #include <time.h>
 
 inline static
-struct tnode_tuple tnode_tuple(struct tnode * node, uint16_t index)
+struct tnode_tuple tnode_tuple(struct tnode * node, uint32_t index)
 {
   struct tnode_tuple ret = {
     .node = node,
@@ -20,15 +20,15 @@ struct tnode_tuple tnode_tuple(struct tnode * node, uint16_t index)
   return ret;
 }
 
-struct tnode_tuple tnode_iter_get(struct tnode_iter * iter, uint16_t index, int new)
+struct tnode_tuple tnode_iter_get(struct tnode_iter * iter, uint32_t index, int new)
 {
   if (!index)
     return tnode_tuple(NULL, 0);
 
   index--;
 
-  uint16_t            id = index / TNODE_BANK_SIZE;
-  uint16_t            idx = index % TNODE_BANK_SIZE;
+  uint32_t            id = index / TNODE_BANK_SIZE;
+  uint32_t            idx = index % TNODE_BANK_SIZE;
   struct tnode_bank * bank = iter->bank;
   struct tnode      * node;
 
@@ -97,8 +97,15 @@ struct tnode_tuple trie_mknode(trie_t * trie)
     .pos = 0,
   };
 
+  if (trie->freelist) {
+    tuple = tnode_iter_get(&iter, trie->freelist, 0);
+    trie->freelist = tuple.node->next;
+    memset(tuple.node, 0, sizeof(struct tnode));
+    return tuple;
+  }
 
   tuple = tnode_iter_get(&iter, trie->size + 1, 1);
+
   if (!tuple.node) {
     bank = malloc(sizeof(struct tnode_bank));
     if (!bank)
@@ -124,74 +131,101 @@ struct tnode_tuple trie_mknode(trie_t * trie)
   return tnode_tuple(tuple.node, tuple.index);
 }
 
-void trie_print_r(trie_t * trie, struct tnode_iter * iter, uint16_t index)
+void trie_remnode(trie_t * trie, uint32_t index)
+{
+  struct tnode_tuple tuple;
+  struct tnode_iter  iter = {
+    .bank = trie->nodes,
+    .pos = 0,
+  };
+
+  tuple = tnode_iter_get(&iter, index, 0);
+
+  tuple.node->next = trie->freelist;
+  trie->freelist = tuple.index;
+}
+
+void trie_print_r(trie_t * trie, struct tnode_iter * iter, uint32_t index, int fd)
 {
   struct tnode_tuple tuple = tnode_iter_get(iter, index, 0);
-  uint16_t           last;
+  uint32_t           last;
 
-  printf(" subgraph \"cluster%u\" {\n", tuple.index);
+
+  dprintf(fd, " subgraph \"cluster%u\" {\n", tuple.index);
   while (tuple.node) {
-    printf(" \"node%u\" [ shape = record, label = \"", tuple.index);
-    printf("<f0> %u:%s%s", tuple.index,
-        tuple.node->iskey ? "k" : "", tuple.node->isdata ? "d" : "");
-    printf("| <f1> \\{ %c \\} ", tuple.node->c);
+    dprintf(fd, " \"node%u\" [ shape = plaintext, label = <", tuple.index);
+    dprintf(fd, "<table cellborder=\"1\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">");
+    dprintf(fd, "<tr>");
+    dprintf(fd, "<td port=\"f0\">%u:%s%s</td>",
+        tuple.index, tuple.node->iskey ? "k" : "", tuple.node->isdata ? "d" : "");
     if (tuple.node->next)
-      printf("| <f2> →%u", tuple.node->next);
-    if (tuple.node->child)
-      printf("| <f3> ↓%u", tuple.node->child);
+      dprintf(fd, "<td port=\"f2\">→%u</td>", tuple.node->next);
+    dprintf(fd, "</tr>");
+    dprintf(fd, "<tr>");
     if (tuple.node->isdata)
-      printf("| <f4> ↭%u", tuple.node->data);
-    printf("\"]\n");
+      dprintf(fd, "<td bgcolor=\"black\" port=\"f4\"><font color=\"white\">↭%lu</font></td>",
+          tuple.node->data);
+    dprintf(fd, "<td port=\"f1\" bgcolor=\"gray\">%c</td>", tuple.node->c);
+    if (tuple.node->child)
+      dprintf(fd, "<td port=\"f3\">↓%u</td>", tuple.node->child);
+    dprintf(fd, "</tr>");
+    dprintf(fd, "</table>");
+    dprintf(fd, ">]\n");
 
     if (tuple.node->child) {
-      trie_print_r(trie, iter, tuple.node->child);
-      printf(" \"node%u\":f3 -> \"node%u\":f0 [color=red];\n", tuple.index, tuple.node->child);
+      trie_print_r(trie, iter, tuple.node->child, fd);
+      dprintf(fd, " \"node%u\":f3 -> \"node%u\":f0 [color=red];\n", tuple.index, tuple.node->child);
     }
 
     last = tuple.index;
     tuple = tnode_iter_get(iter, tuple.node->next, 0);
-#if 0
+#if 1
     if (tuple.index)
-      printf(" \"node%u\":f2 -> \"node%u\":f0 [color=blue];\n", last, tuple.index);
+      dprintf(fd, " \"node%u\":f2 -> \"node%u\" [color=blue, minlen=0];\n", last, tuple.index);
 #endif
   }
-  printf(" }\n");
+  dprintf(fd, " }\n");
 
 #if 0
-  printf(" { rank=same ");
+  dprintf(fd, " { rank=same ");
   tuple = tnode_iter_get(iter, index, 0);
   while (tuple.node) {
-    printf(" \"node%u\" ", tuple.index);
+    dprintf(fd, " \"node%u\" ", tuple.index);
     tuple = tnode_iter_get(iter, tuple.node->next, 0);
   }
-  printf(" }\n");
+  dprintf(fd, " }\n");
 #endif
 }
-void trie_print(trie_t * trie)
+void trie_print(trie_t * trie, int fd)
 {
   struct tnode_iter iter = {
     .bank = trie->nodes,
     .pos = 0,
   };
 
-  printf("digraph trie {\n");
-  printf(" graph [rankdir = LR]\n");
-  printf(" node [fontsize = 16]\n");
-  printf(" edge []\n");
+  dprintf(fd, "digraph trie {\n");
+  dprintf(fd, " graph [rankdir = TD]\n");
+  dprintf(fd, " node [fontsize = 12, fontname = \"monospace\"]\n");
+  dprintf(fd, " edge []\n");
 
-  printf(" \"trie\" [ shape = record, label = \"trie| <f0> root(%u)\"]\n", trie->root);
+  dprintf(fd,
+      " \"trie\" [ shape = record, label = <"
+      "<table cellborder=\"1\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">"
+      "<tr><td bgcolor=\"red\">trie</td></tr>"
+      "<tr><td port=\"f0\" bgcolor=\"gray\">%u</td></tr>"
+      ">]\n", trie->root);
   if (trie->root) {
-    trie_print_r(trie, &iter, trie->root);
-    printf(" \"trie\":f0 -> \"node%u\":f0;\n", trie->root);
+    trie_print_r(trie, &iter, trie->root, fd);
+    dprintf(fd, " \"trie\":f0 -> \"node%u\":f0;\n", trie->root);
   }
 
-  printf("}\n");
+  dprintf(fd, "}\n");
 }
 
-err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t data)
+err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t data)
 {
   int                out = 4;
-  int                i = 0, n = 0, rest;
+  uint32_t           i = 0, n = 0, rest;
   uint8_t            c = word[i];
   struct tnode_tuple tuple;
   struct tnode_tuple new, tmp;
@@ -258,7 +292,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t da
   if (out == 1) {
     /* append child, then tail */
 
-    for (uint16_t m = i, n = 0; m < len; m++) {
+    for (uint32_t m = i, n = 0; m < len; m++) {
       new = stride[n++];
       new.node->iskey = 1;
       new.node->c = word[m];
@@ -276,9 +310,9 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t da
   }
 
   if (out == 3) {
-    /* append tail to empty root */
+    /* become child, then append tail */
 
-    for (uint16_t m = i, n = 0; m < len; m++) {
+    for (uint32_t m = i, n = 0; m < len; m++) {
       new = stride[n++];
       new.node->iskey = 1;
       new.node->c = word[m];
@@ -296,7 +330,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t da
   if (out == 4) {
     /* append tail to empty root */
 
-    for (uint16_t m = 0, n = 0; m < len; m++) {
+    for (uint32_t m = 0, n = 0; m < len; m++) {
       new = stride[n++];
       new.node->iskey = 1;
       new.node->c = word[m];
@@ -316,10 +350,122 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t da
   return err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, TRIE_ERROR_SUCCESS);
 }
 
+err_t trie_delete(trie_t * trie, const uint8_t word[], uint16_t len)
+{
+  int                out = 0;
+  int32_t            i = 0;
+
+  if (!trie || !word || !len)
+    return err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, TRIE_ERROR_SUCCESS);
+
+  uint8_t            c = word[i];
+  struct tnode_tuple tuple;
+  struct tnode_iter  iter = {
+    .bank = trie->nodes,
+    .pos = 0,
+  };
+  struct {
+    struct tnode_tuple tuple;
+    struct tnode_tuple prev;
+  }                  stack[len];
+
+  // bt_log("delete '%.*s'\n", len, word);
+
+  memset(&stack, 0, sizeof(stack[0]) * len);
+
+  if (trie->root) {
+    tuple = tnode_iter_get(&iter, trie->root, 0);
+    for (i = 0, c = word[i], out = 0; tuple.node && i < len; c = word[i]) {
+
+      // bt_log("[d] c: %c, current: %d\n", c, tuple.index);
+
+      if (c == tuple.node->c) {
+
+        stack[i].tuple = tuple;
+
+        i++;
+        if (i == len) {
+          if (tuple.node->isdata) {
+            /* found key */
+            if (tuple.node->child) {
+
+              // bt_log("[c] clear data %lu\n", tuple.node->data);
+
+              tuple.node->isdata = 0;
+            } else {
+              out = 1;
+            }
+          }
+          break;
+        }
+        tuple = tnode_iter_get(&iter, tuple.node->child, 0);
+      } else {
+        if (tuple.node->next) {
+          stack[i].prev = tuple;
+          tuple = tnode_iter_get(&iter, tuple.node->next, 0);
+        } else {
+          return err_construct(ERR_MAJ_INVALID, ERR_MIN_NOT_FOUND, TRIE_ERROR_SUCCESS);
+        }
+      }
+    }
+  }
+
+  /* ? */
+  if (out == 1) {
+    uint16_t remlen = len;
+
+    for (i = len - 1; i >= 0; i--) {
+      // bt_log("[d] %d:'%c', node: %u, prev: %u \n", i, stack[i].tuple.node->c, stack[i].tuple.index, stack[i].prev.index);
+      if (i == len - 1) {
+        if (stack[i].tuple.node->next || stack[i].prev.index) {
+          remlen = len - i; break;
+        }
+      } else {
+        if (stack[i].tuple.node->isdata) {
+          remlen = len - i - 1; break;
+        } else if (stack[i].tuple.node->next) {
+          remlen = len - i; break;
+        } else if (stack[i].prev.index) {
+          remlen = len - i; break;
+        }
+      }
+    }
+
+    // bt_log("[x] data %lu (%d nodes)\n", tuple.node->data, remlen);
+
+    i = len - remlen;
+
+    // bt_log("[a] %u '%c' \n", stack[i].tuple.index, stack[i].tuple.node->c);
+
+    if (i > 0 && stack[i - 1].tuple.node->child == stack[i].tuple.index) {
+      // bt_log("[r] %u.child = %u\n", stack[i - 1].tuple.index, stack[i].tuple.node->next);
+      stack[i - 1].tuple.node->child = stack[i].tuple.node->next;
+    } else if (trie->root == stack[i].tuple.index) {
+      // bt_log("[r] root = %u\n", stack[i].tuple.node->next);
+      trie->root = stack[i].tuple.node->next;
+    } else if (stack[i].prev.index) {
+      if (stack[i].tuple.node->next) {
+        // bt_log("[l] %u.next = %u\n", stack[i].prev.index, stack[i].tuple.node->next);
+        stack[i].prev.node->next = stack[i].tuple.node->next;
+      } else { /* last in list */
+        // bt_log("[n] %u.next = 0\n", stack[i].prev.index);
+        stack[i].prev.node->next = 0;
+      }
+    }
+
+    for (int32_t j = 0; j < remlen; j++, i++) {
+      trie_remnode(trie, stack[i].tuple.index);
+    }
+  }
+
+  return err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, TRIE_ERROR_SUCCESS);
+}
+
+
 struct tnode_tuple trie_find_i(trie_t * trie, const uint8_t word[], uint16_t len)
 {
   int                out = 0;
-  int                i = 0;
+  uint32_t           i = 0;
   uint8_t            c = word[i];
   struct tnode_tuple tuple;
   struct tnode_iter  iter = {
@@ -329,27 +475,25 @@ struct tnode_tuple trie_find_i(trie_t * trie, const uint8_t word[], uint16_t len
 
   if (trie->root) {
     tuple = tnode_iter_get(&iter, trie->root, 0);
-    for (i = 0, c = word[i], out = 0; tuple.node && i < len; c = word[i]) {
+    for (i = 0, c = word[i], out = 1; tuple.node && i < len; c = word[i]) {
       if (c == tuple.node->c) {
         i++;
         if (i == len) {
-          if (tuple.node->isdata)
-            return tuple;
-          else
-            return tnode_tuple(NULL, 0);
+          out = 0;
+          break; /* found substring */
         }
         tuple = tnode_iter_get(&iter, tuple.node->child, 0);
       } else {
         if (tuple.node->next) {
           tuple = tnode_iter_get(&iter, tuple.node->next, 0);
         } else {
-          out = 1;
           break;
         }
       }
     }
   }
 
+  /* is substring a key? */
   if (!out) {
     if (tuple.node->isdata)
       return tuple;
@@ -358,7 +502,7 @@ struct tnode_tuple trie_find_i(trie_t * trie, const uint8_t word[], uint16_t len
   return tnode_tuple(NULL, 0);
 }
 
-err_t trie_find(trie_t * trie, const uint8_t word[], uint16_t len, uint16_t * data)
+err_t trie_find(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t * data)
 {
   struct tnode_tuple tuple;
 
