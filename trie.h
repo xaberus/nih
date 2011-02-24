@@ -16,7 +16,8 @@ struct tnode {
   __extension__ struct {
     unsigned int iskey : 1;
     unsigned int isdata : 1;
-    unsigned int _reserved : 6;
+    unsigned int isused : 1;
+    unsigned int _reserved : 5;
   };
   unsigned next : 24;
   unsigned child : 24;
@@ -25,22 +26,23 @@ struct tnode {
 
 #define TNODE_BANK_SIZE 32
 
+#define INDEX2IDX(__index) (__index - 1)
+#define IDX2INDEX(__idx) (__idx + 1)
+
 struct tnode_bank {
-  struct tnode nodes[TNODE_BANK_SIZE];
-
-  uint32_t id;
+  uint32_t start;
+  uint32_t end;
   uint32_t length;
-
-  /* bitmask for bank usage */
-  uint32_t usage;
 
   struct tnode_bank * prev;
   struct tnode_bank * next;
+
+  struct tnode nodes[];
 };
 
 struct tnode_iter {
   struct tnode_bank * bank;
-  uint32_t pos;
+  uint32_t idx;
 };
 
 struct tnode_tuple {
@@ -50,7 +52,7 @@ struct tnode_tuple {
 
 struct trie {
   struct tnode_bank * nodes;
-  uint32_t size;
+  struct tnode_bank * abank; /* allocation bank */
 
   /* root key */
   uint32_t root;
