@@ -430,15 +430,11 @@ err_t trie_delete(trie_t * trie, const uint8_t word[], uint16_t len)
     struct tnode_tuple prev;
   }                  stack[len];
 
-  // bt_log("delete '%.*s'\n", len, word);
-
   memset(&stack, 0, sizeof(stack[0]) * len);
 
   if (trie->root) {
     tuple = tnode_iter_get(&iter, trie->root);
     for (i = 0, c = word[i], out = 0; tuple.index && i < len; c = word[i]) {
-
-      // bt_log("[d] c: %c, current: %d\n", c, tuple.index);
 
       if (c == tuple.node->c) {
 
@@ -449,9 +445,6 @@ err_t trie_delete(trie_t * trie, const uint8_t word[], uint16_t len)
           if (tuple.node->isdata) {
             /* found key */
             if (tuple.node->child) {
-
-              // bt_log("[c] clear data %lu\n", tuple.node->data);
-
               tuple.node->isdata = 0;
             } else {
               out = 1;
@@ -476,7 +469,6 @@ err_t trie_delete(trie_t * trie, const uint8_t word[], uint16_t len)
     uint16_t remlen = len;
 
     for (i = len - 1; i >= 0; i--) {
-      // bt_log("[d] %d:'%c', node: %u, prev: %u \n", i, stack[i].tuple.node->c, stack[i].tuple.index, stack[i].prev.index);
       if (i == len - 1) {
         if (stack[i].tuple.node->next || stack[i].prev.index) {
           remlen = len - i; break;
@@ -492,24 +484,16 @@ err_t trie_delete(trie_t * trie, const uint8_t word[], uint16_t len)
       }
     }
 
-    // bt_log("[x] data %lu (%d nodes)\n", tuple.node->data, remlen);
-
     i = len - remlen;
 
-    // bt_log("[a] %u '%c' \n", stack[i].tuple.index, stack[i].tuple.node->c);
-
     if (i > 0 && stack[i - 1].tuple.node->child == stack[i].tuple.index) {
-      // bt_log("[r] %u.child = %u\n", stack[i - 1].tuple.index, stack[i].tuple.node->next);
       stack[i - 1].tuple.node->child = stack[i].tuple.node->next;
     } else if (trie->root == stack[i].tuple.index) {
-      // bt_log("[r] root = %u\n", stack[i].tuple.node->next);
       trie->root = stack[i].tuple.node->next;
     } else if (stack[i].prev.index) {
       if (stack[i].tuple.node->next) {
-        // bt_log("[l] %u.next = %u\n", stack[i].prev.index, stack[i].tuple.node->next);
         stack[i].prev.node->next = stack[i].tuple.node->next;
       } else { /* last in list */
-        // bt_log("[n] %u.next = 0\n", stack[i].prev.index);
         stack[i].prev.node->next = 0;
       }
     }
