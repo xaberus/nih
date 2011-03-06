@@ -127,45 +127,45 @@ err_t sx_atom_init_string(sx_t * sx, sx_parser_t * parser, sx_str_t * str)
 
   switch (parser->at) {
     case SX_ATOM_PLAIN:
-      if (sx_parser_atom_plain_fsm(parser, sx, str).composite != 0)
+      if (sx_parser_atom_plain_fsm(parser, sx, str) != 0)
         goto out;
 
-      parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+      parser->err = 0;
       goto out;
     case SX_ATOM_QUOTE:
       if (parser->ss == '\"') {
         sx->isdquot = 1;
 
 
-        if (sx_parser_atom_dq_fsm(parser, str).composite != 0) {
+        if (sx_parser_atom_dq_fsm(parser, str) != 0) {
           sx_pool_retmem(parser->pool, str);
           goto out;
         }
 
         sx->atom.string = str;
 
-        parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+        parser->err = 0;
         goto out;
       } else if (parser->ss == '\'') {
         sx->issquot = 1;
 
-        if (sx_parser_atom_sq_fsm(parser, str).composite != 0) {
+        if (sx_parser_atom_sq_fsm(parser, str) != 0) {
           sx_pool_retmem(parser->pool, str);
           goto out;
         }
 
         sx->atom.string = str;
-        parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+        parser->err = 0;
         goto out;
       } else
         goto atom_quote_garbage;
 
 atom_quote_garbage:
-      parser->err = err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, 255);
+      parser->err = ERR_INVALID_INPUT;
       goto out;
     default:
       sx_pool_retmem(parser->pool, str);
-      parser->err = err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, 255);
+      parser->err = ERR_INVALID_INPUT;
       goto out;
       break;
   }
@@ -210,7 +210,7 @@ intermediate:
       /************************************/
       case SX_PARSER_LIST_START:
 list_start:
-        if (ef(parser).composite)
+        if (ef(parser))
           goto error_in_event;
         parser->depth++;
         TRANS(parser->ba, SX_PARSER_INTERMEDIATE);
@@ -221,7 +221,7 @@ list_end:
         if (parser->depth == 0)
           goto paren_mismatch;
         parser->depth--;
-        if (ef(parser).composite)
+        if (ef(parser))
           goto error_in_event;
         TRANS(parser->ba, SX_PARSER_INTERMEDIATE);
 
@@ -233,7 +233,7 @@ atom_start:
 
         parser->aline = parser->line;
 
-        if (ef(parser).composite)
+        if (ef(parser))
           goto error_in_event;
 
         if (parser->u.c == '"' || parser->u.c == '\'') {
@@ -288,34 +288,34 @@ string:
       /************************************/
       case SX_PARSER_ATOM_END:
 atom_end:
-        if (ef(parser).composite)
+        if (ef(parser))
           goto error_in_event;
         GTRANS(SX_PARSER_INTERMEDIATE, intermediate);
 
       /************************************/
       case SX_PARSER_ERROR:
-        parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_UNHANDLED);
+        parser->err = ERR_SX_UNHANDLED;
     }
   }
 
 
 end_of_buffer:
-  parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+  parser->err = 0;
   goto out;
 error_in_event:
   /* err is set by event handler */
   goto out;
 paren_mismatch:
-  parser->err = err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, SX_ERROR_PAREN_MISMATCH);
+  parser->err = ERR_SX_PAREN_MISMATCH;
   goto out;
 malformed_atom:
-  parser->err = err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, SX_ERROR_MALFORMED_ATOM);
+  parser->err = ERR_SX_MALFORMED_ATOM;
   goto out;
 utf8_error:
-  parser->err = err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, SX_ERROR_UTF8_ERROR);
+  parser->err = ERR_SX_UTF8_ERROR;
   goto out;
 out_of_memory:
-  parser->err = err_construct(ERR_MAJ_ALLOC, ERR_MIN_POOL_ALLOC, SX_ERROR_SUCCESS);
+  parser->err = ERR_SX_SUCCESS;
   goto out;
 out:
   return parser->err;
@@ -345,7 +345,7 @@ err_t sx_parser_default_events(sx_parser_t * parser)
       if (parser->nsx) {
         parser->nsx->next = list;
         parser->nsx = NULL;
-        parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+        parser->err = 0;
         goto out;
       } else {
         if (top) {
@@ -355,19 +355,19 @@ err_t sx_parser_default_events(sx_parser_t * parser)
           }
           top->list = list;
           parser->nsx = NULL;
-          parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+          parser->err = 0;
           goto out;
         } else if (!parser->root) {
           parser->root = list;
           parser->nsx = NULL;
-          parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+          parser->err = 0;
           goto out;
         }
         sx_stack_pop(parser->stack);
       }
 list_start_garbage:
       sx_pool_retmem(parser->pool, list);
-      parser->err = err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, SX_ERROR_LIST_START_GARBAGE);
+      parser->err = ERR_SX_LIST_START_GARBAGE;
       goto out;
     case SX_PARSER_LIST_END:
       if ((top = sx_stack_top(parser->stack))) {
@@ -375,14 +375,14 @@ list_start_garbage:
           goto list_end_garbage;
         sx_stack_pop(parser->stack);
         parser->nsx = top;
-        parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+        parser->err = 0;
         goto out;
       }
 list_end_garbage:
-      parser->err = err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, SX_ERROR_LIST_END_GARBAGE);
+      parser->err = ERR_SX_LIST_END_GARBAGE;
       goto out;
     case SX_PARSER_ATOM_START:
-      parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+      parser->err = 0;
       goto out;
     case SX_PARSER_ATOM_END:
       str = sx_strgen_get(parser->gen);
@@ -395,13 +395,13 @@ list_end_garbage:
         goto out_of_memory;
       }
 
-      if (sx_atom_init_string(atom, parser, str).composite)
+      if (sx_atom_init_string(atom, parser, str))
         goto atom_end_garbage;
 
       if (parser->nsx) {
         parser->nsx->next = atom;
         parser->nsx = parser->nsx->next;
-        parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+        parser->err = 0;
         goto out;
       } else {
         if ((top = sx_stack_top(parser->stack))) {
@@ -409,12 +409,12 @@ list_end_garbage:
             goto atom_end_garbage;
           top->list = atom;
           parser->nsx = atom;
-          parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+          parser->err = 0;
           goto out;
         } else if (!parser->root) {
           parser->root = atom;
           parser->nsx = atom;
-          parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+          parser->err = 0;
           goto out;
         }
         goto atom_end_garbage;
@@ -422,18 +422,18 @@ list_end_garbage:
 atom_end_garbage:
       sx_atom_clear(atom, parser);
       sx_pool_retmem(parser->pool, atom);
-      parser->err = err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, SX_ERROR_ATOM_END_GARBAGE);
+      parser->err = ERR_SX_ATOM_END_GARBAGE;
       goto out;
     default:
       sx_atom_clear(atom, parser);
       sx_pool_retmem(parser->pool, atom);
-      parser->err = err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, 255);
+      parser->err = ERR_SX_UNHANDLED;
       break;
   }
-  parser->err = err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, SX_ERROR_UNHANDLED);
+  parser->err = ERR_SX_UNHANDLED;
   goto out;
 out_of_memory:
-  parser->err = err_construct(ERR_MAJ_ALLOC, ERR_MIN_POOL_ALLOC, SX_ERROR_SUCCESS);
+  parser->err = ERR_MEM_ALLOC;
   goto out;
 
 out:
@@ -443,7 +443,7 @@ out:
 err_t sx_parser_read(sx_parser_t * parser, const char * buffer, size_t length)
 {
   if (!buffer)
-    return err_construct(ERR_MAJ_NULL_POINTER, ERR_MIN_IN_INVALID, SX_ERROR_SUCCESS);
+    return ERR_IN_NULL_POINTER;
 
   parser->b = buffer;
   parser->bp = parser->b;
@@ -456,24 +456,22 @@ err_t sx_parser_read(sx_parser_t * parser, const char * buffer, size_t length)
 
 const char * sx_parser_strerror(sx_parser_t * parser)
 {
-  enum sx_parser_error error = parser->err.extra;
-
-  switch (error) {
-    case SX_ERROR_SUCCESS:
+  switch (parser->err) {
+    case ERR_SUCCESS:
       return "success";
-    case SX_ERROR_PAREN_MISMATCH:
+    case ERR_SX_PAREN_MISMATCH:
       return "cannot close parenthesis, which was never opened";
-    case SX_ERROR_MALFORMED_ATOM:
+    case ERR_SX_MALFORMED_ATOM:
       return "malformed atom";
-    case SX_ERROR_UTF8_ERROR:
+    case ERR_SX_UTF8_ERROR:
       return "input contains invalid utf-8 string";
-    case SX_ERROR_LIST_START_GARBAGE:
+    case ERR_SX_LIST_START_GARBAGE:
       return "garbage at start of list";
-    case SX_ERROR_LIST_END_GARBAGE:
+    case ERR_SX_LIST_END_GARBAGE:
       return "garbage at end of list";
-    case SX_ERROR_ATOM_END_GARBAGE:
+    case ERR_SX_ATOM_END_GARBAGE:
       return "garbage at end of atom";
-    case SX_ERROR_UNHANDLED:
+    case ERR_SX_UNHANDLED:
       return "the parser was not able to handle given input";
   }
   return NULL;

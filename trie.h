@@ -4,11 +4,13 @@
 #include "err.h"
 #include <stdint.h>
 
+#include "memory.h"
+
 enum trie_error {
   TRIE_ERROR_SUCCESS = 0,
   TRIE_ERROR_DUPLICATE,
   TRIE_ERROR_CORRUPTION,
-
+  TRIE_ERROR_NOT_FOUND,
 };
 
 struct tnode {
@@ -21,7 +23,7 @@ struct tnode {
   };
   unsigned next : 24;
   unsigned child : 24;
-  uint64_t data;
+  uintptr_t data;
 };
 
 #define TNODE_BANK_SIZE 32
@@ -58,14 +60,22 @@ struct trie {
   uint32_t root;
 
   uint32_t freelist;
+
+  const mem_allocator_t * a;
 };
 
 typedef struct trie trie_t;
 
-trie_t * trie_init(trie_t * trie);
+
+trie_t * trie_init(trie_t * trie, const mem_allocator_t * a);
 void     trie_clear(trie_t * trie);
-err_t    trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t data);
+
+err_t    trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uintptr_t data, bool replace);
 err_t    trie_delete(trie_t * trie, const uint8_t word[], uint16_t len);
-err_t    trie_find(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t * data);
+err_t    trie_find(trie_t * trie, const uint8_t word[], uint16_t len, uintptr_t * data);
+
+typedef int (trie_forach_t) (const uint8_t word[], uint16_t len, uintptr_t data, void * ud);
+
+err_t    trie_foreach(trie_t * trie, trie_forach_t f, void * ud);
 
 #endif /* _TRIE_H */

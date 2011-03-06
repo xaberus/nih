@@ -95,11 +95,11 @@ err_t sx_parser_atom_sq_fsm(sx_parser_t * parser, sx_str_t * str)
 
   if ( cs < sx_sq_first_final) {
     /*bt_log("rejected at <%.*s>\n", (int) (pe-p+1), p-1);*/
-    parser->err = err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, SX_ERROR_UNHANDLED);
+    parser->err = ERR_SX_UNHANDLED;
   } else {
     str->used = ((char *) w - str->buffer);
     /*bt_log("« <%.*s> (%u)\n", str->used, str->buffer, str->used);*/
-    parser->err = err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, SX_ERROR_SUCCESS);
+    parser->err = 0;
   }
 
   return parser->err;

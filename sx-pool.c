@@ -3,7 +3,6 @@
 #include "sx-pool.h"
 
 /*#define VERBOSETEST*/
-#define TEST
 
 #define REDZONE 16
 

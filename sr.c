@@ -1,14 +1,9 @@
 
 #include "rational.h"
 
-#define ERR_NULL err_construct(ERR_MAJ_NULL_POINTER, ERR_MIN_IN_NULL_POINTER, 0)
-#define ERR_OK err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, 0)
 
 #define ERR_I_OVER err_construct(ERR_MAJ_OVERFLOW, ERR_MIN_IN_OVERFLOW, 0)
-#define ERR_C_OVER err_construct(ERR_MAJ_OVERFLOW, ERR_MIN_CALC_OVERFLOW, 0)
-#define ERR_DZERO err_construct(ERR_MAJ_INVALID, ERR_MIN_DIVIDE_BY_ZERO, 0)
 #define ERR_ err_construct(ERR_MAJ_INVALID, ERR_MIN_DIVIDE_BY_ZERO, 0)
-#define ERR_TEST_FAIL err_construct(ERR_TEST_FAILED, ERR_MIN_SUCCESS, 0)
 
 unsigned gcd(unsigned a, unsigned b)
 {
@@ -27,7 +22,7 @@ unsigned lcm(unsigned a, unsigned b)
 err_t sr_set(sr_t * rat, int16_t num, uint16_t den)
 {
   if (!rat)
-    return ERR_NULL;
+    return ERR_IN_NULL_POINTER;
 
   signed int n;
   unsigned int d;
@@ -37,7 +32,7 @@ err_t sr_set(sr_t * rat, int16_t num, uint16_t den)
   d = den;
 
   if (d == 0)
-    return ERR_DZERO;
+    return ERR_IN_DIVIDE_BY_ZERO;
 
   mul = (n>=0)? gcd(n,d) : gcd(-n,d);
 
@@ -45,20 +40,20 @@ err_t sr_set(sr_t * rat, int16_t num, uint16_t den)
   d /= mul;
 
   if (n > INT16_MAX || n < INT16_MIN)
-    return ERR_C_OVER;
+    return ERR_OVERFLOW;
   if (d > UINT16_MAX)
-    return ERR_C_OVER;
+    return ERR_OVERFLOW;
 
   rat->num = n;
   rat->den = d;
 
-  return ERR_OK;
+  return 0;
 }
 
 err_t sr_add(const sr_t * a, const sr_t * b, sr_t * result)
 {
   if (!a || !b || !result)
-    return ERR_NULL;
+    return ERR_IN_NULL_POINTER;
 
   signed int n;
   unsigned int d;
@@ -72,20 +67,20 @@ err_t sr_add(const sr_t * a, const sr_t * b, sr_t * result)
   d /= mul;
 
   if (n > INT16_MAX || n < INT16_MIN)
-    return ERR_C_OVER;
+    return ERR_OVERFLOW;
   if (d > UINT16_MAX)
-    return ERR_C_OVER;
+    return ERR_OVERFLOW;
 
   result->num = n;
   result->den = d;
 
-  return ERR_OK;
+  return 0;
 }
 
 err_t sr_sub(const sr_t * a, const sr_t * b, sr_t * result)
 {
   if (!a || !b || !result)
-    return ERR_NULL;
+    return ERR_IN_NULL_POINTER;
 
   signed int n;
   unsigned int d;
@@ -99,20 +94,20 @@ err_t sr_sub(const sr_t * a, const sr_t * b, sr_t * result)
   d /= mul;
 
   if (n > INT16_MAX || n < INT16_MIN)
-    return ERR_C_OVER;
+    return ERR_OVERFLOW;
   if (d > UINT16_MAX)
-    return ERR_C_OVER;
+    return ERR_OVERFLOW;
 
   result->num = n;
   result->den = d;
 
-  return ERR_OK;
+  return 0;
 }
 
 err_t sr_mul(const sr_t * a, const sr_t * b, sr_t * result)
 {
   if (!a || !b || !result)
-    return ERR_NULL;
+    return ERR_IN_NULL_POINTER;
 
   signed int n;
   unsigned int d;
@@ -126,20 +121,20 @@ err_t sr_mul(const sr_t * a, const sr_t * b, sr_t * result)
   d /= mul;
 
   if (n > INT16_MAX || n < INT16_MIN)
-    return ERR_C_OVER;
+    return ERR_OVERFLOW;
   if (d > UINT16_MAX)
-    return ERR_C_OVER;
+    return ERR_OVERFLOW;
 
   result->num = n;
   result->den = d;
 
-  return ERR_OK;
+  return 0;
 }
 
 err_t sr_div(const sr_t * a, const sr_t * b, sr_t * result)
 {
   if (!a || !b || !result)
-    return ERR_NULL;
+    return ERR_IN_NULL_POINTER;
 
   signed int n;
   unsigned int d;
@@ -149,7 +144,7 @@ err_t sr_div(const sr_t * a, const sr_t * b, sr_t * result)
   d = a->den * b->num;
 
   if (d == 0)
-    return ERR_DZERO;
+    return ERR_DIVIDE_BY_ZERO;
 
   mul = (n>=0)? gcd(n,d) : gcd(-n,d);
 
@@ -157,14 +152,14 @@ err_t sr_div(const sr_t * a, const sr_t * b, sr_t * result)
   d /= mul;
 
   if (n > INT16_MAX || n < INT16_MIN)
-    return ERR_C_OVER;
+    return ERR_OVERFLOW;
   if (d > UINT16_MAX)
-    return ERR_C_OVER;
+    return ERR_OVERFLOW;
 
   result->num = n;
   result->den = d;
 
-  return ERR_OK;
+  return 0;
 }
 
 #ifdef TEST
@@ -190,7 +185,7 @@ err_t sr_test_eval(sx_t * sx, sr_t * ret)
   err_t err;
 
   if (!sx)
-    return ERR_NULL;
+    return ERR_IN_NULL_POINTER;
 
   if (sx->islist) {
     sx_t * sn,  * sd;
@@ -206,30 +201,30 @@ err_t sr_test_eval(sx_t * sx, sr_t * ret)
         else if (sn->isuint)
           n = (uint16_t)sn->atom.uint;
         else
-          return ERR_TEST_FAIL;
+          return ERR_FAILURE;
         if (sn->next) {
           sd = sn->next;
           if (sd->isuint)
             d = (uint16_t)sd->atom.uint;
           else
-            return ERR_TEST_FAIL;
+            return ERR_FAILURE;
         }
         err = sr_set(ret, n, d);
-        if (err.composite)
+        if (err)
           return err;
-        return ERR_OK;
+        return 0;
       } else if (sn->isplain) {
         if (strncmp(sn->atom.string->buffer, "add", sn->atom.string->used) == 0) {
           if (sn->next && sn->next->next) {
             err = sr_test_eval(sn->next, a);
-            if (err.composite)
+            if (err)
               return err;
             sn = sn->next->next;
             while (sn) {
               err = sr_test_eval(sn, b);
-              if (err.composite)
+              if (err)
                 return err;
-              if (err.composite)
+              if (err)
                 return err;
               err = sr_add(a, b, a);
               sn = sn->next;
@@ -239,14 +234,14 @@ err_t sr_test_eval(sx_t * sx, sr_t * ret)
         } else if (strncmp(sn->atom.string->buffer, "sub", sn->atom.string->used) == 0) {
           if (sn->next && sn->next->next) {
             err = sr_test_eval(sn->next, a);
-            if (err.composite)
+            if (err)
               return err;
             sn = sn->next->next;
             while (sn) {
               err = sr_test_eval(sn, b);
-              if (err.composite)
+              if (err)
                 return err;
-              if (err.composite)
+              if (err)
                 return err;
               err = sr_sub(a, b, a);
               sn = sn->next;
@@ -256,14 +251,14 @@ err_t sr_test_eval(sx_t * sx, sr_t * ret)
         } else if (strncmp(sn->atom.string->buffer, "mul", sn->atom.string->used) == 0) {
           if (sn->next && sn->next->next) {
             err = sr_test_eval(sn->next, a);
-            if (err.composite)
+            if (err)
               return err;
             sn = sn->next->next;
             while (sn) {
               err = sr_test_eval(sn, b);
-              if (err.composite)
+              if (err)
                 return err;
-              if (err.composite)
+              if (err)
                 return err;
               err = sr_mul(a, b, a);
               sn = sn->next;
@@ -273,14 +268,14 @@ err_t sr_test_eval(sx_t * sx, sr_t * ret)
         } else if (strncmp(sn->atom.string->buffer, "div", sn->atom.string->used) == 0) {
           if (sn->next && sn->next->next) {
             err = sr_test_eval(sn->next, a);
-            if (err.composite)
+            if (err)
               return err;
             sn = sn->next->next;
             while (sn) {
               err = sr_test_eval(sn, b);
-              if (err.composite)
+              if (err)
                 return err;
-              if (err.composite)
+              if (err)
                 return err;
               err = sr_div(a, b, a);
               sn = sn->next;
@@ -288,12 +283,12 @@ err_t sr_test_eval(sx_t * sx, sr_t * ret)
             *ret = *a;
           }
         } else
-            return ERR_TEST_FAIL;
+            return ERR_FAILURE;
       }
     }
   }
 
-  return ERR_OK;
+  return 0;
 }
 
 err_t sr_tester(sx_t * sx)
@@ -308,20 +303,20 @@ err_t sr_tester(sx_t * sx)
     sx = sx->list;
 
     if (!sx)
-      return ERR_OK;
+      return 0;
 
     cal = sx;
     if (!cal)
-      return ERR_OK;
+      return 0;
     res = cal->next;
     if (!res)
-      return ERR_OK;
+      return 0;
 
     err = sr_test_eval(cal, act);
-    if (err.composite)
+    if (err)
       return err;
     err = sr_test_eval(res, exp);
-    if (err.composite)
+    if (err)
       return err;
 
     bt_log("(");
@@ -333,10 +328,10 @@ err_t sr_tester(sx_t * sx)
       act->num, act->den, exp->num, exp->den);
 
     if (act->num != exp->num || act->den != exp->den)
-      return ERR_TEST_FAIL;
+      return ERR_FAILURE;
   }
 
-  return ERR_OK;
+  return 0;
 }
 
 BT_TEST_DEF_PLAIN(rational, sr, "sr")
@@ -367,7 +362,7 @@ BT_TEST_DEF_PLAIN(rational, sr, "sr")
 
   while ((rd = read(fd, t, 512))) {
     err = sx_parser_read(parser, t, rd);
-    if (err.composite) {
+    if (err) {
       bt_log("parser error: %s at line %u\n", sx_parser_strerror(parser), parser->line);
       chunk = sx_strgen_get(parser->gen);
       if (chunk) {
@@ -376,7 +371,7 @@ BT_TEST_DEF_PLAIN(rational, sr, "sr")
         goto out;
       }
     }
-    bt_assert_int_equal(err.composite, 0);
+    bt_assert_int_equal(err, 0);
   }
   //sx_test_print(parser->root, 0, 0, 0);
 
@@ -388,7 +383,7 @@ BT_TEST_DEF_PLAIN(rational, sr, "sr")
 
 out:
   sx_parser_clear(parser);
-  bt_assert_int_equal(err.composite, 0);
+  bt_assert_int_equal(err, 0);
 
 /*  bt_chkerr(sr_set(a, 2, 6));
   bt_chkerr(sr_set(b, -1, 2));

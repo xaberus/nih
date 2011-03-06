@@ -123,7 +123,7 @@ err_t         sx_parser_read(sx_parser_t * parser, const char * buffer, size_t l
 const char *  sx_parser_strerror(sx_parser_t * parser);
 
 # ifdef TEST
-int sx_test_print(sx_t * sx, unsigned int level, int len, unsigned int brk, int sl);
+int sx_test_print(sx_t * sx, unsigned int level, int len, unsigned int brk, unsigned int sl);
 # endif /* TEST */
 
 #endif /* _SX_H */

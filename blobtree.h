@@ -68,6 +68,7 @@ struct pool {
 #define ALIGN4096(_size) (((_size) + 4095L) & ~4095L)
 
 pool_t * pool_alloc(blob_t * ctx, size_t size);
+blob_t * pool_blob_realloc(pool_t * pool, blob_t * ctx, blob_t * blob, size_t size);
 
 blob_t * blob_alloc(blob_t * ctx, size_t size);
 int      blob_free(blob_t * ctx, blob_t * null_ctx);

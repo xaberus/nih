@@ -32,10 +32,12 @@ struct tnode_iter   tnode_iter(struct tnode_bank * bank, uint32_t idx)
 }
 
 inline static
-struct tnode_bank * tnode_bank_alloc(uint32_t start, uint32_t end)
+struct tnode_bank * tnode_bank_alloc(uint32_t start, uint32_t end, const mem_allocator_t * a)
 {
   uint32_t            size = (end - start);
-  struct tnode_bank * bank = malloc(sizeof(struct tnode_bank) + sizeof(struct tnode) * size);
+  struct tnode_bank * bank;
+  
+  bank = mem_alloc(a, sizeof(struct tnode_bank) + sizeof(struct tnode) * size);
 
   if (bank) {
     memset(bank, 0, sizeof(struct tnode_bank) + sizeof(struct tnode) * size);
@@ -110,18 +112,19 @@ struct tnode_tuple tnode_iter_get(struct tnode_iter * iter, uint32_t index)
   return tnode_tuple(NULL, 0);
 }
 
-trie_t * trie_init(trie_t * trie)
+trie_t * trie_init(trie_t * trie, const mem_allocator_t * a)
 {
-  if (!trie)
+  if (!trie || !a)
     return NULL;
 
   memset(trie, 0, sizeof(trie_t));
 
-  trie->nodes = tnode_bank_alloc(0, TNODE_BANK_SIZE);
+  trie->nodes = tnode_bank_alloc(0, TNODE_BANK_SIZE, a);
   if (!trie->nodes)
     return NULL;
 
   trie->abank = trie->nodes;
+  trie->a = a;
 
   return trie;
 }
@@ -136,7 +139,7 @@ void trie_clear(trie_t * trie)
 
   for (bank = trie->nodes, next = bank ? bank->next : NULL; bank;
        bank = next, next = bank ? bank->next : NULL) {
-    free(bank);
+    mem_free(trie->a, bank);
   }
 
   memset(trie, 0, sizeof(trie_t));
@@ -169,7 +172,7 @@ struct tnode_tuple trie_mknode(trie_t * trie)
       uint32_t start = trie->abank->end;
       uint32_t end = start + TNODE_BANK_SIZE;
 
-      bank = tnode_bank_alloc(start, end);
+      bank = tnode_bank_alloc(start, end, trie->a);
       if (!bank)
         return tuple;
 
@@ -178,7 +181,7 @@ struct tnode_tuple trie_mknode(trie_t * trie)
       tuple = tnode_bank_mknode(bank);
 
       if (!tuple.index) {
-        free(bank);
+        mem_free(trie->a, bank);
         return tuple;
       }
 
@@ -248,6 +251,7 @@ void trie_print_r(trie_t * trie, struct tnode_iter * iter, uint32_t index, int f
       dprintf(fd, " \"node%u\":f2 -> \"node%u\" [color=blue, minlen=0];\n", last, tuple.index);
 #endif
   }
+  dprintf(fd, " pencolor = none;\n");
   dprintf(fd, " }\n");
 
 #if 0
@@ -283,7 +287,7 @@ void trie_print(trie_t * trie, int fd)
   dprintf(fd, "}\n");
 }
 
-err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t data)
+err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uintptr_t data, bool replace)
 {
   int                out = 4;
   uint32_t           i = 0, n = 0, rest;
@@ -292,8 +296,10 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t da
   struct tnode_tuple new, tmp;
   struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
 
-  if (!trie || !word || !len)
-    return err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, TRIE_ERROR_SUCCESS);
+  if (!trie || !word)
+    return ERR_IN_NULL_POINTER;
+  if (!len)
+    return ERR_IN_INVALID;
 
   if (trie->root) {
     tuple = tnode_iter_get(&iter, trie->root);
@@ -301,12 +307,12 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t da
       if (c == tuple.node->c) {
         i++;
         if (i == len) {
-          if (tuple.node->isdata) /* duplicte */
-            return err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, TRIE_ERROR_DUPLICATE);
+          if (!replace && tuple.node->isdata) /* duplicate */
+            return ERR_DUPLICATE;
           else {
             tuple.node->isdata = 1;
             tuple.node->data = data;
-            return err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, TRIE_ERROR_SUCCESS);
+            return 0;
           }
         }
         tmp = tnode_iter_get(&iter, tuple.node->child);
@@ -330,7 +336,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t da
   }
 
   if (!out)
-    return err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, TRIE_ERROR_CORRUPTION);
+    return ERR_CORRUPTION;
 
   /* allocate space for the rest of our key
    * and roll back on failure... */
@@ -343,7 +349,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t da
         stride[k].node->isused = 1;
         trie_remnode(trie, stride[k].index);
       }
-      return err_construct(ERR_MAJ_MEMORY, ERR_MIN_MEMORY_ALLOC, TRIE_ERROR_CORRUPTION);
+      return ERR_MEM_USE_ALLOC;
     }
     stride[n] = new;
   }
@@ -411,7 +417,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t da
     tuple.node->data = data;
   }
 
-  return err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, TRIE_ERROR_SUCCESS);
+  return 0;
 }
 
 err_t trie_delete(trie_t * trie, const uint8_t word[], uint16_t len)
@@ -419,8 +425,10 @@ err_t trie_delete(trie_t * trie, const uint8_t word[], uint16_t len)
   int                out = 0;
   int32_t            i = 0;
 
-  if (!trie || !word || !len)
-    return err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, TRIE_ERROR_SUCCESS);
+  if (!trie || !word)
+    return ERR_IN_NULL_POINTER;
+  if (!len)
+    return ERR_IN_INVALID;
 
   uint8_t            c = word[i];
   struct tnode_tuple tuple;
@@ -458,7 +466,7 @@ err_t trie_delete(trie_t * trie, const uint8_t word[], uint16_t len)
           stack[i].prev = tuple;
           tuple = tnode_iter_get(&iter, tuple.node->next);
         } else {
-          return err_construct(ERR_MAJ_INVALID, ERR_MIN_NOT_FOUND, TRIE_ERROR_SUCCESS);
+          return ERR_NOT_FOUND;
         }
       }
     }
@@ -503,7 +511,7 @@ err_t trie_delete(trie_t * trie, const uint8_t word[], uint16_t len)
     }
   }
 
-  return err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, TRIE_ERROR_SUCCESS);
+  return 0;
 }
 
 
@@ -544,22 +552,126 @@ struct tnode_tuple trie_find_i(trie_t * trie, const uint8_t word[], uint16_t len
   return tnode_tuple(NULL, 0);
 }
 
-err_t trie_find(trie_t * trie, const uint8_t word[], uint16_t len, uint64_t * data)
+err_t trie_find(trie_t * trie, const uint8_t word[], uint16_t len, uintptr_t * data)
 {
   struct tnode_tuple tuple;
 
-  if (!trie || !word || !len)
-    return err_construct(ERR_MAJ_INVALID, ERR_MIN_IN_INVALID, TRIE_ERROR_SUCCESS);
+  if (!trie || !word)
+    return ERR_IN_NULL_POINTER;
+  if (!len)
+    return ERR_IN_INVALID;
 
   tuple = trie_find_i(trie, word, len);
 
   if (!tuple.index)
-    return err_construct(ERR_MAJ_INVALID, ERR_MIN_NOT_FOUND, TRIE_ERROR_SUCCESS);
+    return ERR_NOT_FOUND;
 
   if (data)
     *data = tuple.node->data;
 
-  return err_construct(ERR_MAJ_SUCCESS, ERR_MIN_SUCCESS, TRIE_ERROR_SUCCESS);
+  return 0;
+}
+
+#define ALIGN16(_size) (((_size) + 15L) & ~15L)
+
+inline static
+void tuple_print(struct tnode_tuple tu)
+{
+  printf("node(%u) = {c = %c, {%s%s%s}, next = %u, child = %u, data = %zu}\n",
+      tu.index, tu.node->c, 
+      tu.node->iskey ? "K" : "",
+      tu.node->isdata ? "D" : "",
+      tu.node->isused ? "U" : "",
+      tu.node->next, tu.node->child, tu.node->data);
+
+}
+
+err_t trie_foreach(trie_t * trie, trie_forach_t f, void * ud)
+{
+  if (!trie || !f)
+    return ERR_IN_NULL_POINTER;
+  if (!trie->root)
+    return ERR_SUCCESS;
+
+  /* must be signed due to go==2 */
+  int32_t  pos = 0;
+
+  uint16_t  len = 0;
+  uint16_t  nlen = 0;
+  uint16_t  olen = 0;
+  uint8_t * word = NULL;
+  struct tnode_tuple * stride = NULL;
+
+  void * tmp;
+
+  struct tnode_tuple tuple;
+  struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
+
+  int go = 1; /* 1 child, 2 next */
+
+  tuple = tnode_iter_get(&iter, trie->root);
+
+  while (tuple.index) {
+    len = pos + 1;
+
+    if (len >= nlen) {
+      olen = nlen;
+      nlen = ALIGN16(len);
+
+      tmp = mem_realloc(trie->a, word, olen, nlen);
+      if (!tmp)
+        goto alloc_error;
+      word = tmp;
+
+      tmp = mem_realloc(trie->a, stride,
+        sizeof(struct tnode_tuple) * olen,
+        sizeof(struct tnode_tuple) * nlen);
+      if (!tmp)
+        goto alloc_error;
+      stride = tmp;
+    }
+
+    //tuple_print(tuple);
+
+    word[pos] = tuple.node->c;
+    stride[pos] = tuple;
+
+    if (tuple.node->isdata) {
+      f(word, len, tuple.node->data, ud);
+    }
+
+    if (go == 1) {
+
+      if (tuple.node->child) {
+        tuple = tnode_iter_get(&iter, tuple.node->child); pos ++;
+        continue;
+      } else {
+        go = 2;
+      }
+    }
+
+    if (go == 2) {
+      /* rewind the stack */
+      for (; pos >= 0 && !stride[pos].node->next; pos--);
+      if (pos < 0)
+        goto out;
+
+      tuple = tnode_iter_get(&iter, stride[pos].node->next); go = 1;
+    }
+
+  }
+
+out:
+  mem_free(trie->a, word);
+  mem_free(trie->a, stride);
+
+  return ERR_SUCCESS;
+alloc_error:
+  if (word)
+    mem_free(trie->a, word);
+  if (stride)
+    mem_free(trie->a, stride);
+  return ERR_MEM_REALLOC;
 }
 
 #include "tests/trie-tests.c"

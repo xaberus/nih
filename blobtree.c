@@ -134,7 +134,6 @@ blob_t * pool_blob_alloc(pool_t * pool, size_t size)
 }
 
 
-static inline
 blob_t * pool_blob_realloc(pool_t * pool, blob_t * ctx, blob_t * blob, size_t size)
 {
   if (!blob || (blob_t *) pool != ctx || !size)

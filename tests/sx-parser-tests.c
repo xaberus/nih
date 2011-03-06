@@ -111,7 +111,7 @@ int sx_is_lspa(sx_t * sx)
   return spa > 1;
 }
 
-int sx_test_print(sx_t * sx, unsigned int level, int len, unsigned int brk, int sl)
+int sx_test_print(sx_t * sx, unsigned int level, int len, unsigned int brk, unsigned int sl)
 {
   int lila = 0;
 #if 1
@@ -131,8 +131,7 @@ int sx_test_print(sx_t * sx, unsigned int level, int len, unsigned int brk, int 
           (sx->isdouble? "D" : ""));*/
       len += sx_atom_test_escape_print(sx, 0);
     } else if (sx->islist) {
-      if (sl != level && (len > 40 || sx->list && sx->list->islist
-        || (sx_is_lspa(sx->list)))) {
+      if (sl != level && (len > 40 || (sx->list && sx->list->islist) || (sx_is_lspa(sx->list)))) {
         len += PRINT("\n%*.0s(", level, "");
         len = 0;
         brk = level;
@@ -191,7 +190,7 @@ BT_TEST_DEF_PLAIN(sx_util, sx_parser, "pokes sx parser and watches out for error
   while ((rd = read(fd, t, 2))) {
     /*bt_log(">> %.*s\n", (int)rd, t);*/
     err = sx_parser_read(parser, t, rd);
-    if (err.composite) {
+    if (err) {
       bt_log("parser error: %s at line %u\n", sx_parser_strerror(parser), parser->line);
       chunk = sx_strgen_get(parser->gen);
       if (chunk) {
@@ -200,13 +199,13 @@ BT_TEST_DEF_PLAIN(sx_util, sx_parser, "pokes sx parser and watches out for error
         goto out;
       }
     }
-    bt_assert_int_equal(err.composite, 0);
+    bt_assert_int_equal(err, 0);
   }
   sx_test_print(parser->root, 0, 0, 0, 1);
 
 out:
   sx_parser_clear(parser);
-  bt_assert_int_equal(err.composite, 0);
+  bt_assert_int_equal(err, 0);
 
   return BT_RESULT_OK;
 }

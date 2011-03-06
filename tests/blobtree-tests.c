@@ -248,7 +248,7 @@ pool_t * pool_test_alloc(blob_t * ctx, size_t size, const char * name)
   return pool;
 }
 
-BT_SUITE_SETUP_DEF(blob)
+BT_SUITE_SETUP_DEF(blob, object)
 {
   struct blob_test * test = calloc(1, sizeof(struct blob_test));
 
@@ -267,7 +267,7 @@ BT_SUITE_SETUP_DEF(blob)
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(blob, pre, "tests preconditions and uncommon errors")
+BT_TEST_DEF(blob, pre, object, "tests preconditions and uncommon errors")
 {
   struct blob_test * test = object;
   blob_t           * blob, * ptr;
@@ -370,7 +370,7 @@ BT_TEST_DEF(blob, pre, "tests preconditions and uncommon errors")
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(blob, empty, "tests suite conditions and overflows")
+BT_TEST_DEF(blob, empty, object, "tests suite conditions and overflows")
 {
   struct blob_test * test = object;
   blob_t           * blob;
@@ -422,7 +422,7 @@ static const blob_vtable_t fail_vtable = {
   .destructor = fail_destructor,
 };
 
-BT_TEST_DEF(blob, failing_destructor, "what happens after a failing destructor?")
+BT_TEST_DEF(blob, failing_destructor, object, "what happens after a failing destructor?")
 {
   struct blob_test * test = object;
   blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4;
@@ -458,7 +458,7 @@ BT_TEST_DEF(blob, failing_destructor, "what happens after a failing destructor?"
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(blob, realloc, "what happens on reallocation")
+BT_TEST_DEF(blob, realloc, object, "what happens on reallocation")
 {
   struct blob_test * test = object;
   blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2;
@@ -631,7 +631,7 @@ BT_TEST_DEF(blob, realloc, "what happens on reallocation")
 }
 
 #if 0
-BT_TEST_DEF(blob, free_parent_deny_child, "talloc free parent deny child")
+BT_TEST_DEF(blob, free_parent_deny_child, object, "talloc free parent deny child")
 {
   struct blob_test * test = object;
   blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2, * p3;
@@ -701,7 +701,7 @@ static const blob_vtable_t test_free_in_destructor_vtable = {
 };
 
 
-BT_TEST_DEF(blob, free_in_destructor, "what happens after a free in destructor?")
+BT_TEST_DEF(blob, free_in_destructor, object, "what happens after a free in destructor?")
 {
   struct blob_test * test = object;
   blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4, * p5;
@@ -744,7 +744,7 @@ BT_TEST_DEF(blob, free_in_destructor, "what happens after a free in destructor?"
 }
 
 
-BT_TEST_DEF(blob, pool, "does our scapegoat (double free) 'pool' behave as expected?")
+BT_TEST_DEF(blob, pool, object, "does our scapegoat (double free) 'pool' behave as expected?")
 {
   struct blob_test * test = object;
   blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4, * p5;
@@ -832,7 +832,7 @@ BT_TEST_DEF(blob, pool, "does our scapegoat (double free) 'pool' behave as expec
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(blob, list, "do our inlined list functions preform as expected?")
+BT_TEST_DEF(blob, list, object, "do our inlined list functions preform as expected?")
 {
   struct blob_test * test = object;
   blob_t           * null = test->null_ctx, * root = test->root, * p1, * p2, * p3, * p4, * p5;
@@ -875,7 +875,7 @@ BT_TEST_DEF(blob, list, "do our inlined list functions preform as expected?")
   return BT_RESULT_OK;
 }
 
-BT_SUITE_TEARDOWN_DEF(blob)
+BT_SUITE_TEARDOWN_DEF(blob, object)
 {
   struct blob_test * test = *object;
 
