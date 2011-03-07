@@ -30,12 +30,12 @@ void      table_clear(table_t * table)
 }
 
 
-err_t table_set(table_t * table, const char key[], uint16_t len, struct tvalue_base * value)
+err_t table_set(table_t * table, uint16_t len, const char key[len], struct tvalue_base * value)
 {
   if (!table || !key)
     return ERR_IN_NULL_POINTER;
 
-  err_t err = trie_insert(table->trie, (const uint8_t *) key, len, (uintptr_t) value, 1);
+  err_t err = trie_insert(table->trie, len, (const uint8_t *) key, (uintptr_t) value, 1);
 
   return err;
 }
@@ -88,7 +88,7 @@ err_t table_seti(table_t * table, uint32_t key, struct tvalue_base * value)
   return 0;
 }
 
-tget_t table_get(table_t * table, const char key[], uint16_t len)
+tget_t table_get(table_t * table, uint16_t len, const char key[len])
 {
   tget_t ret = {0, NULL};
 
@@ -97,7 +97,7 @@ tget_t table_get(table_t * table, const char key[], uint16_t len)
     return ret;
   }
 
-  ret.error = trie_find(table->trie, (const uint8_t *) key, len, (uintptr_t *) &ret.value);
+  ret.error = trie_find(table->trie, len, (const uint8_t *) key, (uintptr_t *) &ret.value);
 
   return ret;
 }

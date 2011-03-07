@@ -67,12 +67,12 @@ __extension__ struct tvalue_reference {
 table_t * table_init(table_t * table, mem_allocator_t a);
 void      table_clear(table_t * table);
 
-err_t     table_set(table_t * table, const char key[], uint16_t len, struct tvalue_base * value);
+err_t     table_set(table_t * table, uint16_t len, const char key[len], struct tvalue_base * value);
 err_t     table_seti(table_t * table, uint32_t key, struct tvalue_base * value);
 
 typedef struct { err_t error; struct tvalue_base * value; } tget_t;
 
-tget_t    table_get(table_t * table, const char key[], uint16_t len);
+tget_t    table_get(table_t * table, uint16_t len, const char key[len]);
 tget_t    table_geti(table_t * table, uint32_t key);
 
 #endif /* _TABLE_H */

@@ -90,7 +90,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
     if (str) {
-      err = trie_insert(trie, (const uint8_t *) str, strlen(str), j, 0);
+      err = trie_insert(trie, strlen(str), (const uint8_t *) str, j, 0);
       if (err)
         bt_log("FAIL:  '%.*s'\n", (int) strlen(str), str);
       bt_chkerr(err);
@@ -100,7 +100,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
     if (str) {
-      err = trie_find(trie, (const uint8_t *) str, strlen(str), &data);
+      err = trie_find(trie, strlen(str), (const uint8_t *) str, &data);
       bt_chkerr(err);
       bt_assert_int_equal(data, j);
     }
@@ -116,7 +116,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
       str = strv[n];
     }
 
-    err = trie_delete(trie, (const uint8_t *) str, strlen(str));
+    err = trie_delete(trie, strlen(str), (const uint8_t *) str);
     bt_chkerr(err);
 
     free(str);
@@ -125,7 +125,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
     for (size_t j = 0; j < num; j++) {
       str = strv[j];
       if (str) {
-        err = trie_find(trie, (const uint8_t *) str, strlen(str), &data);
+        err = trie_find(trie, strlen(str), (const uint8_t *) str, &data);
         bt_chkerr(err);
         bt_assert_int_equal(data, j);
       }
@@ -136,7 +136,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
 }
 
 
-int test_trie_ff(const uint8_t word[], uint16_t len, uintptr_t data, void * ud)
+int test_trie_ff(uint16_t len, const uint8_t word[len], uintptr_t data, void * ud)
 {
   (void) word; (void) len; (void) data; (void) ud;
 
@@ -160,7 +160,7 @@ BT_TEST_DEF(trie, insert_delete_insert, object,"insert delete insert")
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
     if (str) {
-      err = trie_insert(trie, (const uint8_t *) str, strlen(str), j, 0);
+      err = trie_insert(trie, strlen(str), (const uint8_t *) str, j, 0);
       bt_chkerr(err);
     }
   }
@@ -168,7 +168,7 @@ BT_TEST_DEF(trie, insert_delete_insert, object,"insert delete insert")
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
     if (str) {
-      err = trie_find(trie, (const uint8_t *) str, strlen(str), &data);
+      err = trie_find(trie, strlen(str), (const uint8_t *) str, &data);
       bt_chkerr(err);
       bt_assert_int_equal(data, j);
     }
@@ -183,7 +183,7 @@ BT_TEST_DEF(trie, insert_delete_insert, object,"insert delete insert")
     char * str = strv[j];
 
     if (!flag[j] && str) {
-      err = trie_delete(trie, (const uint8_t *) str, strlen(str));
+      err = trie_delete(trie, strlen(str), (const uint8_t *) str);
       bt_chkerr(err);
       flag[j] = 1;
     }
@@ -195,7 +195,7 @@ BT_TEST_DEF(trie, insert_delete_insert, object,"insert delete insert")
     j = rand() % num;
     char * str = strv[j];
     if (flag[j] && str) {
-      err = trie_insert(trie, (const uint8_t *) str, strlen(str), j, 0);
+      err = trie_insert(trie, strlen(str), (const uint8_t *) str, j, 0);
       bt_chkerr(err);
       flag[j] = 0;
     }
@@ -206,7 +206,7 @@ BT_TEST_DEF(trie, insert_delete_insert, object,"insert delete insert")
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
     if (str) {
-      err = trie_find(trie, (const uint8_t *) str, strlen(str), &data);
+      err = trie_find(trie, strlen(str), (const uint8_t *) str, &data);
       bt_chkerr(err);
       bt_assert_int_equal(data, j);
     }

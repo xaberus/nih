@@ -287,7 +287,7 @@ void trie_print(trie_t * trie, int fd)
   dprintf(fd, "}\n");
 }
 
-err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uintptr_t data, bool replace)
+err_t trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uintptr_t data, bool rep)
 {
   int                out = 4;
   uint32_t           i = 0, n = 0, rest;
@@ -307,7 +307,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uintptr_t d
       if (c == tuple.node->c) {
         i++;
         if (i == len) {
-          if (!replace && tuple.node->isdata) /* duplicate */
+          if (!rep && tuple.node->isdata) /* duplicate */
             return ERR_DUPLICATE;
           else {
             tuple.node->isdata = 1;
@@ -420,7 +420,7 @@ err_t trie_insert(trie_t * trie, const uint8_t word[], uint16_t len, uintptr_t d
   return 0;
 }
 
-err_t trie_delete(trie_t * trie, const uint8_t word[], uint16_t len)
+err_t trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len])
 {
   int                out = 0;
   int32_t            i = 0;
@@ -515,7 +515,7 @@ err_t trie_delete(trie_t * trie, const uint8_t word[], uint16_t len)
 }
 
 
-struct tnode_tuple trie_find_i(trie_t * trie, const uint8_t word[], uint16_t len)
+struct tnode_tuple trie_find_i(trie_t * trie, uint16_t len, const uint8_t word[len])
 {
   int                out = 0;
   uint32_t           i = 0;
@@ -552,7 +552,7 @@ struct tnode_tuple trie_find_i(trie_t * trie, const uint8_t word[], uint16_t len
   return tnode_tuple(NULL, 0);
 }
 
-err_t trie_find(trie_t * trie, const uint8_t word[], uint16_t len, uintptr_t * data)
+err_t trie_find(trie_t * trie, uint16_t len, const uint8_t word[len], uintptr_t * data)
 {
   struct tnode_tuple tuple;
 
@@ -561,7 +561,7 @@ err_t trie_find(trie_t * trie, const uint8_t word[], uint16_t len, uintptr_t * d
   if (!len)
     return ERR_IN_INVALID;
 
-  tuple = trie_find_i(trie, word, len);
+  tuple = trie_find_i(trie, len, word);
 
   if (!tuple.index)
     return ERR_NOT_FOUND;
@@ -637,7 +637,7 @@ err_t trie_foreach(trie_t * trie, trie_forach_t f, void * ud)
     stride[pos] = tuple;
 
     if (tuple.node->isdata) {
-      f(word, len, tuple.node->data, ud);
+      f(len, word, tuple.node->data, ud);
     }
 
     if (go == 1) {
