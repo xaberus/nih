@@ -74,7 +74,7 @@ err_t    trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uintp
 err_t    trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len]);
 err_t    trie_find(trie_t * trie, uint16_t len, const uint8_t word[len], uintptr_t * data);
 
-typedef int (trie_forach_t) (uint16_t len, const uint8_t word[len], uintptr_t data, void * ud);
+typedef int (trie_forach_t)(uint16_t len, const uint8_t word[len], uintptr_t data, void * ud);
 
 err_t    trie_foreach(trie_t * trie, trie_forach_t f, void * ud);
 

@@ -36,7 +36,7 @@ struct tnode_bank * tnode_bank_alloc(uint32_t start, uint32_t end, const mem_all
 {
   uint32_t            size = (end - start);
   struct tnode_bank * bank;
-  
+
   bank = mem_alloc(a, sizeof(struct tnode_bank) + sizeof(struct tnode) * size);
 
   if (bank) {
@@ -292,8 +292,15 @@ err_t trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uintptr_
   int                out = 4;
   uint32_t           i = 0, n = 0, rest;
   uint8_t            c = word[i];
+
+  /* tuple, our operand */
   struct tnode_tuple tuple;
+  /* save prev and parent, because we would drop them otherwise */
+  struct tnode_tuple prev = tnode_tuple(NULL, 0);
+  struct tnode_tuple parent = tnode_tuple(NULL, 0);
+
   struct tnode_tuple new, tmp;
+
   struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
 
   if (!trie || !word)
@@ -316,18 +323,34 @@ err_t trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uintptr_
           }
         }
         tmp = tnode_iter_get(&iter, tuple.node->child);
-        if (tmp.index)
+        if (tmp.index) {
+          prev = tnode_tuple(NULL, 0);
+          parent = tuple;
           tuple = tmp;
-        else {
+        } else {
           /* if we end up here, it means, that we already have a key,
            * which is a prefix of our new key, so we use the free child field! */
           out = 3;
           break;
         }
+      } else if (c < tuple.node->c) {
+        if (prev.index) {
+          /* insert child */
+          out = 1;
+          break;
+        } else {
+          /* prepend child */
+          out = 2;
+          break;
+        }
       } else {
         if (tuple.node->next) {
+          /* advance one child */
+          prev = tuple;
           tuple = tnode_iter_get(&iter, tuple.node->next);
         } else {
+          /* we reached the last child, append */
+          prev = tuple;
           out = 1;
           break;
         }
@@ -366,8 +389,38 @@ err_t trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uintptr_
       new.node->c = word[m];
       if (m > i)
         tuple.node->child = new.index;
-      else
-        tuple.node->next = new.index;
+      else {
+        new.node->next = prev.node->next;
+        prev.node->next = new.index;
+      }
+
+      tuple = new;
+    }
+
+    /* mark */
+    tuple.node->isdata = 1;
+    tuple.node->data = data;
+  }
+
+  if (out == 2) {
+    /* append child, then tail */
+
+    for (uint32_t m = i, n = 0; m < len; m++) {
+      new = stride[n++];
+      new.node->iskey = 1;
+      new.node->isused = 1;
+      new.node->c = word[m];
+      if (m > i)
+        tuple.node->child = new.index;
+      else {
+        if (parent.index) {
+          new.node->next = parent.node->child;
+          parent.node->child = new.index;
+        } else {
+          new.node->next = trie->root;
+          trie->root = new.index;
+        }
+      }
 
       tuple = new;
     }
@@ -578,7 +631,7 @@ inline static
 void tuple_print(struct tnode_tuple tu)
 {
   printf("node(%u) = {c = %c, {%s%s%s}, next = %u, child = %u, data = %zu}\n",
-      tu.index, tu.node->c, 
+      tu.index, tu.node->c,
       tu.node->iskey ? "K" : "",
       tu.node->isdata ? "D" : "",
       tu.node->isused ? "U" : "",
@@ -594,20 +647,18 @@ err_t trie_foreach(trie_t * trie, trie_forach_t f, void * ud)
     return ERR_SUCCESS;
 
   /* must be signed due to go==2 */
-  int32_t  pos = 0;
-
-  uint16_t  len = 0;
-  uint16_t  nlen = 0;
-  uint16_t  olen = 0;
-  uint8_t * word = NULL;
+  int32_t              pos = 0;
+  uint16_t             len = 0;
+  uint16_t             nlen = 0;
+  uint16_t             olen = 0;
+  uint8_t            * word = NULL;
   struct tnode_tuple * stride = NULL;
+  void               * tmp;
 
-  void * tmp;
+  struct tnode_tuple   tuple;
+  struct tnode_iter    iter = tnode_iter(trie->nodes, 0);
 
-  struct tnode_tuple tuple;
-  struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
-
-  int go = 1; /* 1 child, 2 next */
+  int                  go = 1; /* 1 child, 2 next */
 
   tuple = tnode_iter_get(&iter, trie->root);
 
@@ -624,14 +675,12 @@ err_t trie_foreach(trie_t * trie, trie_forach_t f, void * ud)
       word = tmp;
 
       tmp = mem_realloc(trie->a, stride,
-        sizeof(struct tnode_tuple) * olen,
-        sizeof(struct tnode_tuple) * nlen);
+          sizeof(struct tnode_tuple) * olen,
+          sizeof(struct tnode_tuple) * nlen);
       if (!tmp)
         goto alloc_error;
       stride = tmp;
     }
-
-    //tuple_print(tuple);
 
     word[pos] = tuple.node->c;
     stride[pos] = tuple;
@@ -643,7 +692,7 @@ err_t trie_foreach(trie_t * trie, trie_forach_t f, void * ud)
     if (go == 1) {
 
       if (tuple.node->child) {
-        tuple = tnode_iter_get(&iter, tuple.node->child); pos ++;
+        tuple = tnode_iter_get(&iter, tuple.node->child); pos++;
         continue;
       } else {
         go = 2;

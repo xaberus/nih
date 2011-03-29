@@ -21,19 +21,17 @@ struct trie_test {
   struct trie trie[1];
   mem_allocator_t a[1];
 
-  size_t  num;
+  size_t num;
+  char * flag;
   char ** strv;
-  char  * flag;
-
 };
 
 BT_SUITE_SETUP_DEF(trie, objectref)
 {
   struct trie_test * test = malloc(sizeof(struct trie_test));
-
-  char        buf[128];
-  FILE      * fp;
-  uint16_t    n;
+  char               buf[128];
+  FILE             * fp;
+  uint16_t           n;
 
   bt_assert_ptr_not_equal(test, NULL);
 
@@ -79,13 +77,13 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
 {
   struct trie_test * test = object;
 
-  uint16_t    n;
-  uint64_t    data;
-  err_t       err;
+  uint16_t           n;
+  uint64_t           data;
+  err_t              err;
 
-  trie_t * trie = test->trie;
-  size_t num = test->num;
-  char ** strv = test->strv;
+  trie_t           * trie = test->trie;
+  size_t             num = test->num;
+  char            ** strv = test->strv;
 
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
@@ -97,10 +95,14 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
     }
   }
 
+  trie_print(trie, 4);
+
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
     if (str) {
       err = trie_find(trie, strlen(str), (const uint8_t *) str, &data);
+      if (err)
+        bt_log("FAIL: %s not found\n", str);
       bt_chkerr(err);
       bt_assert_int_equal(data, j);
     }
@@ -138,24 +140,26 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
 
 int test_trie_ff(uint16_t len, const uint8_t word[len], uintptr_t data, void * ud)
 {
-  (void) word; (void) len; (void) data; (void) ud;
+  (void) word; (void) len; (void) data;
+  struct trie_test * test = ud;
 
-  // printf("'%.*s' -> %zu\n", (int) len, (const char *) word, data); fflush(stdout);
+  test->flag[data]++;
+
+  printf("'%.*s' -> %zu\n", (int) len, (const char *) word, data); fflush(stdout);
 
   return 0;
 }
 
-BT_TEST_DEF(trie, insert_delete_insert, object,"insert delete insert")
+BT_TEST_DEF(trie, insert_delete_insert, object, "insert delete insert")
 {
   struct trie_test * test = object;
 
-  uint64_t    data;
-  err_t       err;
-
-  trie_t * trie = test->trie;
-  size_t num = test->num;
-  char ** strv = test->strv;
-  char * flag = test->flag;
+  uint64_t           data;
+  err_t              err;
+  trie_t           * trie = test->trie;
+  size_t             num = test->num;
+  char            ** strv = test->strv;
+  char             * flag = test->flag;
 
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
@@ -174,7 +178,13 @@ BT_TEST_DEF(trie, insert_delete_insert, object,"insert delete insert")
     }
   }
 
-  trie_foreach(trie, test_trie_ff, NULL);
+  /* ensure, that we reached every piece of data */
+  trie_foreach(trie, test_trie_ff, test);
+  for (size_t j = 0; j < num; j++) {
+    bt_assert(test->flag[j] == 1);
+    test->flag[j] = 0;
+  }
+
 
   srand(1);
 
