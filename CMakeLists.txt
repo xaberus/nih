@@ -10,9 +10,22 @@ include_directories(
 	/usr/include/sexpr
 )
 
-set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -pedantic -g -ggdb -DTEST -DLUA -DNPOOL -fPIC -O0")
-set(CMAKE_SHARED_LIBRARY_C_FLAGS "-Wl,--no-undefined")
-#-Werror -fprofile-arcs -ftest-coverage
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wextra")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pedantic")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -ggdb")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ftest-coverage")
+
+add_definitions(-DLUA)
+add_definitions(-DTEST)
+add_definitions(-DNPOOL)
+
+set(CMAKE_SHARED_LIBRARY_C_FLAGS "-Wl,--no-undefined,--warn-unresolved-symbols")
 
 RAGEL_TARGET(sx-parser-sq-machine sx-parser-sq-machine.rl
   ${CMAKE_CURRENT_BINARY_DIR}/sx-parser-sq-machine.c)
@@ -42,6 +55,6 @@ add_library(nih SHARED
 target_link_libraries(nih sexp m lua)
 
 add_custom_target(chop
-  /repos/butcher/butcher -v libnih.so $(BFLAGS)
+  /repos/butcher/butcher libnih.so $(BFLAGS)
   DEPENDS nih
 )
