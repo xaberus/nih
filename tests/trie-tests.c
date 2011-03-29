@@ -95,7 +95,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
     }
   }
 
-  trie_print(trie, 4);
+  // trie_print(trie, 4);
 
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
@@ -145,7 +145,7 @@ int test_trie_ff(uint16_t len, const uint8_t word[len], uintptr_t data, void * u
 
   test->flag[data]++;
 
-  printf("'%.*s' -> %zu\n", (int) len, (const char *) word, data); fflush(stdout);
+  // printf("'%.*s' -> %zu\n", (int) len, (const char *) word, data); fflush(stdout);
 
   return 0;
 }
