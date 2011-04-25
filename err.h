@@ -67,7 +67,7 @@ extern err_log_t * err_logger;
 extern void      * err_logger_data;
 
 #ifdef TEST
-#define bt_chkerr(err) bt_assert_int_equal(err, 0)
+#define bt_chkerr(__err) bt_assert_int_equal(__err, 0)
 #endif /* TEST */
 
 #endif /* __ERR_H__ */
