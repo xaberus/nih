@@ -1,0 +1,11 @@
+d /abc/
+d /abc/1
+d /abc/2/
+d /def/
+d /def/ogl
+f file1
+f file2
+f file3
+d /def/ugla
+d /def/bogla
+d /def/bogla/core
