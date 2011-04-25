@@ -1,5 +1,16 @@
 #include "trie-private.h"
 
+#define PDIR_BANK_SIZE 32
+#define PFILE_BANK_SIZE 32
+
+#define PDIR_BANK_SIZEOF(_sz) (sizeof(struct pdir_bank) + (_sz)*sizeof(struct pdir))
+#define PFILE_BANK_SIZEOF(_sz) (sizeof(struct pfile_bank) + (_sz)*sizeof(struct pfile))
+
+struct pdir_tuple pathman_mkdir(pathman_t * pman);
+struct pfile_tuple pathman_mkfile(pathman_t * pman);
+void pathman_remdir(pathman_t * pman, uint32_t index);
+void pathman_remfile(pathman_t * pman, uint32_t index);
+
 inline static
 struct pstate pstate(struct tnode_tuple top)
 {
@@ -69,10 +80,10 @@ struct pdir_bank * pdir_bank_alloc(uint32_t start, uint32_t end, const mem_alloc
   uint32_t            size = (end - start);
   struct pdir_bank * bank;
 
-  bank = mem_alloc(a, sizeof(struct pdir_bank) + sizeof(struct pdir) * size);
+  bank = mem_alloc(a, PDIR_BANK_SIZEOF(size));
 
   if (bank) {
-    memset(bank, 0, sizeof(struct pdir_bank) + sizeof(struct pdir) * size);
+    memset(bank, 0, PDIR_BANK_SIZEOF(size));
 
     bank->start = start;
     bank->end = end;
@@ -87,10 +98,10 @@ struct pfile_bank * pfile_bank_alloc(uint32_t start, uint32_t end, const mem_all
   uint32_t            size = (end - start);
   struct pfile_bank * bank;
 
-  bank = mem_alloc(a, sizeof(struct pfile_bank) + sizeof(struct pfile) * size);
+  bank = mem_alloc(a, PFILE_BANK_SIZEOF(size));
 
   if (bank) {
-    memset(bank, 0, sizeof(struct pfile_bank) + sizeof(struct pfile) * size);
+    memset(bank, 0, PFILE_BANK_SIZEOF(size));
 
     bank->start = start;
     bank->end = end;
@@ -226,4 +237,41 @@ struct pfile_tuple pfile_iter_get(struct pfile_iter * iter, uint32_t index)
   return pfile_tuple(NULL, 0);
 }
 
+static inline
+err_t _pathman_dir_stride_alloc(pathman_t * pman, uint16_t rest, struct pdir_tuple stride[rest])
+{
+  struct pdir_tuple new;
+
+  for (uint32_t n = 0; n < rest; n++) {
+    new = pathman_mkdir(pman);
+    if (!new.index) {
+      for (uint32_t k = 0; k < n; k++) {
+        stride[k].node->isused = 1;
+        pathman_remdir(pman, stride[k].index);
+      }
+      return ERR_MEM_USE_ALLOC;
+    }
+    stride[n] = new;
+  }
+  return 0;
+}
+
+static inline
+err_t _pathman_stride_alloc(pathman_t * pman, uint16_t rest, struct pfile_tuple stride[rest])
+{
+  struct pfile_tuple new;
+
+  for (uint32_t n = 0; n < rest; n++) {
+    new = pathman_mkfile(pman);
+    if (!new.index) {
+      for (uint32_t k = 0; k < n; k++) {
+        stride[k].node->isused = 1;
+        pathman_remfile(pman, stride[k].index);
+      }
+      return ERR_MEM_USE_ALLOC;
+    }
+    stride[n] = new;
+  }
+  return 0;
+}
 

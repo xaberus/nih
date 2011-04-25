@@ -186,21 +186,22 @@ void trie_print(trie_t * trie, int fd)
   dprintf(fd, "}\n");
 }
 
-err_t trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uintptr_t data, bool rep)
+err_t trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t data, bool rep)
 {
-  int                out = 4;
-  uint32_t           i = 0, n = 0, rest;
-  uint8_t            c = word[i];
-
-  /* tuple, our operand */
-  struct tnode_tuple tuple;
-  /* save prev and parent, because we would drop them otherwise */
-  struct tnode_tuple prev = tnode_tuple(NULL, 0);
-  struct tnode_tuple parent = tnode_tuple(NULL, 0);
-
-  struct tnode_tuple new, tmp;
+  uint32_t           rest;
 
   struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
+
+  struct trie_eppoit eppoit = {
+    .err = 0,
+    .parent = {NULL, 0},
+    .prev = {NULL, 0},
+    /* in case we never enter the loop
+     * action: become root in empty trie */
+    .act = TRIE_INSERT_ROOT,
+    .i = 0,
+    .tuple = {NULL, 0},
+  };
 
   if (!trie || !word)
     return ERR_IN_NULL_POINTER;
@@ -208,165 +209,38 @@ err_t trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uintptr_
     return ERR_IN_INVALID;
 
   if (trie->root) {
-    tuple = tnode_iter_get(&iter, trie->root);
-    for (i = 0, c = word[i], out = 0; tuple.index && i < len; c = word[i]) {
-      if (c == tuple.node->c) {
-        i++;
-        if (i == len) {
-          if (!rep && tuple.node->isdata) /* duplicate */
-            return ERR_DUPLICATE;
-          else {
-            tuple.node->isdata = 1;
-            tuple.node->data = data;
-            return 0;
-          }
-        }
-        tmp = tnode_iter_get(&iter, tuple.node->child);
-        if (tmp.index) {
-          prev = tnode_tuple(NULL, 0);
-          parent = tuple;
-          tuple = tmp;
-        } else {
-          /* if we end up here, it means, that we already have a key,
-           * which is a prefix of our new key, so we use the free child field! */
-          out = 3;
-          break;
-        }
-      } else if (c < tuple.node->c) {
-        if (prev.index) {
-          /* insert child */
-          out = 1;
-          break;
-        } else {
-          /* prepend child */
-          out = 2;
-          break;
-        }
-      } else {
-        if (tuple.node->next) {
-          /* advance one child */
-          prev = tuple;
-          tuple = tnode_iter_get(&iter, tuple.node->next);
-        } else {
-          /* we reached the last child, append */
-          prev = tuple;
-          out = 1;
-          break;
-        }
-      }
-    }
-  }
+    eppoit.tuple = tnode_iter_get(&iter, trie->root);
 
-  if (!out)
-    return ERR_CORRUPTION;
+    eppoit = _trie_insert_decide(trie, eppoit.tuple, &iter, len, word, rep);
+    if (eppoit.err)
+      return eppoit.err;
+  }
 
   /* allocate space for the rest of our key
    * and roll back on failure... */
-  struct tnode_tuple stride[(rest = len - i)];
+  struct tnode_tuple stride[(rest = len - eppoit.i)];
+  if ((eppoit.err = _trie_stride_alloc(trie, rest, stride)))
+    return eppoit.err;
 
-  for (n = 0; n < rest; n++) {
-    new = trie_mknode(trie);
-    if (!new.index) {
-      for (uint32_t k = 0; k < n; k++) {
-        stride[k].node->isused = 1;
-        trie_remnode(trie, stride[k].index);
-      }
-      return ERR_MEM_USE_ALLOC;
-    }
-    stride[n] = new;
-  }
+  /* _everything_ should be fine now */
 
-  n = 0;
-
-  if (out == 1) {
-    /* append child, then tail */
-
-    for (uint32_t m = i, n = 0; m < len; m++) {
-      new = stride[n++];
-      new.node->iskey = 1;
-      new.node->isused = 1;
-      new.node->c = word[m];
-      if (m > i)
-        tuple.node->child = new.index;
-      else {
-        new.node->next = prev.node->next;
-        prev.node->next = new.index;
-      }
-
-      tuple = new;
-    }
-
-    /* mark */
-    tuple.node->isdata = 1;
-    tuple.node->data = data;
-  }
-
-  if (out == 2) {
-    /* append child, then tail */
-
-    for (uint32_t m = i, n = 0; m < len; m++) {
-      new = stride[n++];
-      new.node->iskey = 1;
-      new.node->isused = 1;
-      new.node->c = word[m];
-      if (m > i)
-        tuple.node->child = new.index;
-      else {
-        if (parent.index) {
-          new.node->next = parent.node->child;
-          parent.node->child = new.index;
-        } else {
-          new.node->next = trie->root;
-          trie->root = new.index;
-        }
-      }
-
-      tuple = new;
-    }
-
-    /* mark */
-    tuple.node->isdata = 1;
-    tuple.node->data = data;
-  }
-
-  if (out == 3) {
-    /* become child, then append tail */
-
-    for (uint32_t m = i, n = 0; m < len; m++) {
-      new = stride[n++];
-      new.node->iskey = 1;
-      new.node->isused = 1;
-      new.node->c = word[m];
-      tuple.node->child = new.index;
-
-      tuple = new;
-    }
-
-    /* mark */
-    tuple.node->isdata = 1;
-    tuple.node->data = data;
-  }
-
-
-  if (out == 4) {
-    /* append tail to empty root */
-
-    for (uint32_t m = 0, n = 0; m < len; m++) {
-      new = stride[n++];
-      new.node->iskey = 1;
-      new.node->isused = 1;
-      new.node->c = word[m];
-      if (m > 0)
-        tuple.node->child = new.index;
-      else
-        trie->root = new.index;
-
-      tuple = new;
-    }
-
-    /* mark */
-    tuple.node->isdata = 1;
-    tuple.node->data = data;
+  switch (eppoit.act) {
+    case TRIE_INSERT_PREV:
+      _trie_prev_append_child_append_tail(trie, eppoit.tuple, eppoit.prev, eppoit.i, len, word, rest, stride, data);
+      break;
+    case TRIE_INSERT_PARENT:
+      _trie_parent_append_child_append_tail(trie, eppoit.tuple, eppoit.parent, eppoit.i, len, word, rest, stride, data);
+      break;
+    case TRIE_INSERT_CHILD:
+      _trie_become_child_append_tail(trie, eppoit.tuple, eppoit.i, len, word, rest, stride, data);
+      break;
+    case TRIE_INSERT_ROOT:
+      _trie_append_tail_to_root(trie, eppoit.tuple, len, word, rest, stride, data);
+      break;
+    case TRIE_INSERT_SET:
+      eppoit.tuple.node->isdata = 1;
+      eppoit.tuple.node->data = data;
+      break;
   }
 
   return 0;
@@ -504,7 +378,7 @@ struct tnode_tuple trie_find_i(trie_t * trie, uint16_t len, const uint8_t word[l
   return tnode_tuple(NULL, 0);
 }
 
-err_t trie_find(trie_t * trie, uint16_t len, const uint8_t word[len], uintptr_t * data)
+err_t trie_find(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t * data)
 {
   struct tnode_tuple tuple;
 

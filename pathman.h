@@ -13,7 +13,7 @@ struct pnode {
 
   unsigned mode : 4;
 
-  unsigned _reserved : 30;
+  unsigned _reserved : 26;
   uint32_t data;
 };
 
@@ -38,6 +38,8 @@ struct pdir {
 
   uint32_t next;
   uint32_t child;
+
+  uint32_t file;
 };
 
 struct pfile {
