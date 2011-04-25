@@ -519,7 +519,7 @@ struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char 
         return plookup(ERR_IN_INVALID, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
     }
 
-    dprintf(2, "FI name %s\n", name);
+    //dprintf(2, "FI name %s\n", name);
 
     {
       trie_t * trie = pman->trie;

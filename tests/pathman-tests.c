@@ -106,7 +106,7 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
   }
 
   //trie_print(test->pman->trie, 4);
-  pathman_print(test->pman, 4);
+  //pathman_print(test->pman, 4);
 
   return BT_RESULT_OK;
 }
