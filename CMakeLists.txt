@@ -1,6 +1,8 @@
 cmake_minimum_required (VERSION 2.6)
 project(libnih)
 
+#set(CMAKE_VERBOSE_MAKEFILE true)
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/Modules)
 
 find_package(RAGEL)
@@ -10,12 +12,14 @@ include_directories(
 	/usr/include/sexpr
 )
 
+set(CMAKE_C_COMPILER clang)
+
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wextra")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pedantic")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -ggdb")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -g3")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O1")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs")
@@ -25,7 +29,10 @@ add_definitions(-DLUA)
 add_definitions(-DTEST)
 add_definitions(-DNPOOL)
 
-set(CMAKE_SHARED_LIBRARY_C_FLAGS "-Wl,--no-undefined,--warn-unresolved-symbols")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fpic")
+#set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--warn-unresolved-symbols")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--sort-section=name")
 
 RAGEL_TARGET(sx-parser-sq-machine sx-parser-sq-machine.rl
   ${CMAKE_CURRENT_BINARY_DIR}/sx-parser-sq-machine.c)
@@ -49,6 +56,7 @@ add_library(nih SHARED
   sr.c
   trie.c
   table.c
+  pathman.c
   lua/init.c
 )
 
