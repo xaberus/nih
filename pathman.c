@@ -50,7 +50,7 @@ pathman_t * pathman_init(pathman_t * pman, const mem_allocator_t * a)
   pman->ffreelist = 0;
   pman->fabank = pman->files;
 
-  if (!trie_init(pman->trie, a)) {
+  if (!trie_init(pman->trie, a, 2048)) {
     mem_free(a, pman->dirs);
     mem_free(a, pman->files);
     return NULL;
@@ -64,18 +64,16 @@ pathman_t * pathman_init(pathman_t * pman, const mem_allocator_t * a)
     if (!root.index)
       goto alloc_failed;
     root.node->isused = 1;
-
-    struct pnode node = {
+    struct pnode      node = {
       .isdir = 1,
       .isfile = 0,
       .mode = 0,
       .data = root.index,
     };
-    union paccess acc = {
+    union paccess     acc = {
       node,
     };
-
-    err_t err;
+    err_t             err;
 
     if ((err = trie_insert(pman->trie, 1, (uint8_t *) "/", acc.composite, 0)))
       goto alloc_failed;
@@ -113,7 +111,7 @@ struct pdir_tuple pathman_mkdir(pathman_t * pman)
 
     if (!tuple.index && pman->dabank) {
       uint32_t start = pman->dabank->end;
-      uint32_t end = start + TNODE_BANK_SIZE;
+      uint32_t end = start + PDIR_BANK_SIZE;
 
       bank = pdir_bank_alloc(start, end, pman->a);
       if (!bank)
@@ -168,7 +166,7 @@ struct pfile_tuple pathman_mkfile(pathman_t * pman)
 
     if (!tuple.index && pman->dabank) {
       uint32_t start = pman->dabank->end;
-      uint32_t end = start + TNODE_BANK_SIZE;
+      uint32_t end = start + PFILE_BANK_SIZE;
 
       bank = pfile_bank_alloc(start, end, pman->a);
       if (!bank)
@@ -225,7 +223,7 @@ void pathman_remfile(pathman_t * pman, uint32_t index)
 
 struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode)
 {
-  size_t len;
+  size_t       len;
   const char * basename = NULL;
 
   if (!pman || !path)
@@ -250,13 +248,12 @@ struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode
     /*dprintf(2, "path %s, bs: %s\n", path, basename);*/
 
     {
-      trie_t * trie = pman->trie;
+      trie_t           * trie = pman->trie;
       struct tnode_tuple tuple;
+      uint16_t           elen = len - (basename  - path);
+      uint16_t           alen = path[len - 1] != '/' ? elen + 2 : elen + 1;
+      uint8_t            word[alen];
 
-      uint16_t elen = len - (basename  - path);
-      uint16_t alen = path[len - 1] != '/' ? elen + 2: elen + 1;
-
-      uint8_t word[alen];
       memcpy(word + 1, basename, elen);
       word[0] = '/';
       word[alen - 1] = '/';
@@ -269,8 +266,8 @@ struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode
 
       struct pdir_tuple parent;
       {
-        union paccess acc; acc.composite = tuple.node->data;
-        struct pnode pnode = acc.node;
+        union paccess    acc; acc.composite = tuple.node->data;
+        struct pnode     pnode = acc.node;
 
         if (!pnode.isdir)
           return plookup(ERR_CORRUPTION, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
@@ -292,7 +289,6 @@ struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode
         .tuple = {NULL, 0},
       };
 
-
       eppoit = _trie_insert_decide(trie, tuple, &iter, alen, word, 0);
       if (eppoit.err)
         return plookup(eppoit.err, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
@@ -306,25 +302,28 @@ struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode
         eppoit.tuple.node, eppoit.tuple.index
       );*/
 
-      struct pdir_tuple dir = pathman_mkdir(pman);
+      struct pdir_tuple  dir = pathman_mkdir(pman);
       if (!dir.index)
         return plookup(ERR_MEM_ALLOC, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
 
       dir.node->isused = 1;
 
-      struct pnode node = {
+      struct pnode       node = {
         .isdir = 1,
         .isfile = 0,
         .mode = mode,
         .data = dir.index,
         ._reserved = 0,
       };
-      union paccess acc; acc.node = node;
+      union paccess      acc; acc.node = node;
 
-      struct tnode_tuple stride[(rest = alen - eppoit.i)];
-      if ((eppoit.err = _trie_stride_alloc(trie, rest, stride))) {
-        pathman_remdir(pman, dir.index);
-        return plookup(eppoit.err, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
+      rest = trie_calc_stride_length(&eppoit, alen);
+      struct tnode_tuple stride[rest];
+      if (eppoit.act) {
+        if ((eppoit.err = _trie_stride_alloc(trie, rest, stride))) {
+          pathman_remdir(pman, dir.index);
+          return plookup(eppoit.err, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
+        }
       }
 
       /*dprintf(2, "<%.*s> ~ f{%p,%d} e{%d} d{%p,%d} ~ %lu\n",
@@ -334,31 +333,39 @@ struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode
       switch (eppoit.act) {
         case TRIE_INSERT_FAILURE:
           pathman_remdir(pman, dir.index);
-          for (uint32_t k = 0; k < rest; k++) {
-            stride[k].node->isused = 1;
-            trie_remnode(trie, stride[k].index);
-          }
           return plookup(ERR_CORRUPTION, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
         case TRIE_INSERT_PREV:
-          tuple = _trie_prev_append_child_append_tail(trie, eppoit.tuple, 
+          tuple = __trie_prev_append_child_append_tail(trie, eppoit.tuple,
             eppoit.prev, eppoit.i, alen, word, rest, stride, acc.composite);
           break;
         case TRIE_INSERT_PARENT:
-          tuple = _trie_parent_append_child_append_tail(trie, eppoit.tuple, 
-              eppoit.parent, eppoit.i, alen, word, rest, stride, acc.composite);
+          tuple = __trie_parent_append_child_append_tail(trie, eppoit.tuple,
+            eppoit.parent, eppoit.i, alen, word, rest, stride, acc.composite);
           break;
         case TRIE_INSERT_CHILD:
-          tuple = _trie_become_child_append_tail(trie, eppoit.tuple, 
-              eppoit.i, alen, word, rest, stride, acc.composite);
+          tuple = __trie_become_child_append_tail(trie, eppoit.tuple,
+            eppoit.i, alen, word, rest, stride, acc.composite);
           break;
         case TRIE_INSERT_ROOT:
-          tuple = _trie_append_tail_to_root(trie, eppoit.tuple, 
-              alen, word, rest, stride, acc.composite);
+          tuple = __trie_append_tail_to_root(trie, eppoit.tuple,
+            alen, word, rest, stride, acc.composite);
           break;
         case TRIE_INSERT_SET:
           eppoit.tuple.node->isdata = 1;
           eppoit.tuple.node->data = acc.composite;
           tuple = eppoit.tuple;
+          break;
+        case TRIE_INSERT_SPLIT_0_SET:
+          tuple = __trie_split_0_set(trie, eppoit.tuple,
+            eppoit.i, alen, word, rest, stride, acc.composite);
+          break;
+        case TRIE_INSERT_SPLIT_N_CHILD:
+          tuple = __trie_split_n_child(trie, eppoit.tuple,
+            eppoit.i, eppoit.n, alen, word, rest, stride, acc.composite);
+          break;
+        case TRIE_INSERT_SPLIT_N_NEXT:
+          tuple = __trie_split_n_next(trie, eppoit.tuple,
+            eppoit.i, eppoit.n, alen, word, rest, stride, acc.composite);
           break;
       }
       if (parent.index) {
@@ -373,14 +380,14 @@ struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode
 
 int pathman_print_ff(uint16_t len, const uint8_t word[len], uint64_t data, void * ud)
 {
-  pathman_t * pman = ud;
+  pathman_t   * pman = ud;
   union paccess acc; acc.composite = data;
-  struct pnode node = acc.node;
 
-  int fd = 4;
+  struct pnode  node = acc.node;
+  int           fd = 4;
 
   if (node.isdir) {
-    struct pdir_iter iter[1] = {pdir_iter(pman->dirs, 0)};
+    struct pdir_iter  iter[1] = {pdir_iter(pman->dirs, 0)};
     struct pdir_tuple dir = pdir_iter_get(iter, node.data);
 
     /*dprintf(2, "FF: dir %.*s @ %u\n", len, word, node.data);
@@ -410,8 +417,8 @@ int pathman_print_ff(uint16_t len, const uint8_t word[len], uint64_t data, void 
 
 
 
-      dprintf(fd, "<td port=\"f1\" bgcolor=\"gray\">%.*s</td>", 
-        (int) (len - (basename - word) - (len > 1 ? 1 : 0)), basename);
+      dprintf(fd, "<td port=\"f1\" bgcolor=\"gray\">%.*s</td>",
+          (int) (len - (basename - word) - (len > 1 ? 1 : 0)), basename);
       if (dir.node->child)
         dprintf(fd, "<td port=\"f3\">↓%u</td>", dir.node->child);
       dprintf(fd, "</tr>");
@@ -424,18 +431,21 @@ int pathman_print_ff(uint16_t len, const uint8_t word[len], uint64_t data, void 
       dprintf(fd, ">]\n");
 
       if (dir.node->child) {
-        dprintf(fd, " \"dir%u\":f3 -> \"dir%u\":f0 [color=red];\n", dir.index, dir.node->child);
+        dprintf(fd, " \"dir%u\":f3 -> \"dir%u\":f0 [color=red];\n",
+            dir.index, dir.node->child);
       }
       if (dir.node->next) {
-        dprintf(fd, " \"dir%u\":f2 -> \"dir%u\":f0 [color=blue, minlen=0];\n", dir.index, dir.node->next);
+        dprintf(fd, " \"dir%u\":f2 -> \"dir%u\":f0 [color=blue, minlen=0];\n",
+            dir.index, dir.node->next);
       }
       if (dir.node->file) {
-        dprintf(fd, " \"dir%u\":f4 -> \"file%u\":f0 [color=green];\n", dir.index, dir.node->file);
+        dprintf(fd, " \"dir%u\":f4 -> \"file%u\":f0 [color=green];\n",
+            dir.index, dir.node->file);
       }
     }
 
   } else if (node.isfile) {
-    struct pfile_iter iter[1] = {pfile_iter(pman->files, 0)};
+    struct pfile_iter  iter[1] = {pfile_iter(pman->files, 0)};
     struct pfile_tuple file = pfile_iter_get(iter, node.data);
 
     /*dprintf(2, "FF: file %.*s @ %u\n", len, word, node.data);
@@ -463,14 +473,15 @@ int pathman_print_ff(uint16_t len, const uint8_t word[len], uint64_t data, void 
         basename = word;
       }
 
-      dprintf(fd, "<td port=\"f1\" bgcolor=\"gray\">%.*s</td>", 
-        (int) (len - (basename - word)), basename);
+      dprintf(fd, "<td port=\"f1\" bgcolor=\"gray\">%.*s</td>",
+          (int) (len - (basename - word)), basename);
       dprintf(fd, "</tr>");
       dprintf(fd, "</table>");
       dprintf(fd, ">]\n");
 
       if (file.node->next) {
-        dprintf(fd, " \"file%u\":f2 -> \"file%u\":f0 [color=green, minlen=0];\n", file.index, file.node->next);
+        dprintf(fd, " \"file%u\":f2 -> \"file%u\":f0 [color=green, minlen=0];\n",
+            file.index, file.node->next);
       }
     }
   }
@@ -498,7 +509,10 @@ void pathman_print(pathman_t * pman, int fd)
   dprintf(fd, "}\n");
 }
 
-struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char * name, uint8_t mode)
+struct plookup pathman_add_file(pathman_t * pman,
+    struct pdir * dir,
+    const char * name,
+    uint8_t mode)
 {
   size_t len;
 
@@ -519,17 +533,16 @@ struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char 
         return plookup(ERR_IN_INVALID, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
     }
 
-    //dprintf(2, "FI name %s\n", name);
+    // dprintf(2, "FI name %s\n", name);
 
     {
-      trie_t * trie = pman->trie;
+      trie_t           * trie = pman->trie;
       struct tnode_tuple tuple = dir->state.top;
 
       if (!tuple.index)
         return plookup(ERR_IN_INVALID, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
 
       struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
-
       struct trie_eppoit eppoit = {
         .err = 0,
         .parent = {NULL, 0},
@@ -538,9 +551,9 @@ struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char 
         .i = 0,
         .tuple = {NULL, 0},
       };
+      uint16_t           alen = len + 1;
+      uint8_t            word[alen];
 
-      uint16_t alen = len + 1;
-      uint8_t word[alen];
       memcpy(word + 1, name, len);
       word[0] = '/';
 
@@ -563,21 +576,22 @@ struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char 
 
       file.node->isused = 1;
 
-      struct pnode node = {
+      struct pnode       node = {
         .isdir = 0,
         .isfile = 1,
         .mode = mode,
         .data = file.index,
         ._reserved = 0,
       };
-      union paccess acc; acc.node = node;
-
-      uint32_t rest;
-
-      struct tnode_tuple stride[(rest = alen - eppoit.i)];
-      if ((eppoit.err = _trie_stride_alloc(trie, rest, stride))) {
-        pathman_remfile(pman, file.index);
-        return plookup(eppoit.err, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
+      union paccess      acc; acc.node = node;
+      uint32_t           rest;
+      rest = trie_calc_stride_length(&eppoit, alen);
+      struct tnode_tuple stride[rest];
+      if (eppoit.act) {
+        if ((eppoit.err = _trie_stride_alloc(trie, rest, stride))) {
+          pathman_remfile(pman, file.index);
+          return plookup(eppoit.err, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
+        }
       }
 
       /*dprintf(2, "<%.*s> ~ f{%p,%d} e{%d} d{%p,%d} ~ %lu\n",
@@ -593,27 +607,39 @@ struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char 
           }
           return plookup(ERR_CORRUPTION, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
         case TRIE_INSERT_PREV:
-          tuple = _trie_prev_append_child_append_tail(trie, eppoit.tuple, 
+          tuple = __trie_prev_append_child_append_tail(trie, eppoit.tuple,
             eppoit.prev, eppoit.i, alen, word, rest, stride, acc.composite);
           break;
         case TRIE_INSERT_PARENT:
-          tuple = _trie_parent_append_child_append_tail(trie, eppoit.tuple, 
-              eppoit.parent, eppoit.i, alen, word, rest, stride, acc.composite);
+          tuple = __trie_parent_append_child_append_tail(trie, eppoit.tuple,
+            eppoit.parent, eppoit.i, alen, word, rest, stride, acc.composite);
           break;
         case TRIE_INSERT_CHILD:
-          tuple = _trie_become_child_append_tail(trie, eppoit.tuple, 
-              eppoit.i, alen, word, rest, stride, acc.composite);
+          tuple = __trie_become_child_append_tail(trie, eppoit.tuple,
+            eppoit.i, alen, word, rest, stride, acc.composite);
           break;
         case TRIE_INSERT_ROOT:
-          tuple = _trie_append_tail_to_root(trie, eppoit.tuple, 
-              alen, word, rest, stride, acc.composite);
+          tuple = __trie_append_tail_to_root(trie, eppoit.tuple,
+            alen, word, rest, stride, acc.composite);
           break;
         case TRIE_INSERT_SET:
           eppoit.tuple.node->isdata = 1;
           eppoit.tuple.node->data = acc.composite;
           break;
+        case TRIE_INSERT_SPLIT_0_SET:
+          tuple = __trie_split_0_set(trie, eppoit.tuple,
+            eppoit.i, alen, word, rest, stride, acc.composite);
+          break;
+        case TRIE_INSERT_SPLIT_N_CHILD:
+          tuple = __trie_split_n_child(trie, eppoit.tuple,
+            eppoit.i, eppoit.n, alen, word, rest, stride, acc.composite);
+          break;
+        case TRIE_INSERT_SPLIT_N_NEXT:
+          tuple = __trie_split_n_next(trie, eppoit.tuple,
+            eppoit.i, eppoit.n, alen, word, rest, stride, acc.composite);
+          break;
       }
-      //dprintf(2, "d{%p,%d}\n", dir->state.top.node, dir->state.top.index);
+      // dprintf(2, "d{%p,%d}\n", dir->state.top.node, dir->state.top.index);
       file.node->next = dir->file;
       dir->file = file.index;
       return plookup(0, pstate(tuple), NULL, file.node);

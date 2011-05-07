@@ -89,6 +89,7 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
 
   for (unsigned k = 0; k < test->num; k++) {
     if (test->flag[k] == 1) {
+      // bt_log("DIR '%s'\n", test->strv[k]);
       dlup = pathman_add_dir(test->pman, test->strv[k], 0);
       if (dlup.err) {
         bt_log("FAIL dir '%s'\n", test->strv[k]);
@@ -97,6 +98,7 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
       bt_assert_ptr_not_equal(dlup.dir, NULL);
       bt_assert_int_not_equal(dlup.dir->state.top.index, 0);
     } else if (test->flag[k] == 2 && dlup.dir) {
+      // bt_log("FILE '%s'\n", basename(test->strv[k]));
       flup = pathman_add_file(test->pman, dlup.dir, basename(test->strv[k]), 0);
       if (flup.err) {
         bt_log("FAIL file '%s'\n", basename(test->strv[k]));
@@ -104,6 +106,12 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
       }
     }
   }
+
+  unsigned c = 0;
+  tnode_bank_safe_foreach(bank, test->pman->trie->nodes)
+    c++;
+
+  bt_log("pathman: trie consists of %d bank(s)\n", c);
 
   //trie_print(test->pman->trie, 4);
   //pathman_print(test->pman, 4);

@@ -66,9 +66,135 @@ BT_SUITE_SETUP_DEF(trie, objectref)
   test->a->realloc = plain_realloc;
   test->a->ud = NULL;
 
-  bt_assert_ptr_not_equal(trie_init(test->trie, test->a), NULL);
+  bt_assert_ptr_not_equal(trie_init(test->trie, test->a, 4096), NULL);
 
   *objectref = test;
+
+  return BT_RESULT_OK;
+}
+
+BT_TEST_DEF(trie, str, object, "str mode")
+{
+  struct trie_test * test = object;
+  trie_t           * trie = test->trie;
+  err_t              err;
+  struct trie_eppoit eppoit;
+  struct tnode_tuple tuple;
+  struct tnode_iter  iter[1] = {tnode_iter(trie->nodes, 0)};
+
+#define test(_str, _res) \
+  eppoit = _trie_insert_decide(trie, tuple, iter, strlen(_str), (const uint8_t *) (_str), 1); \
+  bt_chkerr(eppoit.err); \
+  if (eppoit.act == TRIE_INSERT_SPLIT_0_SET) \
+    bt_log("'%s' -> ACT: %u, ~ {%.*s}\n", _str, eppoit.act, \
+        eppoit.tuple.node->strlen, eppoit.tuple.node->str); \
+  else if (eppoit.act == TRIE_INSERT_SPLIT_N_CHILD) \
+    bt_log("'%s' -> ACT: %u, N: %d ~ [%c] {%.*s}\n", _str, eppoit.act, \
+        eppoit.n, *(eppoit.tuple.node->str + eppoit.n), \
+        eppoit.tuple.node->strlen - eppoit.n - 1, eppoit.tuple.node->str + eppoit.n + 1); \
+  else if (eppoit.act == TRIE_INSERT_SPLIT_N_NEXT) \
+    bt_log("'%s' -> ACT: %u, N: %d ~ {%.*s}\n", _str, eppoit.act, \
+        eppoit.n, \
+        eppoit.tuple.node->strlen - eppoit.n, eppoit.tuple.node->str + eppoit.n); \
+  else \
+    bt_log("'%s' -> ACT: %u\n", _str, eppoit.act); \
+  bt_assert_int_equal(eppoit.act, _res); \
+  err = trie_insert(trie, strlen(_str), (const uint8_t *) (_str), 0, 1); \
+  bt_chkerr(err)
+
+#define delete(_str) \
+  err = trie_delete(trie, strlen(_str), (const uint8_t *) (_str)); \
+  bt_chkerr(err)
+
+#define find(_str) \
+  tuple = trie_find_i(trie, strlen(_str), (const uint8_t *) (_str)); \
+  bt_assert(tuple.index != 0)
+
+
+  err = trie_insert(trie, 9, (const uint8_t *) "foobarses", 0, 0);
+  bt_chkerr(err);
+  tuple = tnode_iter_get(iter, trie->root);
+  bt_assert(!tuple.node->isdata);
+
+  /*
+   * {f|oobare}
+   *   [s|X]
+   */
+
+  test("f", 6);
+  test("foo", 7);
+  test("fooba", 7);
+  test("foobar", 6);
+  test("foobarse", 7);
+  test("foobars", 5);
+  test("foob", 5);
+  test("fo", 5);
+  test("g", 1);
+  test("b", 2);
+
+  delete("g");
+  delete("b");
+  delete("f");
+  delete("foo");
+  delete("fooba");
+  delete("foobar");
+  delete("foobarse");
+  delete("foobars");
+  delete("foob");
+  delete("fo");
+  delete("foobarses");
+
+  err = trie_insert(trie, 9, (const uint8_t *) "foobarses", 0, 0);
+  bt_chkerr(err);
+  tuple = tnode_iter_get(iter, trie->root);
+  bt_assert(!tuple.node->isdata);
+
+  /*
+   * {f|oobare}
+   *   [s|X]
+   */
+
+  test("foobarzeouxabracadabra", 8);
+  test("foobarsmeouxabracadabra", 8);
+  test("foobarses", 5);
+  test("foobares", 2);
+  test("foobarse", 5);
+  test("foobazse", 8);
+  test("foobarez", 1);
+  test("foobaren", 2);
+  test("foobarzillion", 8);
+  test("__________", 2);
+  test("___________", 2);
+
+  find("foobarzeouxabracadabra");
+  find("foobarsmeouxabracadabra");
+  find("foobares");
+  find("foobarse");
+  find("foobazse");
+  find("foobarez");
+  find("foobaren");
+  find("foobarzillion");
+  find("__________");
+  find("___________");
+
+  delete("foobarzeouxabracadabra");
+  delete("foobarsmeouxabracadabra");
+  delete("foobares");
+  delete("foobarse");
+  delete("foobazse");
+  delete("foobarez");
+  delete("foobaren");
+  delete("foobarzillion");
+  delete("__________");
+  delete("___________");
+
+
+
+  // trie_print(trie, 4);
+
+#undef test
+#undef delete
+#undef find
 
   return BT_RESULT_OK;
 }
@@ -84,13 +210,17 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
   trie_t           * trie = test->trie;
   size_t             num = test->num;
   char            ** strv = test->strv;
+  char             * flag = test->flag;
 
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
+    flag[j] = 1;
     if (str) {
       err = trie_insert(trie, strlen(str), (const uint8_t *) str, j, 0);
-      if (err)
-        bt_log("FAIL:  '%.*s'\n", (int) strlen(str), str);
+      if (err) {
+        bt_log("FAIL:  '%.*s %zu/%zu'\n", (int) strlen(str), str, j, num);
+        trie_print(trie, 4);
+      }
       bt_chkerr(err);
     }
   }
@@ -101,8 +231,10 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
     char * str = strv[j];
     if (str) {
       err = trie_find(trie, strlen(str), (const uint8_t *) str, &data);
-      if (err)
+      if (err) {
         bt_log("FAIL: %s not found\n", str);
+        trie_print(trie, 4);
+      }
       bt_chkerr(err);
       bt_assert_int_equal(data, j);
     }
@@ -113,30 +245,37 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
   for (size_t i = 0; i < num; i++) {
     char * str = NULL;
 
-    while (!str) {
+    do {
       n = rand() % num;
       str = strv[n];
-    }
+    } while (!flag[n]);
 
     err = trie_delete(trie, strlen(str), (const uint8_t *) str);
-    bt_chkerr(err);
+    if (err) {
+      bt_log("FAIL: %s not deleted (%lu)\n", str, i);
+      trie_print(trie, 3);
+      bt_chkerr(err);
+    }
 
-    free(str);
-    strv[n] = NULL;
+    flag[n] = 0;
 
     for (size_t j = 0; j < num; j++) {
-      str = strv[j];
-      if (str) {
+      if (flag[j]) {
+        str = strv[j];
         err = trie_find(trie, strlen(str), (const uint8_t *) str, &data);
-        bt_chkerr(err);
+        if (err) {
+          bt_log("FAIL: %s not found (%s,%lu)\n", str, strv[n], i);
+          trie_print(trie, 4);
+          bt_chkerr(err);
+        }
         bt_assert_int_equal(data, j);
       }
     }
   }
+  // trie_print(trie, 3);
 
   return BT_RESULT_OK;
 }
-
 
 int test_trie_ff(uint16_t len, const uint8_t word[len], uintptr_t data, void * ud)
 {
@@ -224,10 +363,6 @@ BT_TEST_DEF(trie, insert_delete_insert, object, "insert delete insert")
 
   // trie_print(trie, 4);
 
-  for (size_t j = 0; j < num; j++) {
-    free(strv[j]);
-  }
-
   return BT_RESULT_OK;
 }
 
@@ -236,6 +371,10 @@ BT_SUITE_TEARDOWN_DEF(trie, objectref)
   struct trie_test * test = *objectref;
 
   trie_clear(test->trie);
+
+  for (size_t j = 0; j < test->num; j++) {
+    free(test->strv[j]);
+  }
 
   free(test->strv);
   free(test->flag);

@@ -19,14 +19,16 @@ struct tnode {
     unsigned int iskey : 1;
     unsigned int isdata : 1;
     unsigned int isused : 1;
-    unsigned int _reserved : 5;
+    unsigned int strlen : 4;
+    unsigned int _reserved : 1;
   };
   unsigned next : 24;
   unsigned child : 24;
-  uint64_t data;
+  __extension__ union {
+    uint8_t str[8];
+    uint64_t data;
+  };
 };
-
-#define TNODE_BANK_SIZE 32
 
 #define INDEX2IDX(__index) (__index - 1)
 #define IDX2INDEX(__idx) (__idx + 1)
@@ -56,6 +58,8 @@ struct trie {
   struct tnode_bank * nodes;
   struct tnode_bank * abank; /* allocation bank */
 
+  uint32_t basize; /* bank allocation size */
+
   /* root key */
   uint32_t root;
 
@@ -67,7 +71,7 @@ struct trie {
 typedef struct trie trie_t;
 
 
-trie_t * trie_init(trie_t * trie, const mem_allocator_t * a);
+trie_t * trie_init(trie_t * trie, const mem_allocator_t * a, uint32_t basize);
 void     trie_clear(trie_t * trie);
 
 err_t    trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t data, bool rep);
