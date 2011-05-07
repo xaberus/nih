@@ -1,14 +1,9 @@
 #include <string.h>
 #include "sx-strings.h"
 
-struct sx_strgen * sx_strgen_init(sx_pool_t * allocator, sx_strgen_t * gen)
+struct sx_strgen * sx_strgen_init(sx_strgen_t * gen)
 {
-  if (!sx_str_stack_init(allocator, gen->stack))
-    return NULL;
-
-  gen->allocator = allocator;
-
-  sx_str_t * str = sx_pool_getmem(gen->allocator, SX_STR_ALLOC_SIZE(SX_STRGEN_START_ALLOC));
+  sx_str_t * str = calloc(1, SX_STR_ALLOC_SIZE(SX_STRGEN_START_ALLOC));
   if (!str) {
     sx_str_stack_clear(gen->stack);
     return NULL;
@@ -19,7 +14,7 @@ struct sx_strgen * sx_strgen_init(sx_pool_t * allocator, sx_strgen_t * gen)
 
   if (!sx_str_stack_push(gen->stack, str)) {
     sx_str_stack_clear(gen->stack);
-    sx_pool_retmem(gen->allocator, str);
+    free(str);
     return NULL;
   }
 
@@ -44,11 +39,11 @@ append:
   }
 
   size_t alloc = ALIGN128(SX_STR_ALLOC_SIZE(MAX(SX_STRGEN_START_ALLOC, length + 1)));
-  sxstr = sx_pool_getmem(gen->allocator, alloc);
+  sxstr = calloc(1, alloc);
   if (!sxstr)
     return 0;
   if (!sx_str_stack_push(gen->stack, sxstr)) {
-    sx_pool_retmem(gen->allocator, sxstr);
+    free(sxstr);
     return 0;
   }
   sxstr->length = SX_STR_SIZE_FROM_ALLOC(alloc);
@@ -79,7 +74,7 @@ sx_str_t * sx_strgen_get(sx_strgen_t * gen)
   if (!length)
     return NULL;
 
-  sxstr = sx_pool_getmem(gen->allocator, SX_STR_ALLOC_SIZE(length + 1));
+  sxstr = calloc(1, SX_STR_ALLOC_SIZE(length + 1));
   if (!sxstr)
     return NULL;
 
@@ -106,7 +101,7 @@ void sx_strgen_clear(sx_strgen_t * gen)
   sx_str_t * sxstr;
 
   while ((sxstr = sx_str_stack_top(gen->stack))) {
-    sx_pool_retmem(gen->allocator, sxstr);
+    free(sxstr);
     sx_str_stack_pop(gen->stack);
   }
   sx_str_stack_clear(gen->stack);
@@ -115,7 +110,7 @@ void sx_strgen_clear(sx_strgen_t * gen)
 struct sx_strgen * sx_strgen_reset(sx_strgen_t * gen)
 {
   sx_strgen_clear(gen);
-  if (!sx_strgen_init(gen->allocator, gen))
+  if (!sx_strgen_init(gen))
     return NULL;
   return gen;
 }
@@ -176,7 +171,6 @@ void bt_dump_str(const char * str, size_t length)
 }
 
 struct strgen_test {
-  sx_pool_t pool[1];
   sx_strgen_t gen[1];
 };
 
@@ -186,8 +180,7 @@ BT_TEST_DEF_PLAIN(sx_util, sx_strgen, "strgen")
   sx_str_t         * str = NULL;
   char               buff[10], * p;
 
-  bt_assert_ptr_not_equal(sx_pool_init(test->pool), NULL);
-  bt_assert_ptr_not_equal(sx_strgen_init(test->pool, test->gen), NULL);
+  bt_assert_ptr_not_equal(sx_strgen_init(test->gen), NULL);
 
   for (unsigned int n = 0; n < 3; n++) {
     for (unsigned int i = 0; i < 1000; i++) {
@@ -209,7 +202,7 @@ BT_TEST_DEF_PLAIN(sx_util, sx_strgen, "strgen")
         return BT_RESULT_FAIL;
       }
     }
-    sx_pool_retmem(test->pool, str);
+    free(str);
     sx_strgen_reset(test->gen);
   }
 
@@ -217,7 +210,6 @@ BT_TEST_DEF_PLAIN(sx_util, sx_strgen, "strgen")
   bt_assert_ptr_equal((str = sx_strgen_get(test->gen)), NULL);
 
   sx_strgen_clear(test->gen);
-  sx_pool_clear(test->pool);
 
   return BT_RESULT_OK;
 }

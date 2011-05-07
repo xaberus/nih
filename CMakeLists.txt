@@ -25,9 +25,8 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ftest-coverage")
 
-add_definitions(-DLUA)
+#add_definitions(-DLUA)
 add_definitions(-DTEST)
-add_definitions(-DNPOOL)
 
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fpic")
 #set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
@@ -45,7 +44,6 @@ include_directories(${libnih_SOURCE_DIR})
 
 add_library(nih SHARED
   blobtree.c
-  sx-pool.c
   sx-strgen.c
   sx-parser.c
   ${libnih_SOURCE_DIR}/tests/sx-stack-tests.c
@@ -55,7 +53,6 @@ add_library(nih SHARED
   memory.c
   sr.c
   trie.c
-  table.c
   pathman.c
   lua/init.c
 )

@@ -162,7 +162,7 @@ err_t sr_div(const sr_t * a, const sr_t * b, sr_t * result)
   return 0;
 }
 
-#ifdef TEST
+#if defined(TEST) && 0
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢*/
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢▢▢▢▢▢▢▢▢▢▢*/
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢╰──╮  ╭──╯▢▢▢│ ╭──────╯▢▢▢│ ╭──────╯▢▢▢╰──╮  ╭──╯▢▢▢▢▢▢▢▢▢▢▢▢▢*/
@@ -334,6 +334,8 @@ err_t sr_tester(sx_t * sx)
   return 0;
 }
 
+BT_SUITE_DEF(rational, "rational");
+
 BT_TEST_DEF_PLAIN(rational, sr, "sr")
 {
   sx_parser_t     parser[1];
@@ -367,7 +369,7 @@ BT_TEST_DEF_PLAIN(rational, sr, "sr")
       chunk = sx_strgen_get(parser->gen);
       if (chunk) {
         bt_log("last chunk was: >>%.*s<<\n", chunk->used, chunk->buffer);
-        sx_pool_retmem(parser->pool, chunk);
+        free(chunk);
         goto out;
       }
     }

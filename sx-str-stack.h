@@ -12,21 +12,18 @@ struct sx_str_stack {
   struct sx_str_stack_page * tail;
 
   struct sx_str_stack_chunk * free;
-
-  sx_pool_t * allocator;
 };
 
 typedef struct sx_str_stack sx_str_stack_t;
 
-static inline struct sx_str_stack * sx_str_stack_init(sx_pool_t * allocator, sx_str_stack_t * stack)
+static inline struct sx_str_stack * sx_str_stack_init(sx_str_stack_t * stack)
 {
-  stack->tail = sx_pool_getmem(allocator, sizeof(struct sx_str_stack_page));
+  stack->tail = malloc(sizeof(struct sx_str_stack_page));
   if (!stack->tail)
     return NULL;
   stack->tail->prev = NULL;
   stack->tail->count = 0;
   stack->free = NULL;
-  stack->allocator = allocator;
 
   return stack;
 }
@@ -48,7 +45,7 @@ static inline sx_str_t ** sx_str_stack_pushn(sx_str_stack_t * stack)
   }
 
   if (!page) {
-    page = sx_pool_getmem(stack->allocator, sizeof(struct sx_str_stack_page));
+    page = malloc(sizeof(struct sx_str_stack_page));
     if (!page)
       return NULL;
   }
@@ -110,7 +107,7 @@ static inline void sx_str_stack_clear(sx_str_stack_t * stack)
          page;
          page = prev, prev = page ? page->prev : NULL
         ) {
-      sx_pool_retmem(stack->allocator, page);
+      free(page);
     }
   }
   {
@@ -121,7 +118,7 @@ static inline void sx_str_stack_clear(sx_str_stack_t * stack)
          chunk;
          chunk = next, next = chunk ? chunk->next : NULL
         ) {
-      sx_pool_retmem(stack->allocator, chunk);
+      free(chunk);
     }
   }
   stack->tail = NULL;

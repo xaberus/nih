@@ -5,7 +5,6 @@
 #include <malloc.h>
 
 #include "err.h"
-#include "sx-pool.h"
 
 typedef struct sx sx_t;
 
@@ -101,7 +100,6 @@ struct sx_parser {
 #define FIELD(_type, _name) _type _name;
 #include "sx-parser-fields.h"
 #undef FIELD
-  sx_pool_t pool[1];
   sx_strgen_t gen[1];
   sx_stack_t stack[1];
 
@@ -128,4 +126,3 @@ int sx_test_print(sx_t * sx, unsigned int level, int len, unsigned int brk, unsi
 
 #endif /* _SX_H */
 
-// vim: filetype=c:expandtab:shiftwidth=2:tabstop=4:softtabstop=2:encoding=utf-8:textwidth=100

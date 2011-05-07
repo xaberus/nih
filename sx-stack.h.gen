@@ -18,7 +18,6 @@
     -DSX_STACK_STATES_PER_PAGE=128\
     -DSX_STACK_ALLOCATOR=sx_pool_getmem\
     -DSX_STACK_DEALLOCATOR=sx_pool_retmem\
-    -DSX_STACK_ALLOCATOR_TYPE="sx_pool_t *"\
        | sed -e '/#[[:space:]]\+[[:digit:]]\+/d' -e '$!N; /^\(\)\n\1$/!P; D' \
   ) > sx-stack.h &&\
  (gcc -E - <sx-stack.h.gen\
@@ -27,7 +26,6 @@
     -DSX_STACK_STATES_PER_PAGE=16\
     -DSX_STACK_ALLOCATOR=sx_pool_getmem\
     -DSX_STACK_DEALLOCATOR=sx_pool_retmem\
-    -DSX_STACK_ALLOCATOR_TYPE="sx_pool_t *"\
        | sed -e '/#[[:space:]]\+[[:digit:]]\+/d' -e '$!N; /^\(\)\n\1$/!P; D' \
   ) > sx-str-stack.h
 
@@ -69,8 +67,6 @@ __SX_TMP_STACK(SX_STACK_NAME) {
   __SX_TMP_PAGE(SX_STACK_NAME) * tail;
 
   __SX_TMP_CHUNK(SX_STACK_NAME) * free;
-
-  SX_STACK_ALLOCATOR_TYPE allocator;
 };
 
 typedef __SX_TMP_STACK (SX_STACK_NAME) __SX_TMP_TYPENAME (SX_STACK_NAME);
@@ -78,15 +74,14 @@ typedef __SX_TMP_STACK (SX_STACK_NAME) __SX_TMP_TYPENAME (SX_STACK_NAME);
 # define __SX_TMP__INIT(__name) __name ## _stack_init
 # define __SX_TMP_INIT(__name) __SX_TMP__INIT(__name)
 
-static inline __SX_TMP_STACK(SX_STACK_NAME) * __SX_TMP_INIT(SX_STACK_NAME)(SX_STACK_ALLOCATOR_TYPE allocator, __SX_TMP_TYPENAME(SX_STACK_NAME) * stack)
+static inline __SX_TMP_STACK(SX_STACK_NAME) * __SX_TMP_INIT(SX_STACK_NAME)(__SX_TMP_TYPENAME(SX_STACK_NAME) * stack)
 {
-  stack->tail = SX_STACK_ALLOCATOR(allocator, sizeof(__SX_TMP_PAGE(SX_STACK_NAME)));
+  stack->tail = SX_STACK_ALLOCATOR(sizeof(__SX_TMP_PAGE(SX_STACK_NAME)));
   if (!stack->tail)
     return NULL;
   stack->tail->prev = NULL;
   stack->tail->count = 0;
   stack->free = NULL;
-  stack->allocator = allocator;
 
   return stack;
 }
@@ -115,7 +110,7 @@ static inline SX_STACK_TYPE* __SX_TMP_PUSHN(SX_STACK_NAME)(__SX_TMP_TYPENAME(SX_
   }
 
   if (!page) {
-    page = SX_STACK_ALLOCATOR(stack->allocator, sizeof(__SX_TMP_PAGE(SX_STACK_NAME)));
+    page = SX_STACK_ALLOCATOR(sizeof(__SX_TMP_PAGE(SX_STACK_NAME)));
     if (!page)
       return NULL;
   }
@@ -203,7 +198,7 @@ static inline void __SX_TMP_CLEAR(SX_STACK_NAME)(__SX_TMP_TYPENAME(SX_STACK_NAME
          page;
          page = prev, prev = page ? page->prev : NULL
         ) {
-      SX_STACK_DEALLOCATOR(stack->allocator, page);
+      SX_STACK_DEALLOCATOR(page);
     }
   }
   {
@@ -214,7 +209,7 @@ static inline void __SX_TMP_CLEAR(SX_STACK_NAME)(__SX_TMP_TYPENAME(SX_STACK_NAME
          chunk;
          chunk = next, next = chunk ? chunk->next : NULL
         ) {
-      SX_STACK_DEALLOCATOR(stack->allocator, chunk);
+      SX_STACK_DEALLOCATOR(chunk);
     }
   }
   stack->tail = NULL;

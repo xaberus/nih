@@ -195,7 +195,7 @@ BT_TEST_DEF_PLAIN(sx_util, sx_parser, "pokes sx parser and watches out for error
       chunk = sx_strgen_get(parser->gen);
       if (chunk) {
         bt_log("last chunk was: >>%.*s<<\n", chunk->used, chunk->buffer);
-        sx_pool_retmem(parser->pool, chunk);
+        free(chunk);
         goto out;
       }
     }

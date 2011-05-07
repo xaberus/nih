@@ -111,7 +111,7 @@ void sx_atom_clear(sx_t * sx, sx_parser_t * parser)
 {
   if (sx->isatom) {
     if (sx->isplain || sx->issquot || sx->isdquot)
-      sx_pool_retmem(parser->pool, sx->atom.string);
+      free(sx->atom.string);
 
     memset(sx, 0, sizeof(sx_t));
   }
@@ -138,7 +138,7 @@ err_t sx_atom_init_string(sx_t * sx, sx_parser_t * parser, sx_str_t * str)
 
 
         if (sx_parser_atom_dq_fsm(parser, str) != 0) {
-          sx_pool_retmem(parser->pool, str);
+          free(str);
           goto out;
         }
 
@@ -150,7 +150,7 @@ err_t sx_atom_init_string(sx_t * sx, sx_parser_t * parser, sx_str_t * str)
         sx->issquot = 1;
 
         if (sx_parser_atom_sq_fsm(parser, str) != 0) {
-          sx_pool_retmem(parser->pool, str);
+          free(str);
           goto out;
         }
 
@@ -164,7 +164,7 @@ atom_quote_garbage:
       parser->err = ERR_INVALID_INPUT;
       goto out;
     default:
-      sx_pool_retmem(parser->pool, str);
+      free(str);
       parser->err = ERR_INVALID_INPUT;
       goto out;
       break;
@@ -330,7 +330,7 @@ err_t sx_parser_default_events(sx_parser_t * parser)
 
   switch (parser->s) {
     case SX_PARSER_LIST_START:
-      list = sx_pool_getmem(parser->pool, sizeof(sx_t));
+      list = calloc(1, sizeof(sx_t));
       if (!list)
         goto out_of_memory;
       sx_list_init(list);
@@ -338,7 +338,7 @@ err_t sx_parser_default_events(sx_parser_t * parser)
       top = sx_stack_top(parser->stack);
 
       if (!sx_stack_push(parser->stack, list)) {
-        sx_pool_retmem(parser->pool, list);
+        free(list);
         goto out_of_memory;
       }
 
@@ -366,7 +366,7 @@ err_t sx_parser_default_events(sx_parser_t * parser)
         sx_stack_pop(parser->stack);
       }
 list_start_garbage:
-      sx_pool_retmem(parser->pool, list);
+      free(list);
       parser->err = ERR_SX_LIST_START_GARBAGE;
       goto out;
     case SX_PARSER_LIST_END:
@@ -389,9 +389,9 @@ list_end_garbage:
       if (!str)
         goto out_of_memory;
 
-      atom = sx_pool_getmem(parser->pool, sizeof(sx_t));
+      atom = calloc(0, sizeof(sx_t));
       if (!atom) {
-        sx_pool_retmem(parser->pool, str);
+        free(str);
         goto out_of_memory;
       }
 
@@ -421,12 +421,12 @@ list_end_garbage:
       }
 atom_end_garbage:
       sx_atom_clear(atom, parser);
-      sx_pool_retmem(parser->pool, atom);
+      free(atom);
       parser->err = ERR_SX_ATOM_END_GARBAGE;
       goto out;
     default:
       sx_atom_clear(atom, parser);
-      sx_pool_retmem(parser->pool, atom);
+      free(atom);
       parser->err = ERR_SX_UNHANDLED;
       break;
   }
@@ -510,7 +510,7 @@ void sx_parser_free_nodes(sx_parser_t * parser, sx_t * sx)
         sx = f->list;
     }
 
-    sx_pool_retmem(parser->pool, f);
+    free(f);
   }
   /* q.e.d */
 }
@@ -527,17 +527,12 @@ sx_parser_t * sx_parser_init(sx_parser_t * parser)
   parser->line = 1;
 
 
-  if (!sx_pool_init(parser->pool))
-    return NULL;
-
-  if (!sx_stack_init(parser->pool, parser->stack)) {
-    sx_pool_clear(parser->pool);
+  if (!sx_stack_init(parser->stack)) {
     return NULL;
   }
 
-  if (!sx_strgen_init(parser->pool, parser->gen)) {
+  if (!sx_strgen_init(parser->gen)) {
     sx_stack_clear(parser->stack);
-    sx_pool_clear(parser->pool);
     return NULL;
   }
 
@@ -549,7 +544,6 @@ void sx_parser_clear(sx_parser_t * parser)
   sx_parser_free_nodes(parser, parser->root);
   sx_strgen_clear(parser->gen);
   sx_stack_clear(parser->stack);
-  sx_pool_clear(parser->pool);
 }
 
 #include "tests/sx-parser-tests.c"

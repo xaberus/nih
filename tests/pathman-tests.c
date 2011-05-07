@@ -125,6 +125,9 @@ BT_SUITE_TEARDOWN_DEF(pathman, objectref)
 
   pathman_clear(test->pman);
 
+  for (unsigned k = 0; k < test->num; k++) {
+    free(test->strv[k]);
+  }
   free(test->strv);
   free(test->flag);
 

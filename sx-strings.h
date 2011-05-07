@@ -3,7 +3,6 @@
 
 #include <stdlib.h>
 #include <stdint.h>
-#include "sx-pool.h"
 
 struct sx_str {
   uint32_t length;
@@ -20,7 +19,6 @@ typedef struct sx_str sx_str_t;
 
 
 struct sx_strgen {
-  sx_pool_t * allocator;
   sx_str_stack_t stack[1];
 };
 
@@ -28,7 +26,7 @@ struct sx_strgen {
 
 typedef struct sx_strgen sx_strgen_t;
 
-struct sx_strgen * sx_strgen_init(sx_pool_t * allocator, sx_strgen_t * gen);
+struct sx_strgen * sx_strgen_init(sx_strgen_t * gen);
 struct sx_strgen * sx_strgen_reset(sx_strgen_t * gen);
 void               sx_strgen_clear(sx_strgen_t * gen);
 

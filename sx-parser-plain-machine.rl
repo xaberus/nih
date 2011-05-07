@@ -148,12 +148,12 @@ err_t sx_parser_atom_plain_fsm(sx_parser_t * parser, sx_t * sx, sx_str_t * str)
   if ( cs < sx_plain_first_final) {
     /*bt_log("rejected at <%.*s> in %d\n", (int) (pe-p+1), p-1, cs);*/
     parser->err = ERR_SX_UNHANDLED;
-    sx_pool_retmem(parser->pool, str);
+    free(str);
   } else {
     /*bt_log("« <%.*s> (%u)\n", str->used, str->buffer, str->used);*/
     parser->err = 0;
     if (!sx->isplain)
-      sx_pool_retmem(parser->pool, str);
+      free(str);
   }
 
   return parser->err;
