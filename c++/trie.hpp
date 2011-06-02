@@ -1,11 +1,19 @@
 #include <stdint.h>
 #include <assert.h>
+#include <string.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+
+#include "memory.hpp"
+#include "error.hpp"
 
 namespace Util {
-  template<typename T, unsigned N = 1024>
+  template<typename T, unsigned N = 1024, typename K = uint8_t>
   struct Trie {
     enum Action {
-      FAILURE = 0,
+      FAIL = 0,
       PREV,
       PARENT,
       CHILD,
@@ -16,40 +24,31 @@ namespace Util {
       SPLIT_N_NEXT,
     };
 
-    enum Error {
-      SUCCESS = 0,
-      FALILURE = 0,
-      ALLOCATION_FALILURE = 0,
-      EMPTY_WORD,
-      NO_WORD,
-      DUPLICATE,
-      CORRUPTION,
-      NOT_FOUND,
-    };
+#define packed  __attribute__ ((packed)) 
 
-    struct Tnode {
-      uint8_t c;
+     struct TNode {
+      K c;
       __extension__ struct {
-        unsigned int iskey : 1;
-        unsigned int isdata : 1;
-        unsigned int isused : 1;
-        unsigned int strlen : 4;
-        unsigned int _reserved : 1;
+        packed unsigned int iskey : 1;
+        packed unsigned int isdata : 1;
+        packed unsigned int isused : 1;
+        packed unsigned int strlen : 4;
+        packed unsigned int _reserved : 1;
       };
-      unsigned next : 24;
-      unsigned child : 24;
+      packed unsigned next : 24;
+      packed unsigned child : 24;
       __extension__ union {
-        uint8_t str[8];
+        K str[8];
         T data;
       };
     };
 
     struct Tuple {
-      Tnode * node;
+      TNode * node;
       uint32_t index;
     };
 
-    static Tuple mktuple(Tnode * node, uint32_t index)
+    static Tuple mktuple(TNode * node, uint32_t index)
     {
       Tuple tuple = {node, index};
 
@@ -63,21 +62,21 @@ namespace Util {
       Bank * prev;
       Bank * next;
 
-      Tnode nodes[N];
+      TNode nodes[N];
 
       Bank(uint32_t start) : start(start), length(0), prev(0), next(0)
       {
-        Tnode e = {0, {0, 0, 0, 0, 0}, 0, 0, {{0}}};
+        TNode e = {0, {0, 0, 0, 0, 0}, 0, 0, {{0}}};
 
         for (uint32_t k = 0, len = N; k < len; k++)
           nodes[k] = e;
       }
 
-      Tuple mknode()
+      Tuple _mknode()
       {
         if (length < N) {
           uint32_t index = idx2index(start + length);
-          Tnode * node = &nodes[length];
+          TNode * node = &nodes[length];
 
           length++;
           return mktuple(node, index);
@@ -87,10 +86,10 @@ namespace Util {
       }
     };
 
-    struct TnodeIter {
+    struct TNodeIter {
       Bank * bank;
       uint32_t idx;
-      TnodeIter(Bank * bank, uint32_t idx) : bank(bank), idx(idx)
+      TNodeIter(Bank * bank, uint32_t idx) : bank(bank), idx(idx)
       {
       }
 
@@ -99,7 +98,7 @@ namespace Util {
         register Bank   * b = bank;
         register uint32_t i = idx;
         register uint32_t bs = b->start;
-        register uint32_t be = bs+N;
+        register uint32_t be = bs + N;
 
         /* rewind */
         while (b && (i < (bs = b->start) || i >= (be = bs + N))) {
@@ -118,7 +117,7 @@ namespace Util {
 
       Tuple  get_node(uint32_t index)
       {
-        Tnode * node;
+        TNode * node;
         Bank  * b;
 
         if (index) {
@@ -183,31 +182,32 @@ namespace Util {
       return idx + 1;
     }
 
-    Tuple  mknode()
+    Tuple  _mknode()
     {
       Bank * bank;
 
       if (freelist) { /* reuse nodes from freelist */
-        TnodeIter iter = TnodeIter(nodes, index2idx(freelist));
-        Tnode   * node;
+        TNodeIter iter = TNodeIter(nodes, index2idx(freelist));
+        TNode   * node;
 
         if ((bank = iter.get_bank())) {
           /* get */
           node = &bank->nodes[iter.idx - bank->start];
           if (!node->isused) {
             freelist = node->next;
+            node->next = 0;
             return mktuple(node, idx2index(iter.idx));
           }
         }
       } else {
-        Tuple tuple = abank->mknode();
+        Tuple tuple = abank->_mknode();
 
         if (!tuple.index && abank) {
           uint32_t start = abank->start + N;
 
           bank = new Bank(start);
 
-          tuple = bank->mknode();
+          tuple = bank->_mknode();
 
           if (!tuple.index) {
             delete bank;
@@ -232,34 +232,36 @@ namespace Util {
 
     void   rmnode(uint32_t index)
     {
-      TnodeIter iter = TnodeIter(nodes, 0);
+      TNodeIter iter = TNodeIter(nodes, 0);
       Tuple     tuple = iter.get_node(index);
 
-      tuple.node->next = freelist;
+      if (tuple.index) {
+        tuple.node->next = freelist;
 
-      tuple.node->iskey = 0;
-      tuple.node->isdata = 0;
-      tuple.node->isused = 0;
-      tuple.node->strlen = 0;
-      tuple.node->next = 0;
-      tuple.node->child = 0;
+        tuple.node->iskey = 0;
+        tuple.node->isdata = 0;
+        tuple.node->isused = 0;
+        tuple.node->strlen = 0;
+        tuple.node->next = 0;
+        tuple.node->child = 0;
 
-      freelist = tuple.index;
+        freelist = tuple.index;
+      }
     }
 
     inline
-    Epo _insert_decide(Tuple tuple, struct TnodeIter & iter,
-      uint16_t len, const uint8_t word[/*len*/], bool rep)
+    Epo _insert_decide(Tuple tuple, struct TNodeIter & iter,
+      uint16_t len, const K word[/*len*/], bool rep)
     {
       Tuple    prev = {0, 0};
       Tuple    parent = {0, 0};
       Tuple    tmp = {0, 0};
       Error    err = SUCCESS;
-      Action   act = FAILURE;
+      Action   act = FAIL;
       uint32_t i = 0;
       uint8_t  n = 0;
-      uint8_t  c;
       uint8_t  nlen;
+      K  c;
 
       for (i = 0, c = word[i]; tuple.index && i < len; c = word[i]) {
         if (c == tuple.node->c) {
@@ -329,7 +331,7 @@ namespace Util {
       }
   break_main:
 
-      if (!act)
+      if (!act && err == SUCCESS)
         err = CORRUPTION;
 
       Epo ret = {err, tuple, parent, prev, act, (uint16_t) i, n};
@@ -375,7 +377,7 @@ namespace Util {
       Tuple nw;
 
       for (uint32_t n = 0; n < rest; n++) {
-        nw = mknode();
+        nw = _mknode();
         if (!nw.index) {
           for (uint32_t k = 0; k < n; k++) {
             stride[k].node->isused = 1;
@@ -390,7 +392,7 @@ namespace Util {
 
     inline
     Tuple _prev_child_append_tail(Tuple tuple, Tuple prev, uint16_t i,
-      uint16_t len, const uint8_t word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
+      uint16_t len, const K word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
     {
       Tuple    nw;
       uint32_t m, n;
@@ -430,7 +432,7 @@ namespace Util {
 
     inline
     Tuple _parent_child_append_tail(Tuple tuple, Tuple parent, uint16_t i,
-      uint16_t len, const uint8_t word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
+      uint16_t len, const K word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
     {
       Tuple    nw;
       uint32_t m, n;
@@ -473,7 +475,7 @@ namespace Util {
 
     inline
     Tuple _become_child_append_tail(Tuple tuple, uint16_t i,
-      uint16_t len, const uint8_t word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
+      uint16_t len, const K word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
     {
       Tuple    nw;
       uint32_t m, n;
@@ -506,7 +508,7 @@ namespace Util {
 
     inline
     Tuple _append_tail_to_root(Tuple tuple,
-      uint16_t len, const uint8_t word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
+      uint16_t len, const K word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
     {
       Tuple    nw;
       uint32_t m, n;
@@ -542,7 +544,7 @@ namespace Util {
 
     inline
     Tuple _split_0_set(Tuple tuple, uint16_t i,
-      uint16_t len, const uint8_t word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
+      uint16_t len, const K word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
     {
       Tuple nw = stride[0];
 
@@ -566,7 +568,7 @@ namespace Util {
 
     inline
     Tuple _split_n_child(Tuple tuple, uint16_t i, uint8_t n,
-      uint16_t len, const uint8_t word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
+      uint16_t len, const K word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
     {
       Tuple dend = stride[0];
 
@@ -604,7 +606,7 @@ namespace Util {
 
     inline
     Tuple _split_n_next(Tuple tuple, uint16_t i, uint8_t n,
-      uint16_t len, const uint8_t word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
+      uint16_t len, const K word[/*len*/], uint16_t rest, Tuple stride[/*rest*/], T data)
     {
       Tuple m = stride[0];
 
@@ -637,14 +639,14 @@ namespace Util {
 
 
     inline
-    Tuple _find_i(uint16_t len, const uint8_t word[/*len*/])
+    Tuple _find_i(uint16_t len, const K word[/*len*/])
     {
       int       out = 0;
       uint32_t  i = 0;
-      uint8_t   c = word[i];
+      K   c = word[i];
       uint8_t   nlen;
       Tuple     tuple;
-      TnodeIter iter = TnodeIter(nodes, 0);
+      TNodeIter iter = TNodeIter(nodes, 0);
 
       if (root) {
         tuple = iter.get_node(root);
@@ -684,80 +686,214 @@ namespace Util {
       return mktuple(0, 0);
     }
 
-    Error insert(uint16_t len, const uint8_t word[/*len*/], T data, bool rep)
-    {
-      uint32_t  rest;
-      TnodeIter iter = TnodeIter(nodes, 0);
-      Epo       epo = {SUCCESS, {0, 0}, {0, 0}, {0, 0}, ROOT, 0, 0};
+    struct Iter {
+      Trie    & trie;
 
+      uint16_t  len;
+      uint16_t  alen;
+      K       * word;
+
+      int32_t   spos;
+      uint16_t  slen;
+      uint16_t  aslen;
+      Tuple   * stride;
+
+      TNodeIter iter;
+      Tuple     tuple;
+      int       fsm; /* stop = 0, child = 1, next = 2 */
+
+      Iter(Trie & trie) : trie(trie), iter(trie.nodes, 0)
+      {
+        len = alen = 0;
+        word = 0;
+        spos = 0;
+        slen = aslen = 0;
+        stride = 0;
+        iter = TNodeIter(trie.nodes, 0);
+        tuple = iter.get_node(trie.root);
+
+        fsm = 1;
+      }
+      ~Iter()
+      {
+        if (word)
+          delete[] word;
+        if (stride)
+          delete[] stride;
+      }
+
+      int go()
+      {
+        while (tuple.index) {
+          if (fsm != 0) {
+            slen = spos + 1;
+
+            /* allocate */
+            if (slen >= aslen) {
+              uint16_t  oslen;
+              oslen = aslen;
+              aslen = ((slen) + 15L) & ~15L; /* align 16 */
+
+              if (stride) {
+                Tuple * tmp = new Tuple[aslen];
+                memcpy(tmp, stride, sizeof(Tuple) * oslen);
+                delete[] stride;
+                stride = tmp;
+              } else {
+                stride = new Tuple[aslen];
+              }
+            }
+
+            stride[spos] = tuple;
+
+            if (tuple.node->isdata) {
+              len = 0;
+              for (int32_t k = 0; k < slen; k++) {
+                if (stride[k].node->isdata)
+                  len++;
+                else
+                  len = len + 1 + stride[k].node->strlen;
+              }
+              if (len > alen) {
+                alen = ((len) + 15L) & ~15L; /* align 16 */
+                if (word) {
+                  K * tmp = new K[alen];
+                  delete[] word;
+                  word = tmp;
+                } else {
+                 word = new K[alen];
+                }
+              }
+              for (int32_t k = 0, j = 0; k < slen; k++) {
+                if (stride[k].node->isdata)
+                  word[j++] = stride[k].node->c;
+                else {
+                  word[j++] = stride[k].node->c;
+                  for (uint8_t n = 0; n < stride[k].node->strlen; n++) {
+                    word[j++] = stride[k].node->str[n];
+                  }
+                }
+              }
+
+              fsm = 0;
+              return 1;
+            }
+          }
+
+          if (fsm == 0) {
+            fsm = 1;
+          }
+
+          if (fsm == 1) {
+            if (tuple.node->child) {
+              tuple = iter.get_node(tuple.node->child); spos++;
+              continue;
+            } else {
+              fsm = 2;
+            }
+          }
+
+          if (fsm == 2) {
+            /* rewind the stack */
+            for (; spos >= 0 && !stride[spos].node->next; spos--);
+            if (spos < 0)
+              return 0;
+            tuple = iter.get_node(stride[spos].node->next); fsm = 1;
+          }
+        }
+
+        return 0;
+      }
+    };
+
+    Error insert(uint16_t len, const K word[/*len*/], T data, bool rep)
+    {
       if (!word)
         return NO_WORD;
       if (!len)
         return EMPTY_WORD;
 
-      if (root) {
-        epo.tuple = iter.get_node(root);
+      Epo epo = {SUCCESS, {0, 0}, {0, 0}, {0, 0}, ROOT, 0, 0};
 
-        epo = _insert_decide(epo.tuple, iter, len, word, rep);
-        if (epo.err)
-          return epo.err;
+
+      if (root) {
+        epo.tuple = TNodeIter(nodes, 0).get_node(root);
+        epo = _insert(epo, len, word, data, rep);
+      } else {
+        uint32_t  rest = _calc_stride_length(epo, len);
+        Tuple stride[rest];
+        if ((epo.err = _stride_alloc(rest, stride)))
+          return FAILURE;
+        epo.tuple = _append_tail_to_root(epo.tuple,
+          len, word, rest, stride, data);
       }
+
+      return epo.err;
+    }
+
+    Epo _insert(Epo epo, uint16_t len, const K word[/*len*/], T data, bool rep)
+    {
+      uint32_t  rest;
+      TNodeIter iter = TNodeIter(nodes, 0);
+      if (!epo.tuple.index)
+        return epo;
+
+      epo = _insert_decide(epo.tuple, iter, len, word, rep);
+      if (epo.err)
+        return epo;
 
       /* allocate space for the rest of our key
        * and roll back on failure... */
 
-      rest = _calc_stride_length(epo, len);;
+      rest = _calc_stride_length(epo, len);
       Tuple stride[rest];
       if (epo.act) {
         if ((epo.err = _stride_alloc(rest, stride)))
-          return epo.err;
+          return epo;
       }
 
       /* _everything_ should be fine now */
 
       switch (epo.act) {
         case PREV:
-          _prev_child_append_tail(epo.tuple,
+          epo.tuple = _prev_child_append_tail(epo.tuple,
             epo.prev, epo.i, len, word, rest, stride, data);
           break;
         case PARENT:
-          _parent_child_append_tail(epo.tuple,
+          epo.tuple = _parent_child_append_tail(epo.tuple,
             epo.parent, epo.i, len, word, rest, stride, data);
           break;
         case CHILD:
-          _become_child_append_tail(epo.tuple,
+          epo.tuple = _become_child_append_tail(epo.tuple,
             epo.i, len, word, rest, stride, data);
-          break;
-        case ROOT:
-          _append_tail_to_root(epo.tuple,
-            len, word, rest, stride, data);
           break;
         case SET:
           epo.tuple.node->isdata = 1;
           epo.tuple.node->data = data;
           break;
         case SPLIT_0_SET:
-          _split_0_set(epo.tuple,
+         epo.tuple =  _split_0_set(epo.tuple,
             epo.i, len, word, rest, stride, data);
           break;
         case SPLIT_N_CHILD:
-          _split_n_child(epo.tuple,
+          epo.tuple = _split_n_child(epo.tuple,
             epo.i, epo.n, len, word, rest, stride, data);
           break;
         case SPLIT_N_NEXT:
-          _split_n_next(epo.tuple,
+          epo.tuple = _split_n_next(epo.tuple,
             epo.i, epo.n, len, word, rest, stride, data);
           break;
-        case FAILURE:
-          return FALILURE;
+        case ROOT:
+        case FAIL:
+          epo.err = FAILURE;
       }
 
-      return SUCCESS;
+      return epo;
     }
 
-    Error remove(uint16_t len, const uint8_t word[/*len*/]);
+    Error remove(uint16_t len, const K word[/*len*/]);
 
-    Error find(uint16_t len, const uint8_t word[/*len*/], T & data)
+    Error find(uint16_t len, const K word[/*len*/], T & data)
     {
       Tuple tuple;
 
@@ -772,6 +908,185 @@ namespace Util {
         return NOT_FOUND;
 
       data = tuple.node->data;
+
+      return SUCCESS;
+    }
+
+    void print(int pipe)
+    {
+      FILE * fd = fdopen(pipe, "w");
+      if (!fd)
+        return;
+
+      fprintf(fd, "digraph trie {\n");
+      fprintf(fd, " graph [rankdir = TD]\n");
+      fprintf(fd, " node [fontsize = 12, fontname = \"monospace\"]\n");
+      fprintf(fd, " edge []\n");
+
+      fprintf(fd,
+          " \"trie\" [ shape = plaintext, label = <"
+          "<table cellborder=\"1\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">"
+          "<tr><td bgcolor=\"red\">trie</td></tr>"
+          "<tr><td port=\"f0\" bgcolor=\"gray\">%u</td></tr>"
+          "</table>>]\n", root);
+
+      if (root) {
+        fprintf(fd, " \"trie\":f0 -> \"node%u\":f0;\n", root);
+      }
+      uint16_t  len;
+      uint16_t  alen;
+      K       * word;
+
+      int32_t   spos;
+      uint16_t  slen;
+      uint16_t  aslen;
+      Tuple   * stride;
+
+      TNodeIter iter = TNodeIter(nodes, 0);
+      Tuple     tuple = iter.get_node(root);
+      int       fsm = 1; /* stop = 0, child = 1, next = 2 */
+
+      len = alen = 0;
+      word = 0;
+      spos = 0;
+      slen = aslen = 0;
+      stride = 0;
+
+      while (tuple.index) {
+        slen = spos + 1;
+
+        /* allocate */
+        if (slen >= aslen) {
+          uint16_t  oslen;
+          oslen = aslen;
+          aslen = ((slen) + 15L) & ~15L; /* align 16 */
+
+          if (stride) {
+            Tuple * tmp = new Tuple[aslen];
+            memcpy(tmp, stride, sizeof(Tuple) * oslen);
+            delete[] stride;
+            stride = tmp;
+          } else {
+            stride = new Tuple[aslen];
+          }
+        }
+
+        stride[spos] = tuple;
+
+        if (tuple.node->isdata) {
+          len = 0;
+          for (int32_t k = 0; k < slen; k++) {
+            if (stride[k].node->isdata)
+              len++;
+            else
+              len = len + 1 + stride[k].node->strlen;
+          }
+          if (len > alen) {
+            alen = ((len) + 15L) & ~15L; /* align 16 */
+            if (word) {
+              K * tmp = new K[alen];
+              delete[] word;
+              word = tmp;
+            } else {
+             word = new K[alen];
+            }
+          }
+          for (int32_t k = 0, j = 0; k < slen; k++) {
+            if (stride[k].node->isdata)
+              word[j++] = stride[k].node->c;
+            else {
+              word[j++] = stride[k].node->c;
+              for (uint8_t n = 0; n < stride[k].node->strlen; n++) {
+                word[j++] = stride[k].node->str[n];
+              }
+            }
+          }
+        }
+
+        {
+          if (tuple.index) {
+            fprintf(fd, " \"node%u\" [ shape = plaintext, label = <", tuple.index);
+            fprintf(fd, "<table cellborder=\"1\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">");
+            fprintf(fd, "<tr>");
+            fprintf(fd, "<td colspan=\"3\" port=\"f0\">%u:%s%s:%d</td>",
+                tuple.index, tuple.node->iskey ? "k" : "",
+                tuple.node->isdata ? "d" : "", tuple.node->strlen);
+            if (tuple.node->next)
+              fprintf(fd, "<td port=\"f2\">→%u</td>", tuple.node->next);
+            fprintf(fd, "</tr>");
+            fprintf(fd, "<tr>");
+            if (tuple.node->isdata)
+              fprintf(fd, "<td bgcolor=\"black\" port=\"f4\"><font color=\"white\">↭</font></td>");
+            fprintf(fd, "<td port=\"f1\" bgcolor=\"gray\">%c</td>", tuple.node->c);
+            if (!tuple.node->isdata)
+              fprintf(fd, "<td port=\"f4\" bgcolor=\"gray\">%.*s</td>",
+                  tuple.node->strlen, tuple.node->str);
+            if (tuple.node->child)
+              fprintf(fd, "<td port=\"f3\">↓%u</td>", tuple.node->child);
+            fprintf(fd, "</tr>");
+            fprintf(fd, "</table>");
+            fprintf(fd, ">]\n");
+
+            if (tuple.node->child) {
+              fprintf(fd, " \"node%u\":f3 -> \"node%u\":f0 [color=red];\n", tuple.index, tuple.node->child);
+            }
+
+            if (tuple.node->next) {
+              fprintf(fd, " \"node%u\":f2 -> \"node%u\" [color=blue, minlen=0];\n", tuple.index, tuple.node->next);
+            }
+          }
+        }
+
+        if (fsm == 1) {
+          if (tuple.node->child) {
+            tuple = iter.get_node(tuple.node->child); spos++;
+            continue;
+          } else {
+            fsm = 2;
+          }
+        }
+
+        if (fsm == 2) {
+          /* rewind the stack */
+          for (; spos >= 0 && !stride[spos].node->next; spos--);
+          if (spos < 0)
+            break;
+          tuple = iter.get_node(stride[spos].node->next); fsm = 1;
+        }
+      }
+
+      if (word)
+        delete[] word;
+      if (stride)
+        delete[] stride;
+
+      fprintf(fd, "}\n");
+
+      fclose(fd);
+    }
+
+    Error serialize(int pipe)
+    {
+      if (fcntl(pipe, F_GETFD) != -1) {
+        char thdr[] = "trie 0.0\0\0\0\0\0\0";
+        char tftr[] = "trie end";
+        char bhdr[] = "bank 0.0";
+        uint16_t n = N;
+        write(pipe, thdr, 14);
+        write(pipe, &n, sizeof(n));
+        for (Bank * bank = nodes, * next = bank ? bank->next : 0; bank;
+           bank = next, next = bank ? bank->next : 0) {
+          write(pipe, bhdr, 8);
+          write(pipe, &bank->start, sizeof(bank->start));
+          write(pipe, &bank->length, sizeof(bank->length));
+          for (uint32_t k = 0; k < bank->length; k++) {
+            write(pipe, &bank->nodes[k], sizeof(TNode));
+          }
+        }
+        write(pipe, &root, sizeof(root));
+        write(pipe, &freelist, sizeof(freelist));
+        write(pipe, tftr, 8);
+      }
 
       return SUCCESS;
     }
