@@ -14,7 +14,6 @@ void pathman_clear(pathman_t * pman)
       }
       pman->dirs = NULL;
     }
-    mem_free(pman->a, pman->dirs);
 
     {
       struct pfile_bank * p = pman->files, * n = p ? p->next : NULL;
@@ -23,7 +22,6 @@ void pathman_clear(pathman_t * pman)
       }
       pman->files = NULL;
     }
-    mem_free(pman->a, pman->files);
 
     trie_clear(pman->trie);
   }
@@ -33,8 +31,6 @@ pathman_t * pathman_init(pathman_t * pman, const mem_allocator_t * a)
 {
   if (!pman || !a)
     return NULL;
-
-
 
   pman->dirs = pdir_bank_alloc(0, PDIR_BANK_SIZE, a);
   if (!pman->dirs)
