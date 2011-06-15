@@ -18,18 +18,17 @@
 BT_SUITE_DEF(trie, "trie tests");
 
 struct trie_test {
-  struct trie trie[1];
+  trie_t          trie[1];
   mem_allocator_t a[1];
-
-  size_t num;
-  char * flag;
-  char ** strv;
+  size_t          num;
+  char          * flag;
+  char         ** strv;
 };
 
 BT_SUITE_SETUP_DEF(trie, objectref)
 {
   struct trie_test * test = malloc(sizeof(struct trie_test));
-  char               buf[128];
+  char               buf[512];
   FILE             * fp;
   uint16_t           n;
 
@@ -190,7 +189,7 @@ BT_TEST_DEF(trie, str, object, "str mode")
 
 
 
-  // trie_print(trie, 4);
+  trie_print(trie, 1);
 
 #undef test
 #undef delete
@@ -277,18 +276,6 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
   return BT_RESULT_OK;
 }
 
-int test_trie_ff(uint16_t len, const uint8_t word[len], uintptr_t data, void * ud)
-{
-  (void) word; (void) len; (void) data;
-  struct trie_test * test = ud;
-
-  test->flag[data]++;
-
-  // printf("'%.*s' -> %zu\n", (int) len, (const char *) word, data); fflush(stdout);
-
-  return 0;
-}
-
 BT_TEST_DEF(trie, insert_delete_insert, object, "insert delete insert")
 {
   struct trie_test * test = object;
@@ -317,12 +304,19 @@ BT_TEST_DEF(trie, insert_delete_insert, object, "insert delete insert")
     }
   }
 
+  trie_iter_t iterstor[1], * iter;
+
   /* ensure, that we reached every piece of data */
-  trie_foreach(trie, test_trie_ff, test);
+  for (iter = trie_iter_init(trie, iterstor); iter && trie_iter_next(iter);) {
+    test->flag[iter->data]++;
+    // printf("'%.*s' -> %zu\n", (int) iter->len, (const char *) iter->word, iter->data); fflush(stdout);
+  }
   for (size_t j = 0; j < num; j++) {
     bt_assert(test->flag[j] == 1);
     test->flag[j] = 0;
   }
+
+  trie_iter_clear(iter);
 
 
   srand(1);

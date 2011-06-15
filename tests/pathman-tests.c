@@ -19,20 +19,19 @@
 BT_SUITE_DEF(pathman, "pathman tests");
 
 struct pathman_test {
-  pathman_t pman[1];
+  pathman_t       pman[1];
   mem_allocator_t a[1];
-
-  size_t num;
-  char * flag;
-  char ** strv;
+  size_t          num;
+  char          * flag;
+  char         ** strv;
 };
 
 BT_SUITE_SETUP_DEF(pathman, objectref)
 {
   struct pathman_test * test = malloc(sizeof(struct pathman_test));
-  char               buf[128];
-  FILE             * fp;
-  uint16_t           n;
+  char                  buf[128];
+  FILE                * fp;
+  uint16_t              n;
 
   bt_assert_int_equal(sizeof(union paccess), sizeof(uint64_t));
 
@@ -66,7 +65,7 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
     else if (buf[0] == 'f')
       test->flag[n] = 2;
 
-    test->strv[n++] = strndup(buf+2, strlen(buf+2) - 1);
+    test->strv[n++] = strndup(buf + 2, strlen(buf + 2) - 1);
   }
 
   fclose(fp);
@@ -84,8 +83,8 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
 BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
 {
   struct pathman_test * test = object;
-  struct plookup dlup;
-  struct plookup flup;
+  struct plookup        dlup;
+  struct plookup        flup;
 
   for (unsigned k = 0; k < test->num; k++) {
     if (test->flag[k] == 1) {
@@ -108,13 +107,14 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
   }
 
   unsigned c = 0;
-  tnode_bank_safe_foreach(bank, test->pman->trie->nodes)
+  tnode_bank_safe_foreach(bank, test->pman->trie->nodes) {
     c++;
+  }
 
   bt_log("pathman: trie consists of %d bank(s)\n", c);
 
-  //trie_print(test->pman->trie, 4);
-  //pathman_print(test->pman, 4);
+  // trie_print(test->pman->trie, 4);
+  // pathman_print(test->pman, 4);
 
   return BT_RESULT_OK;
 }

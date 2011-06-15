@@ -7,8 +7,6 @@ typedef struct gc_global gc_global_t;
 typedef struct gc_header gc_header_t;
 typedef struct gc_obj gc_obj_t;
 
-#define bool int
-
 typedef size_t (gc_function_t)(gc_global_t * g, void * o);
 
 typedef struct gc_vtable {

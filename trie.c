@@ -456,88 +456,117 @@ void tuple_print(struct tnode_tuple tu)
 
 }
 
-err_t trie_foreach(trie_t * trie, trie_forach_t f, void * ud)
+trie_iter_t * trie_iter_init(trie_t * trie, trie_iter_t * iter)
 {
-  if (!trie || !f)
-    return ERR_IN_NULL_POINTER;
-  if (!trie->root)
-    return ERR_SUCCESS;
+  if (trie && iter) {
+    iter->len = iter->alen = 0;
+    iter->word = NULL;
+    iter->spos = 0;
+    iter->slen = iter->aslen = 0;
+    iter->stride = NULL;
+    iter->iter = tnode_iter(trie->nodes, 0);
+    iter->tuple = tnode_iter_get(&iter->iter, trie->root);
+    iter->trie = trie;
 
-  /* must be signed due to go==2 */
-  int32_t              pos = 0;
-  uint16_t             len = 0;
-  uint16_t             nlen = 0;
-  uint16_t             olen = 0;
-  uint8_t            * word = NULL;
-  struct tnode_tuple * stride = NULL;
-  void               * tmp;
+    iter->fsm = 1;
 
-  struct tnode_tuple   tuple;
-  struct tnode_iter    iter = tnode_iter(trie->nodes, 0);
+    return iter;
+  }
+  return NULL;
+}
 
-  int                  go = 1; /* 1 child, 2 next */
+int trie_iter_next(trie_iter_t * iter)
+{
+  if (iter && iter->trie) {
+    while (iter->tuple.index) {
+      if (iter->fsm != 0) {
+        iter->slen = iter->spos + 1;
 
-  tuple = tnode_iter_get(&iter, trie->root);
+        /* allocate */
+        if (iter->slen >= iter->aslen) {
+          uint16_t             oslen;
+          struct tnode_tuple * tmp;
+          oslen = iter->aslen;
+          iter->aslen = ALIGN16(iter->slen);
 
-  while (tuple.index) {
-    len = pos + 1;
+          tmp = mem_realloc(iter->trie->a, iter->stride,
+              sizeof(struct tnode_tuple) * oslen,
+              sizeof(struct tnode_tuple) * iter->aslen);
+          if (!tmp)
+            return -1;
+          iter->stride = tmp;
+        }
 
-    if (len >= nlen) {
-      olen = nlen;
-      nlen = ALIGN16(len);
+        iter->stride[iter->spos] = iter->tuple;
 
-      tmp = mem_realloc(trie->a, word, olen, nlen);
-      if (!tmp)
-        goto alloc_error;
-      word = tmp;
+        if (iter->tuple.node->isdata) {
+          iter->len = 0;
+          for (int32_t k = 0; k < iter->slen; k++) {
+            if (iter->stride[k].node->isdata)
+              iter->len++;
+            else
+              iter->len = iter->len + 1 + iter->stride[k].node->strlen;
+          }
+          if (iter->len > iter->alen) {
+            uint16_t  olen = iter->alen;
+            uint8_t * tmp;
 
-      tmp = mem_realloc(trie->a, stride,
-          sizeof(struct tnode_tuple) * olen,
-          sizeof(struct tnode_tuple) * nlen);
-      if (!tmp)
-        goto alloc_error;
-      stride = tmp;
-    }
+            iter->alen = ALIGN16(iter->len);
+            tmp = mem_realloc(iter->trie->a, iter->word, olen, iter->alen);
+            if (!tmp)
+              return -1;
+            iter->word = tmp;
+          }
+          for (int32_t k = 0, j = 0; k < iter->slen; k++) {
+            if (iter->stride[k].node->isdata)
+              iter->word[j++] = iter->stride[k].node->c;
+            else {
+              iter->word[j++] = iter->stride[k].node->c;
+              for (uint8_t n = 0; n < iter->stride[k].node->strlen; n++) {
+                iter->word[j++] = iter->stride[k].node->str[n];
+              }
+            }
+          }
 
-    word[pos] = tuple.node->c;
-    stride[pos] = tuple;
+          iter->data = iter->tuple.node->data;
+          iter->fsm = 0;
+          return 1;
+        }
+      }
 
-    if (tuple.node->isdata) {
-      f(len, word, tuple.node->data, ud);
-    }
+      if (iter->fsm == 0) {
+        iter->fsm = 1;
+      }
 
-    if (go == 1) {
+      if (iter->fsm == 1) {
+        if (iter->tuple.node->child) {
+          iter->tuple = tnode_iter_get(&iter->iter, iter->tuple.node->child); iter->spos++;
+          continue;
+        } else {
+          iter->fsm = 2;
+        }
+      }
 
-      if (tuple.node->child) {
-        tuple = tnode_iter_get(&iter, tuple.node->child); pos++;
-        continue;
-      } else {
-        go = 2;
+      if (iter->fsm == 2) {
+        /* rewind the stack */
+        for (; iter->spos >= 0 && !iter->stride[iter->spos].node->next; iter->spos--);
+        if (iter->spos < 0)
+          return 0;
+        iter->tuple = tnode_iter_get(&iter->iter, iter->stride[iter->spos].node->next); iter->fsm = 1;
       }
     }
-
-    if (go == 2) {
-      /* rewind the stack */
-      for (; pos >= 0 && !stride[pos].node->next; pos--);
-      if (pos < 0)
-        goto out;
-
-      tuple = tnode_iter_get(&iter, stride[pos].node->next); go = 1;
-    }
-
+    return 0;
   }
+  return -1;
+}
 
-out:
-  mem_free(trie->a, word);
-  mem_free(trie->a, stride);
-
-  return ERR_SUCCESS;
-alloc_error:
-  if (word)
-    mem_free(trie->a, word);
-  if (stride)
-    mem_free(trie->a, stride);
-  return ERR_MEM_REALLOC;
+void trie_iter_clear(trie_iter_t * iter)
+{
+  if (iter) {
+    mem_free(iter->trie->a, iter->stride);
+    mem_free(iter->trie->a, iter->word);
+    memset(iter, 0, sizeof(iter));
+  }
 }
 
 #include "tests/trie-tests.c"

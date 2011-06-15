@@ -19,8 +19,8 @@ struct pnode {
 
 /* storage type for trie */
 union paccess {
-  struct pnode  node;
-  uint64_t      composite;
+  struct pnode node;
+  uint64_t     composite;
 };
 
 /* search state */
@@ -29,98 +29,84 @@ struct pstate {
 };
 
 struct pdir {
-  unsigned isused : 1;
-
-  size_t count;
-  size_t size;
-
+  unsigned      isused : 1;
+  size_t        count;
+  size_t        size;
   struct pstate state;
-
-  uint32_t next;
-  uint32_t child;
-
-  uint32_t file;
+  uint32_t      next;
+  uint32_t      child;
+  uint32_t      file;
 };
 
 struct pfile {
   unsigned isused : 1;
 
-  size_t offset;
-  size_t size;
-
+  size_t   offset;
+  size_t   size;
   uint32_t next;
 };
 
 
 struct pdir_bank {
-  uint32_t start;
-  uint32_t end;
-  uint32_t length;
-
+  uint32_t           start;
+  uint32_t           end;
+  uint32_t           length;
   struct pdir_bank * prev;
   struct pdir_bank * next;
-
-  struct pdir nodes[];
+  struct pdir        nodes[];
 };
 
 struct pdir_iter {
   struct pdir_bank * bank;
-  uint32_t idx;
+  uint32_t           idx;
 };
 
 
 struct pfile_bank {
-  uint32_t start;
-  uint32_t end;
-  uint32_t length;
-
+  uint32_t            start;
+  uint32_t            end;
+  uint32_t            length;
   struct pfile_bank * prev;
   struct pfile_bank * next;
-
-  struct pfile nodes[];
+  struct pfile        nodes[];
 };
 
 struct pfile_iter {
   struct pfile_bank * bank;
-  uint32_t idx;
+  uint32_t            idx;
 };
 
 struct pdir_tuple {
   struct pdir * node;
-  uint32_t index;
+  uint32_t      index;
 };
 
 struct pfile_tuple {
   struct pfile * node;
-  uint32_t index;
+  uint32_t       index;
 };
 
 
 struct pathman {
-  trie_t trie[1];
-
-  struct pdir_bank * dirs;
-  struct pdir_bank * dabank;
-  uint32_t dfreelist;
-
-  struct pfile_bank * files;
-  struct pfile_bank * fabank;
-  uint32_t ffreelist;
-
+  trie_t                  trie[1];
+  struct pdir_bank      * dirs;
+  struct pdir_bank      * dabank;
+  uint32_t                dfreelist;
+  struct pfile_bank     * files;
+  struct pfile_bank     * fabank;
+  uint32_t                ffreelist;
   const mem_allocator_t * a;
 };
 
 typedef struct pathman pathman_t;
 
 pathman_t * pathman_init(pathman_t * pman, const mem_allocator_t * a);
-void pathman_clear(pathman_t * pman);
+void        pathman_clear(pathman_t * pman);
 
 struct plookup {
-  err_t err;
-  struct pstate state;
-
-  /* either dir or file set */
-  struct pdir * dir;
+  err_t          err;
+  struct pstate  state;
+  struct pdir  * dir; /* either dir or file set */
   struct pfile * file;
 };
 
@@ -129,7 +115,5 @@ struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode
 struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char * name, uint8_t mode);
 
 struct plookup pathman_lookup(pathman_t * pman, const char * path);
-
-err_t pathman_dir_foreach(pathman_t * pman, struct pdir * dir, trie_forach_t f, void * ud);
 
 #endif /* _PATHMAN_H */

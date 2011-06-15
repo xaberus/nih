@@ -14,57 +14,48 @@ enum trie_error {
 };
 
 struct tnode {
-  uint8_t c;
-  __extension__ struct {
-    unsigned int iskey : 1;
-    unsigned int isdata : 1;
-    unsigned int isused : 1;
-    unsigned int strlen : 4;
-    unsigned int _reserved : 1;
-  };
-  unsigned next : 24;
-  unsigned child : 24;
+  uint8_t      c;
+  unsigned int iskey : 1;
+  unsigned int isdata : 1;
+  unsigned int isused : 1;
+  unsigned int strlen : 4;
+  unsigned int _reserved : 1;
+  unsigned     next : 24;
+  unsigned     child : 24;
   __extension__ union {
-    uint8_t str[8];
+    uint8_t  str[8];
     uint64_t data;
   };
 };
 
 #define INDEX2IDX(__index) (__index - 1)
-#define IDX2INDEX(__idx) (__idx + 1)
+#define IDX2INDEX(__idx)   (__idx + 1)
 
 struct tnode_bank {
-  uint32_t start;
-  uint32_t end;
-  uint32_t length;
-
+  uint32_t            start;
+  uint32_t            end;
+  uint32_t            length;
   struct tnode_bank * prev;
   struct tnode_bank * next;
-
-  struct tnode nodes[];
+  struct tnode        nodes[];
 };
 
 struct tnode_iter {
   struct tnode_bank * bank;
-  uint32_t idx;
+  uint32_t            idx;
 };
 
 struct tnode_tuple {
   struct tnode * node;
-  uint32_t index;
+  uint32_t       index;
 };
 
 struct trie {
-  struct tnode_bank * nodes;
-  struct tnode_bank * abank; /* allocation bank */
-
-  uint32_t basize; /* bank allocation size */
-
-  /* root key */
-  uint32_t root;
-
-  uint32_t freelist;
-
+  struct tnode_bank     * nodes;
+  struct tnode_bank     * abank;  /* allocation bank */
+  uint32_t                basize; /* bank allocation size */
+  uint32_t                root;   /* root key */
+  uint32_t                freelist;
   const mem_allocator_t * a;
 };
 
@@ -78,8 +69,25 @@ err_t    trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uint6
 err_t    trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len]);
 err_t    trie_find(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t * data);
 
-typedef int (trie_forach_t)(uint16_t len, const uint8_t word[len], uint64_t data, void * ud);
+struct trie_iter {
+  trie_t             * trie;
+  uint16_t             len;
+  uint16_t             alen;
+  uint8_t            * word;
+  int32_t              spos;
+  uint16_t             slen;
+  uint16_t             aslen;
+  struct tnode_tuple * stride;
+  struct tnode_iter    iter;
+  struct tnode_tuple   tuple;
+  unsigned             fsm; /* stop = 0, child = 1, next = 2 */
+  uintptr_t            data;
+};
 
-err_t    trie_foreach(trie_t * trie, trie_forach_t f, void * ud);
+typedef struct trie_iter trie_iter_t;
+
+trie_iter_t * trie_iter_init(trie_t * trie, trie_iter_t * iter);
+int           trie_iter_next(trie_iter_t * iter);
+void          trie_iter_clear(trie_iter_t * iter);
 
 #endif /* _TRIE_H */

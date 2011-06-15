@@ -14,14 +14,14 @@
 BT_SUITE_DEF(gc, "garbage collectior tests");
 
 struct gc_test {
-  gc_global_t g[1];
+  gc_global_t     g[1];
   mem_allocator_t a[1];
 };
 
 struct testobj {
-  gc_obj_t gco;
+  gc_obj_t         gco;
   struct testobj * arr[20];
-  unsigned count, flag;
+  unsigned         count, flag;
 };
 
 size_t testobj_init(gc_global_t * g, void * o)
@@ -106,10 +106,11 @@ BT_SUITE_TEARDOWN_DEF(gc, objectref)
 BT_TEST_DEF(gc, str, object, "string tests")
 {
   struct gc_test * test = object;
-  gc_global_t * g = test->g;
+  gc_global_t    * g = test->g;
+  gc_str_t       * s;
 
   bt_log("[gc:str] hash size: %zu\n", g->strmask + 1);
-  gc_str_t * s = gc_mem_new_str(g, "abc", 3);
+  s = gc_mem_new_str(g, "abc", 3);
   bt_assert_ptr_equal(gc_mem_new_str(g, "xabc" + 1, 3), s);
   bt_assert_ptr_equal(gc_mem_new_str(g, "xxabc" + 2, 3), s);
   bt_assert_ptr_equal(gc_mem_new_str(g, "xxxabc" + 3, 3), s);
@@ -122,8 +123,8 @@ BT_TEST_DEF(gc, str, object, "string tests")
   bt_log("[gc:str] alignment ok\n");
 
   {
-    FILE  * fp;
-    char               buf[512];
+    FILE * fp;
+    char   buf[512];
 
     if (!(fp = fopen("tests/trie-tests.txt", "r")))
       return BT_RESULT_IGNORE;
@@ -144,7 +145,7 @@ BT_TEST_DEF(gc, str, object, "string tests")
 BT_TEST_DEF(gc, simple, object, "simple tests")
 {
   struct gc_test * test = object;
-  gc_global_t * g = test->g;
+  gc_global_t    * g = test->g;
 
   bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(struct testobj));
   bt_log("[GC] total: %zu\n", g->total);

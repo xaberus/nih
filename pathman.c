@@ -374,9 +374,8 @@ struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode
   }
 }
 
-int pathman_print_ff(uint16_t len, const uint8_t word[len], uint64_t data, void * ud)
+int pathman_print_ff(uint16_t len, const uint8_t word[len], uint64_t data, pathman_t * pman)
 {
-  pathman_t   * pman = ud;
   union paccess acc; acc.composite = data;
 
   struct pnode  node = acc.node;
@@ -500,15 +499,18 @@ void pathman_print(pathman_t * pman, int fd)
   if (pman->trie->root) {
     dprintf(fd, " \"pathman\":f0 -> \"dir%u\":f0;\n", pman->trie->root);
   }
-  trie_foreach(pman->trie, pathman_print_ff, pman);
+
+  trie_iter_t iterstor[1], * iter;
+
+  for (iter = trie_iter_init(pman->trie, iterstor); iter && trie_iter_next(iter);) {
+    pathman_print_ff(iter->len, iter->word, iter->data, pman);
+  }
+  trie_iter_clear(iter);
 
   dprintf(fd, "}\n");
 }
 
-struct plookup pathman_add_file(pathman_t * pman,
-    struct pdir * dir,
-    const char * name,
-    uint8_t mode)
+struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char * name, uint8_t mode)
 {
   size_t len;
 
@@ -647,9 +649,6 @@ struct plookup pathman_add_file(pathman_t * pman,
 {
 
 }
-
-err_t pathman_dir_foreach(pathman_t * pman, struct pdir * dir, trie_forach_t f, void * ud)
-{
 
 }*/
 
