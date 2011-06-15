@@ -28,17 +28,8 @@ typedef struct gc_vtable {
 #define GC_WHITE_FLAGS    (GC_WHITE0_FLAG | GC_WHITE1_FLAG)
 #define GC_COLOR_FLAGS    (GC_WHITE_FLAGS | GC_BLACK_FLAG)
 
-#define gc_is_white(x)     ((x)->gc_flags & GC_WHITE_FLAGS)
-#define gc_is_black(x)     ((x)->gc_flags & GC_BLACK_FLAG)
-#define gc_is_grey(x)      (!((x)->gc_flags & GC_COLOR_FLAGS))
-#define gc_swap_white(x)   ((uint16_t) ((x)->white ^ GC_WHITE_FLAGS))
-#define gc_is_dead(x, y)   ((y)->gc_flags & gc_swap_white(x) & GC_WHITE_FLAGS)
-
-#define gc_curr_white(x)   ((x)->white & GC_WHITE_FLAGS)
-#define gc_new_white(x, y) ((y)->gc_flags = gc_curr_white(x))
-#define gc_make_white(x, y) \
-  ((y)->gc_flags = ((y)->gc_flags & (uint16_t) ~GC_COLOR_FLAGS) | gc_curr_white(x))
-#define gc_flip_white(x)   ((y)->gc_flags ^= GC_WHITE_FLAGS)
+#define gc_is_white(x) ((x)->gc_flags & GC_WHITE_FLAGS)
+#define gc_is_black(x) ((x)->gc_flags & GC_BLACK_FLAG)
 
 #define GC_HEADER_FIELDS \
   uint16_t gc_flags; \
@@ -78,7 +69,7 @@ typedef enum gc_state {
 struct gc_global {
   gc_str_t     ** strhash; /* note: array! */
   size_t          strmask;
-  size_t          strsize;
+  size_t          strcount;
   size_t          sweepstr;
   gc_header_t   * root; /* global object list */
   gc_header_t  ** sweep;  /* global object list iterator */
@@ -98,3 +89,28 @@ struct gc_global {
   uint16_t        white; /* current white flag */
   mem_allocator_t alloc;
 };
+
+gc_global_t * gc_global_init(gc_global_t * g, mem_allocator_t alloc);
+void          gc_global_clear(gc_global_t * g);
+void          gc_full_gc(gc_global_t * g);
+
+gc_str_t *    gc_mem_new_str(gc_global_t * g, const char * str, size_t len);
+void *        gc_mem_new_obj(gc_global_t * g, gc_vtable_t * vtable, size_t size);
+
+void          gc_add_root_obj(gc_global_t * g, gc_obj_t * o);
+void          gc_del_root_obj(gc_global_t * g, gc_obj_t * o);
+
+void          gc_barrierback(gc_global_t * g, gc_obj_t * o);
+#define gc_obj_barriert(L, t, o) \
+  do { \
+    if (gc_is_white(o) && gc_is_black(t)) { \
+      gc_barrierback(g, t); \
+    } \
+  } while (0)
+
+void          gc_mark(gc_global_t * g, gc_obj_t * o);
+#define gc_mark_obj(x, y) \
+  do { \
+    if (gc_is_white(y)) \
+      gc_mark(g, y); \
+  } while (0)
