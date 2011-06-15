@@ -112,3 +112,12 @@ void          gc_mark(gc_global_t * g, gc_obj_t * o);
     if (gc_is_white(y)) \
       gc_mark(g, y); \
   } while (0)
+
+int           gc_step(gc_global_t * g);
+#define gc_check(g) \
+  do { \
+    if ((g)->total >= g->threshold) { \
+      gc_step(L); \
+    } \
+  } while (0)
+
