@@ -385,13 +385,6 @@ int gc_step(gc_global_t * g)
   return 0;
 }
 
-#define gc_check(g) \
-  do { \
-    if ((g)->total >= g->threshold) { \
-      gc_step(L); \
-    } \
-  } while (0)
-
 #define gc_mem_new(g, s) \
   gc_mem_realloc(g, 0, (s), NULL)
 #define gc_mem_newvec(g, n, t) \
