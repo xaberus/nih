@@ -14,36 +14,37 @@
 #define GC_MIN_STRHASH   8
 
 #define gc_assert(cond)      assert(cond)
-#define gc_white2gray(x)     ((x)->gc_flags &= (uint16_t) ~GC_WHITE_FLAGS)
-#define gc_gray2black(x)     ((x)->gc_flags |= GC_BLACK_FLAG)
-#define gc_black2gray(x)     ((x)->gc_flags &= (uint16_t) ~GC_BLACK_FLAG)
-#define gc_is_finalized(u)   ((u)->gc_flags & GC_FINALIZED_FLAG)
-#define gc_mark_finalized(u) ((u)->gc_flags |= GC_FINALIZED_FLAG)
+#define gc_white2gray(x)     ((x)->gch.flags &= (uint16_t) ~GC_WHITE_FLAGS)
+#define gc_gray2black(x)     ((x)->gch.flags |= GC_BLACK_FLAG)
+#define gc_black2gray(x)     ((x)->gch.flags &= (uint16_t) ~GC_BLACK_FLAG)
+#define gc_is_finalized(u)   ((u)->gch.flags & GC_FINALIZED_FLAG)
+#define gc_mark_finalized(u) ((u)->gch.flags |= GC_FINALIZED_FLAG)
 
-#define gc_is_grey(x)        (!((x)->gc_flags & GC_COLOR_FLAGS))
+#define gc_is_grey(x)        (!((x)->gch.flags & GC_COLOR_FLAGS))
 #define gc_swap_white(x)     ((uint16_t) ((x)->white ^ GC_WHITE_FLAGS))
-#define gc_is_dead(x, y)     ((y)->gc_flags & gc_swap_white(x) & GC_WHITE_FLAGS)
+#define gc_is_dead(x, y)     ((y)->gch.flags & gc_swap_white(x) & GC_WHITE_FLAGS)
 
 #define gc_curr_white(x)     ((x)->white & GC_WHITE_FLAGS)
-#define gc_new_white(x, y)   ((y)->gc_flags = gc_curr_white(x))
+#define gc_new_white(x, y)   ((y)->gch.flags = gc_curr_white(x))
 #define gc_make_white(x, y) \
-  ((y)->gc_flags = ((y)->gc_flags & (uint16_t) ~GC_COLOR_FLAGS) | gc_curr_white(x))
-#define gc_flip_white(x)     ((x)->gc_flags ^= GC_WHITE_FLAGS)
+  ((y)->gch.flags = ((y)->gch.flags & (uint16_t) ~GC_COLOR_FLAGS) | gc_curr_white(x))
+#define gc_flip_white(x)     ((x)->gch.flags ^= GC_WHITE_FLAGS)
 
 #define gc_next_prepend(_list, _obj) \
   do { \
-    (_obj)->gc_next = _list; \
+    (_obj)->gch.next = _list; \
     (_list) = _obj; \
   } while (0)
 
 #define gc_list_prepend(_list, _obj) \
   do { \
-    _obj->gc_list = _list; \
+    _obj->list = _list; \
     _list = _obj; \
   } while (0)
 
 
 static void gc_shrink(gc_global_t * g);
+gc_vtable_t gc_str_vtable;
 
 void gc_err_mem(gc_global_t * g)
 {
@@ -91,16 +92,16 @@ void * gc_mem_new_obj(gc_global_t * g, gc_vtable_t * vtable, size_t size)
 
   memset(o, 0, size);
 
-  o->gc_vtable = vtable;
-  o->gc_size = size;
-  o->gc_next = NULL;
-  o->gc_list = NULL;
+  o->gch.vtable = vtable;
+  o->gch.size = size;
+  o->gch.next = NULL;
+  o->list = NULL;
 
   if (o == NULL)
     gc_err_mem(g);
 
   g->total += size;
-  gc_next_prepend(g->root, (gc_header_t *) o);
+  gc_next_prepend(g->root, &o->gch);
   gc_new_white(g, o);
 
   if (vtable->gc_init) {
@@ -114,7 +115,7 @@ void gc_mark(gc_global_t * g, gc_obj_t * o)
 {
   gc_assert(gc_is_white(o) && !gc_is_dead(g, o));
   gc_white2gray(o);
-  if (o->gc_vtable->gc_propagate) {
+  if (o->gch.vtable->gc_propagate) {
     gc_list_prepend(g->grey, o);
   }
 }
@@ -142,9 +143,9 @@ static size_t gc_propagate_mark(gc_global_t * g)
   gc_function_t * fn;
 
   gc_gray2black(o);
-  g->grey = g->grey->gc_list;
+  g->grey = g->grey->list;
 
-  if ((fn = o->gc_vtable->gc_propagate)) {
+  if ((fn = o->gch.vtable->gc_propagate)) {
     return fn(g, o);
   }
 
@@ -164,25 +165,27 @@ static size_t gc_propagate_grey(gc_global_t * g)
 static size_t gc_separate_finalizers(gc_global_t * g, int all)
 {
   size_t        m = 0;
-  gc_header_t * o, ** p = &g->root;
+  gc_header_t * h, ** p = &g->root;
 
-  while ((o = *p) != NULL) {
-    if (!(gc_is_white(o) || all) || gc_is_finalized(o)) {
-      p = &o->gc_next;
-    } else if (!o->gc_vtable->gc_finalize) {
-      p = &o->gc_next;
+  while ((h = *p) != NULL) {
+    if (!(gc_is_white(h) || all) || gc_is_finalized(h)) {
+      p = &h->gch.next;
+    } else if (h->gch.vtable == &gc_str_vtable && !h->gch.vtable->gc_finalize) {
+      p = &h->gch.next;
     } else {
-      m += o->gc_size;
+      gc_obj_t * o = (gc_obj_t *) h; /* only objects may have finalizers */
+
+      m += o->gch.size;
       gc_mark_finalized(o);
-      *p = o->gc_next;
+      *p = o->gch.next;
       if (g->fin) {
         gc_obj_t * clist = g->fin;
-        o->gc_next = clist->gc_next;
-        clist->gc_next = o;
-        g->fin = (gc_obj_t *) o; /* only objects have finalizers */
+        o->gco.next = clist->gco.next;
+        clist->gco.next = o;
+        g->fin = o; /* only objects have finalizers */
       } else {
-        o->gc_next = o;
-        g->fin = (gc_obj_t *) o;
+        o->gco.next = o;
+        g->fin = o;
       }
     }
   }
@@ -196,34 +199,34 @@ static void gc_mark_fin(gc_global_t * g)
 
   if (u) {
     do {
-      u = (gc_obj_t *) u->gc_next; /* list of objects */
+      u = u->gco.next; /* list of objects */
       gc_make_white(g, u);
       gc_mark(g, u);
     } while (u != clist);
   }
 }
 
-static gc_header_t ** gc_sweep(gc_global_t * g, struct gc_header ** p, size_t lim)
+static gc_header_t ** gc_sweep(gc_global_t * g, gc_header_t ** p, size_t lim)
 {
   uint16_t      ow = gc_swap_white(g);
   gc_header_t * o;
 
   while ((o = *p) != NULL && lim-- > 0) {
-    if ((o->gc_flags ^ GC_WHITE_FLAGS) & ow) {
-      gc_assert(!gc_is_dead(g, o) || (o->gc_flags & GC_FIXED_FLAG));
+    if ((o->gch.flags ^ GC_WHITE_FLAGS) & ow) {
+      gc_assert(!gc_is_dead(g, o) || (o->gch.flags & GC_FIXED_FLAG));
       gc_make_white(g, o);
-      p = (gc_header_t **) &o->gc_next;
+      p = (gc_header_t **) &o->gch.next;
     } else {
       gc_assert(gc_is_dead(g, o) || ow == GC_SFIXED_FLAG);
-      *p = o->gc_next;
+      *p = o->gch.next;
       if (o == g->root) {
-        g->root = o->gc_next;
+        g->root = o->gch.next;
       }
 
-      if (o->gc_vtable->gc_clear) {
-        o->gc_vtable->gc_clear(g, o);
+      if (o->gch.vtable->gc_clear) {
+        o->gch.vtable->gc_clear(g, o);
       }
-      gc_mem_free(g, o->gc_size, o);
+      gc_mem_free(g, o->gch.size, o);
     }
   }
   return p;
@@ -253,23 +256,23 @@ static void gc_atomic(gc_global_t * g)
 
 static void gc_finalize(gc_global_t * g)
 {
-  gc_obj_t * o = (gc_obj_t *) g->fin->gc_next; /* list of objects */
+  gc_obj_t * o = g->fin->gco.next; /* list of objects */
 
   if (o == g->fin) {
     g->fin = NULL;
   } else {
-    g->fin->gc_next = o->gc_next;
+    g->fin->gch.next = o->gch.next;
   }
 
-  // o->gc_next = g->root->gc_next;
-  // g->root->gc_next = o;
-  o->gc_next = g->root;
-  g->root = (gc_header_t *) o;
+  // o->gch.next = g->root->gch.next;
+  // g->root->gch.next = o;
+  o->gch.next = g->root;
+  g->root = &o->gch;
 
   gc_make_white(g, o);
 
-  if (o->gc_vtable->gc_finalize) {
-    o->gc_vtable->gc_finalize(g, o);
+  if (o->gch.vtable->gc_finalize) {
+    o->gch.vtable->gc_finalize(g, o);
   }
 }
 
@@ -446,10 +449,9 @@ void gc_barrierback(gc_global_t * g, gc_obj_t * o)
   gc_assert(gc_is_black(o) && !gc_is_dead(g, o));
   gc_assert(g->state != GC_STATE_FINALIZE && g->state != GC_STATE_PAUSE);
   gc_black2gray(o);
-  o->gc_list = g->grey2;
+  o->list = g->grey2;
   g->grey2 = o;
 }
-
 
 
 /*************************************************************************************************/
@@ -470,8 +472,8 @@ void gc_strhash_resize(gc_global_t * g, size_t newmask)
       gc_str_t * p = g->strhash[i];
       while (p) {
         size_t     h = p->hash & newmask;
-        gc_str_t * next = (gc_str_t *) p->gc_next; /* list of strings */
-        p->gc_next = (gc_header_t *) newhash[h];
+        gc_str_t * next = p->gcs.next; /* list of strings */
+        p->gch.next = &newhash[h]->gch;
         newhash[h] = p;
         /* no barrier, since strhash is gc root */
         p = next;
@@ -541,8 +543,9 @@ uint32_t hash(const void * key, size_t length, uint32_t initval)
   return c;
 }
 
-size_t sc_str_clear(gc_global_t * g, void * o)
+size_t gc_str_clear(gc_global_t * g, void * o)
 {
+  (void) o;
   g->strcount--;
   return 0;
 }
@@ -550,7 +553,7 @@ size_t sc_str_clear(gc_global_t * g, void * o)
 gc_vtable_t gc_str_vtable = {
   .gc_init = NULL,
   .gc_finalize = NULL,
-  .gc_clear = sc_str_clear,
+  .gc_clear = gc_str_clear,
   .gc_propagate = NULL,
 };
 
@@ -568,22 +571,22 @@ gc_str_t * gc_mem_new_str(gc_global_t * g, const char * str, size_t len)
       }
       return s;
     }
-    s = (gc_str_t *) s->gc_next; /* list of strings */
+    s = s->gcs.next; /* list of strings */
   }
 
   size_t sz = sizeof(gc_str_t) + len + 1;
   s = gc_mem_new(g, sz);
   gc_new_white(g, s);
-  s->gc_vtable = &gc_str_vtable;
-  s->gc_next = NULL;
-  s->gc_size  = sz;
+  s->gch.vtable = &gc_str_vtable;
+  s->gch.next = NULL;
+  s->gch.size  = sz;
   s->len = len;
   s->hash = h;
   s->id = 0;
   memcpy(s->data, str, len);
   s->data[len] = '\0';
   h &= g->strmask;
-  s->gc_next = (gc_header_t *) g->strhash[h];
+  s->gch.next = &g->strhash[h]->gch;
   g->strhash[h] = s;
   /* no barrier, since strhash is gc root */
   if (g->strcount++ > g->strmask) {

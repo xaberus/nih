@@ -3,19 +3,6 @@
 #include <stdlib.h>
 #include <memory.h>
 
-typedef struct gc_global gc_global_t;
-typedef struct gc_header gc_header_t;
-typedef struct gc_obj gc_obj_t;
-
-typedef size_t (gc_function_t)(gc_global_t * g, void * o);
-
-typedef struct gc_vtable {
-  gc_function_t * gc_init;
-  gc_function_t * gc_finalize;
-  gc_function_t * gc_clear;
-  gc_function_t * gc_propagate;
-} gc_vtable_t;
-
 #define GC_WHITE0_FLAG    0x01
 #define GC_WHITE1_FLAG    0x02
 #define GC_BLACK_FLAG     0x04
@@ -26,34 +13,53 @@ typedef struct gc_vtable {
 #define GC_WHITE_FLAGS    (GC_WHITE0_FLAG | GC_WHITE1_FLAG)
 #define GC_COLOR_FLAGS    (GC_WHITE_FLAGS | GC_BLACK_FLAG)
 
-#define gc_is_white(x) ((x)->gc_flags & GC_WHITE_FLAGS)
-#define gc_is_black(x) ((x)->gc_flags & GC_BLACK_FLAG)
+#define gc_is_white(x) ((x)->gch.flags & GC_WHITE_FLAGS)
+#define gc_is_black(x) ((x)->gch.flags & GC_BLACK_FLAG)
 
-#define GC_HEADER_FIELDS \
-  uint16_t gc_flags; \
-  gc_vtable_t * gc_vtable;  /* type information and gc_functions */ \
-  size_t        gc_size; \
-  gc_header_t * gc_next    /* global object list */ \
+#define GC_HEADER_FIELDS(__base_t) \
+  uint16_t      flags; \
+  gc_vtable_t * vtable;  /* type information and gc_functions */ \
+  size_t        size; \
+  __base_t    * next     /* global object list */ \
 
-#define GC_OBJECT_FIELDS \
-  GC_HEADER_FIELDS; \
-  gc_obj_t    * gc_list    /* collection list  */ \
+#define GC_DERIVE(__base_t, __oname, __fname, __ofields) \
+  typedef union __oname __oname ## _t; \
+  union __oname { \
+    __extension__ struct { \
+      gc_header_t gch; \
+      __ofields \
+    }; \
+    struct { \
+      GC_HEADER_FIELDS(__oname ## _t); \
+      __ofields \
+    } __fname; \
+  } \
 
-struct gc_header {
-  GC_HEADER_FIELDS;
+typedef struct gc_vtable gc_vtable_t;
+typedef struct gc_global gc_global_t;
+
+typedef union gc_header gc_header_t;
+union gc_header {
+  __extension__ struct {
+    GC_HEADER_FIELDS(gc_header_t);
+  };
+  struct {
+    GC_HEADER_FIELDS(gc_header_t);
+  } gch;
 };
 
-typedef struct gc_str {
-  GC_HEADER_FIELDS;
-  uint16_t id;
-  size_t   hash;
-  size_t   len;
+#define GC_OBJ_FIELDS_ADD \
+  gc_obj_t    * list;    /* collection list  */
+
+GC_DERIVE(gc_header_t, gc_obj, gco, GC_OBJ_FIELDS_ADD);
+
+#define GC_STR_FIELDS_ADD \
+  uint16_t id; \
+  size_t   hash; \
+  size_t   len; \
   char     data[];
-} gc_str_t;
 
-struct gc_obj {
-  GC_OBJECT_FIELDS;
-};
+GC_DERIVE(gc_header_t, gc_str, gcs, GC_STR_FIELDS_ADD);
 
 typedef enum gc_state {
   GC_STATE_PAUSE = 0,
@@ -88,6 +94,15 @@ struct gc_global {
   mem_allocator_t alloc;
 };
 
+typedef size_t (gc_function_t)(gc_global_t * g, void * o);
+struct gc_vtable {
+  gc_function_t * gc_init;
+  gc_function_t * gc_finalize;
+  gc_function_t * gc_clear;
+  gc_function_t * gc_propagate;
+};
+
+
 gc_global_t * gc_global_init(gc_global_t * g, mem_allocator_t alloc);
 void          gc_global_clear(gc_global_t * g);
 void          gc_full_gc(gc_global_t * g);
@@ -97,6 +112,8 @@ void *        gc_mem_new_obj(gc_global_t * g, gc_vtable_t * vtable, size_t size)
 
 void          gc_add_root_obj(gc_global_t * g, gc_obj_t * o);
 void          gc_del_root_obj(gc_global_t * g, gc_obj_t * o);
+
+void          gc_barrierf(gc_global_t * g, gc_obj_t * o, gc_obj_t * v);
 
 void          gc_barrierback(gc_global_t * g, gc_obj_t * o);
 #define gc_obj_barriert(L, t, o) \
@@ -120,4 +137,3 @@ int           gc_step(gc_global_t * g);
       gc_step(L); \
     } \
   } while (0)
-
