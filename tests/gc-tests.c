@@ -11,7 +11,7 @@
 #include <bt.h>
 #include <stdio.h>
 
-BT_SUITE_DEF(gc, "garbage collectior tests");
+BT_SUITE_DEF(gc, "garbage collection tests");
 
 struct gc_test {
   gc_global_t     g[1];

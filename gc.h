@@ -13,53 +13,60 @@
 #define GC_WHITE_FLAGS    (GC_WHITE0_FLAG | GC_WHITE1_FLAG)
 #define GC_COLOR_FLAGS    (GC_WHITE_FLAGS | GC_BLACK_FLAG)
 
-#define gc_is_white(x) ((x)->gch.flags & GC_WHITE_FLAGS)
-#define gc_is_black(x) ((x)->gch.flags & GC_BLACK_FLAG)
+#define gc_is_white(x)   ((x)->_flags & GC_WHITE_FLAGS)
+#define gc_is_black(x)   ((x)->_flags & GC_BLACK_FLAG)
+#define gc_white2gray(x) ((x)->_flags &= (uint16_t) ~GC_WHITE_FLAGS)
 
-#define GC_HEADER_FIELDS(__base_t) \
-  uint16_t      flags; \
-  gc_vtable_t * vtable;  /* type information and gc_functions */ \
-  size_t        size; \
-  __base_t    * next     /* global object list */ \
-
-#define GC_DERIVE(__base_t, __oname, __fname, __ofields) \
-  typedef union __oname __oname ## _t; \
-  union __oname { \
-    __extension__ struct { \
-      gc_header_t gch; \
-      __ofields \
-    }; \
+#define GC_PARTDEF(__name, __fields, __acc, ...)\
+  typedef union __name __name ## _t; \
+  union __name { \
     struct { \
-      GC_HEADER_FIELDS(__oname ## _t); \
-      __ofields \
-    } __fname; \
-  } \
+      __fields; \
+    } __acc; \
+    __extension__ struct { \
+      __fields; \
+    }; \
+    __VA_ARGS__ \
+  }
+
 
 typedef struct gc_vtable gc_vtable_t;
 typedef struct gc_global gc_global_t;
 
-typedef union gc_header gc_header_t;
-union gc_header {
-  __extension__ struct {
-    GC_HEADER_FIELDS(gc_header_t);
-  };
-  struct {
-    GC_HEADER_FIELDS(gc_header_t);
-  } gch;
-};
+#define GC_HEADER_FIELDS(__base_t) \
+  uint16_t      _flags; \
+  /* type information and gc_functions */ \
+  gc_vtable_t * _vtable; \
+  size_t        _size; \
+  /* global object list */ \
+  __base_t    * _next
 
-#define GC_OBJ_FIELDS_ADD \
-  gc_obj_t    * list;    /* collection list  */
+#define GC_HEADER_UNION_ADD
 
-GC_DERIVE(gc_header_t, gc_obj, gco, GC_OBJ_FIELDS_ADD);
+GC_PARTDEF(gc_hdr, GC_HEADER_FIELDS(gc_hdr_t), gch, GC_HEADER_UNION_ADD);
 
-#define GC_STR_FIELDS_ADD \
+#define GC_OBJ_FIELDS(__base_t) \
+  GC_HEADER_FIELDS(__base_t); \
+  /* collection list */ \
+  gc_obj_t * _list
+
+#define GC_OBJ_UNION_ADD \
+  gc_hdr_t gch;
+
+
+GC_PARTDEF(gc_obj, GC_OBJ_FIELDS(gc_obj_t), gco, GC_OBJ_UNION_ADD);
+
+#define GC_STR_FIELDS \
+  GC_HEADER_FIELDS(gc_str_t); \
   uint16_t id; \
   size_t   hash; \
   size_t   len; \
-  char     data[];
+  char     data[]
 
-GC_DERIVE(gc_header_t, gc_str, gcs, GC_STR_FIELDS_ADD);
+#define GC_STR_UNION_ADD \
+  gc_hdr_t gch;
+
+GC_PARTDEF(gc_str, GC_STR_FIELDS, gcs, GC_STR_UNION_ADD);
 
 typedef enum gc_state {
   GC_STATE_PAUSE = 0,
@@ -75,8 +82,8 @@ struct gc_global {
   size_t          strmask;
   size_t          strcount;
   size_t          sweepstr;
-  gc_header_t   * root; /* global object list */
-  gc_header_t  ** sweep;  /* global object list iterator */
+  gc_hdr_t      * root; /* global object list */
+  gc_hdr_t     ** sweep;  /* global object list iterator */
   gc_obj_t      * grey;   /* collection lists  */
   gc_obj_t      * grey2;   /* collection lists  */
   gc_obj_t      * fin;
@@ -106,16 +113,25 @@ struct gc_vtable {
 gc_global_t * gc_global_init(gc_global_t * g, mem_allocator_t alloc);
 void          gc_global_clear(gc_global_t * g);
 void          gc_full_gc(gc_global_t * g);
-
 gc_str_t *    gc_mem_new_str(gc_global_t * g, const char * str, size_t len);
 void *        gc_mem_new_obj(gc_global_t * g, gc_vtable_t * vtable, size_t size);
-
 void          gc_add_root_obj(gc_global_t * g, gc_obj_t * o);
 void          gc_del_root_obj(gc_global_t * g, gc_obj_t * o);
-
-void          gc_barrierf(gc_global_t * g, gc_obj_t * o, gc_obj_t * v);
-
+void          gc_barrierf(gc_global_t * g, gc_obj_t * o, gc_hdr_t * v);
 void          gc_barrierback(gc_global_t * g, gc_obj_t * o);
+void          gc_mark(gc_global_t * g, gc_hdr_t * o);
+int           gc_step(gc_global_t * g);
+void *        gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
+void *        gc_mem_grow(gc_global_t * g, size_t * szp, size_t lim, size_t esz, void * p);
+void          gc_mem_free(gc_global_t * g, size_t size, void * p);
+#define gc_barrier(g, p, v) \
+  do { \
+    if (gc_is_white(v) && gc_is_black(p)) { \
+      gc_barrierf(g, p, v); \
+    } \
+  } while (0)
+
+
 #define gc_obj_barriert(L, t, o) \
   do { \
     if (gc_is_white(o) && gc_is_black(t)) { \
@@ -123,17 +139,27 @@ void          gc_barrierback(gc_global_t * g, gc_obj_t * o);
     } \
   } while (0)
 
-void          gc_mark(gc_global_t * g, gc_obj_t * o);
 #define gc_mark_obj(x, y) \
   do { \
     if (gc_is_white(y)) \
-      gc_mark(g, y); \
+      gc_mark(g, &(y)->gch); \
   } while (0)
 
-int           gc_step(gc_global_t * g);
+
 #define gc_check(g) \
   do { \
     if ((g)->total >= g->threshold) { \
       gc_step(L); \
     } \
   } while (0)
+
+
+#define gc_mem_new(g, s) \
+  gc_mem_realloc(g, 0, (s), NULL)
+#define gc_mem_newvec(g, n, t) \
+  ((t *) gc_mem_new(g, (size_t) ((n) * sizeof(t))))
+#define gc_mem_growvec(g, n, m, t, p) \
+  ((p) = (t *) gc_mem_grow(g, &(n), (m), sizeof(t), (p)))
+#define gc_mem_freevec(g, n, t, p) \
+  gc_mem_free(g, (n) * sizeof(t), (p))
+
