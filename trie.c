@@ -60,7 +60,7 @@ struct tnode_tuple trie_mknode(trie_t * trie)
       }
     }
   } else {
-    struct tnode_tuple tuple = tnode_tuple(NULL, 0);
+    struct tnode_tuple tuple;
 
     tuple = tnode_bank_mknode(trie->abank);
 
@@ -280,7 +280,7 @@ err_t trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len])
   if (!len)
     return ERR_IN_INVALID;
 
-  uint8_t            c = word[i];
+  uint8_t            c;
   uint8_t            nlen;
   struct tnode_tuple tuple;
   struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
@@ -380,7 +380,7 @@ struct tnode_tuple trie_find_i(trie_t * trie, uint16_t len, const uint8_t word[l
 {
   int                out = 0;
   uint32_t           i = 0;
-  uint8_t            c = word[i];
+  uint8_t            c;
   uint8_t            nlen;
   struct tnode_tuple tuple;
   struct tnode_iter  iter = tnode_iter(trie->nodes, 0);

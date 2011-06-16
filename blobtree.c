@@ -244,7 +244,7 @@ blob_t * _blob_parent(blob_t * blob)
 {
   while (blob && !blob->flags.first)
     blob = blob->rev;
-  return blob->rev;
+  return blob ? blob->rev : NULL;
 }
 
 #if 0

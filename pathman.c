@@ -243,6 +243,9 @@ struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode
 
     /*dprintf(2, "path %s, bs: %s\n", path, basename);*/
 
+    if (!basename)
+      return plookup(ERR_IN_INVALID, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
+
     {
       trie_t           * trie = pman->trie;
       struct tnode_tuple tuple;
@@ -599,10 +602,6 @@ struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char 
       switch (eppoit.act) {
         case TRIE_INSERT_FAILURE:
           pathman_remfile(pman, file.index);
-          for (uint32_t k = 0; k < rest; k++) {
-            stride[k].node->isused = 1;
-            trie_remnode(trie, stride[k].index);
-          }
           return plookup(ERR_CORRUPTION, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
         case TRIE_INSERT_PREV:
           tuple = __trie_prev_append_child_append_tail(trie, eppoit.tuple,
