@@ -35,9 +35,7 @@ size_t gc_stack_propagate(gc_global_t * g, void * o)
     gc_hdr_t * h;
 
     if ((h = s->s[k])) {
-      if (gc_is_white(h)) {
-        gc_mark(g, h); j++;
-      }
+      gc_markh(g, h); j++;
     }
   }
   return j;
@@ -65,12 +63,18 @@ void gc_stack_set(gc_stack_t * s, size_t len)
 }
 
 
-void gc_stack_push(gc_stack_t * s, gc_hdr_t * h)
+void gc_stack_pushf(gc_stack_t * s, gc_hdr_t * h)
 {
   gc_stack_set(s, s->st + 1);
   s->s[s->st++] = h;
+  if (h) {
+    if (gc_is_white(h) && gc_is_black(s)) {
+      gc_barrierf(s->g, &s->gco, h);
+    }
+  }
 }
 
-
+#define gc_stack_push(x, y) \
+  gc_stack_pushf(s, &(y)->gch)
 
 #include "tests/gc-stack-tests.c"

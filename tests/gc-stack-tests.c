@@ -32,9 +32,8 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 
   for (unsigned k = 0; k < 10; k++) {
     snprintf(buf, 9, "run %u", k);
-    gc_hdr_t * h = &gc_mem_new_str(g, buf, sizeof(buf))->gch;
+    gc_str_t * h = gc_mem_new_str(g, buf, sizeof(buf));
     gc_stack_push(s, h);
-    gc_barrier(g, &s->gco, h);
     gc_step(g);
   }
 

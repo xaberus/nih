@@ -18,17 +18,22 @@ struct gc_test {
   mem_allocator_t a[1];
 };
 
-struct testobj {
-  gc_obj_t         gco;
-  struct testobj * arr[20];
-  unsigned         count, flag;
-};
+#define TESTOBJ_FIELDS \
+  GC_OBJ_FIELDS(testobj_t) \
+  testobj_t * arr[20]; \
+  unsigned    count, flag; \
+
+#define TESTOBJ_UNION_ADD \
+  gc_hdr_t gch; \
+  gc_obj_t gco;
+
+GC_PARTDEF(testobj, TESTOBJ_FIELDS, to, TESTOBJ_UNION_ADD);
 
 size_t testobj_init(gc_global_t * g, void * o)
 {
   (void) g;
   // bt_log("[testobj:%p] init\n", o);
-  struct testobj * t = o;
+  testobj_t * t = o;
   for (unsigned k = 0; k < 20; k++)
     t->arr[k] = NULL;
   t->count = 0;
@@ -41,7 +46,7 @@ size_t testobj_clear(gc_global_t * g, void * o)
 {
   (void) g;
   // bt_log("[testobj:%p] clear\n", o);
-  struct testobj * t = o;
+  testobj_t * t = o;
 
   t->flag = 0;
   return 0;
@@ -51,7 +56,7 @@ size_t testobj_finalize(gc_global_t * g, void * o)
 {
   (void) g;
   // bt_log("[testobj:%p] finalize\n", o);
-  struct testobj * t = o;
+  testobj_t * t = o;
   for (unsigned k = 0; k < t->count; k++)
     t->arr[k]->flag++;
   return 0;
@@ -60,10 +65,12 @@ size_t testobj_finalize(gc_global_t * g, void * o)
 size_t testobj_propagate(gc_global_t * g, void * o)
 {
   (void) g;
-  struct testobj * t = o;
+  testobj_t * t = o;
   for (unsigned k = 0; k < t->count; k++) {
     // bt_log("[testobj:%p] propagate child %p\n", o, t->arr[k]);
-    gc_mark_obj(g, &t->arr[k]->gco);
+    if (gc_is_white(t->arr[k])) {
+      gc_mark(g, t->arr[k]);
+    }
   }
 
   return 0;
@@ -146,40 +153,59 @@ BT_TEST_DEF(gc, simple, object, "simple tests")
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;
+  testobj_t      * o;
 
-  bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(struct testobj));
+  bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
   bt_log("[GC] total: %zu\n", g->total);
 
-  struct testobj * o = gc_mem_new_obj(g, &testobj_vtable, sizeof(struct testobj));
+  o = gc_mem_new_obj(g, &testobj_vtable, sizeof(testobj_t));
   gc_add_root_obj(g, &o->gco);
-  for (unsigned k = 0; k < 4; k++) {
+
+  const unsigned N = 10;
+
+  for (unsigned j = 0; j < N; j++) {
+    testobj_t * lj = gc_mem_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+    o->arr[o->count++] = lj;
+    gc_barrierback(g, o, lj);
     gc_step(g);
-    o->arr[o->count++] = gc_mem_new_obj(g, &testobj_vtable, sizeof(struct testobj));
-    gc_obj_barriert(g, &o->gco, &o->arr[k]->gco);
-    for (unsigned j = 0; j < 4; j++) {
-      o->arr[k]->arr[o->arr[k]->count++] = gc_mem_new_obj(g, &testobj_vtable, sizeof(struct testobj));
-      gc_obj_barriert(g, &o->arr[k]->gco, &o->arr[k]->arr[j]->gco);
-      o->arr[k]->arr[o->arr[k]->count++] = o;
-      gc_obj_barriert(g, &o->arr[k]->gco, &o->gco);
+    for (unsigned k = 0; k < N; k++) {
+      testobj_t * lk = gc_mem_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+      lj->arr[lj->count++] = lk;
+      gc_barrierback(g, lj, lk);
+      gc_step(g);
+      for (unsigned l = 0; l < N; l++) {
+        testobj_t * ll = gc_mem_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+        lk->arr[lk->count++] = ll;
+        gc_barrierback(g, lk, ll);
+        gc_step(g);
+        for (unsigned m = 0; m < N; m++) {
+          testobj_t * lm = gc_mem_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+          ll->arr[ll->count++] = lm;
+          gc_barrierback(g, ll, lm);
+          gc_step(g);
+        }
+      }
     }
   }
+      /*o->arr[k]->arr[o->arr[k]->count++] = o;
+      gc_barrierback(g, o->arr[k], o);*/
   gc_del_root_obj(g, &o->gco);
   bt_log("[GC] total: %zu\n", g->total);
   gc_full_gc(g);
   gc_full_gc(g);
   bt_log("[GC] total: %zu\n", g->total);
 
-  o = gc_mem_new_obj(g, &testobj_vtable, sizeof(struct testobj));
+  o = gc_mem_new_obj(g, &testobj_vtable, sizeof(testobj_t));
   gc_add_root_obj(g, &o->gco);
   for (unsigned k = 0; k < 4; k++) {
     gc_full_gc(g);
-    o->arr[o->count++] = gc_mem_new_obj(g, &testobj_vtable, sizeof(struct testobj));
-    gc_obj_barriert(g, &o->gco, &o->arr[k]->gco);
+    o->arr[o->count++] = gc_mem_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+    gc_barrierback(g, o, o->arr[k]);
     for (unsigned j = 0; j < 4; j++) {
-      o->arr[k]->arr[o->arr[k]->count++] = gc_mem_new_obj(g, &testobj_vtable, sizeof(struct testobj));
-      gc_obj_barriert(g, &o->arr[k]->gco, &o->arr[k]->arr[j]->gco);
+      o->arr[k]->arr[o->arr[k]->count++] = gc_mem_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+      gc_barrierback(g, o->arr[k], o->arr[k]->arr[j]);
       o->arr[k]->arr[o->arr[k]->count++] = o;
-      gc_obj_barriert(g, &o->arr[k]->gco, &o->gco);
+      gc_barrierback(g, o->arr[k], o);
       gc_full_gc(g);
     }
   }

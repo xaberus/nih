@@ -111,7 +111,7 @@ void * gc_mem_new_obj(gc_global_t * g, gc_vtable_t * vtable, size_t size)
   return o;
 }
 
-void gc_mark(gc_global_t * g, gc_hdr_t * o)
+void gc_markf(gc_global_t * g, gc_hdr_t * o)
 {
   gc_assert(gc_is_white(o) && !gc_is_dead(g, o));
   gc_white2gray(o);
@@ -126,7 +126,7 @@ static void gc_mark_gcroot(gc_global_t * g)
 {
   for (size_t i = 0; i < g->gcroot_count; i++)
     if (g->gcroot[i] != NULL)
-      gc_mark_obj(g, g->gcroot[i]);
+      gc_mark(g, g->gcroot[i]);
 }
 
 static void gc_mark_start(gc_global_t * g)
@@ -202,7 +202,7 @@ static void gc_mark_fin(gc_global_t * g)
     do {
       u = u->gco._next; /* list of objects */
       gc_make_white(g, u);
-      gc_mark(g, &u->gch);
+      gc_markf(g, &u->gch);
     } while (u != clist);
   }
 }
@@ -427,13 +427,13 @@ void gc_barrierf(gc_global_t * g, gc_obj_t * o, gc_hdr_t * v)
   gc_assert(gc_is_black(o) && gc_is_white(v) && !gc_is_dead(g, v) && !gc_is_dead(g, o));
   gc_assert(g->state != GC_STATE_FINALIZE && g->state != GC_STATE_PAUSE);
   if (g->state == GC_STATE_PROPAGATE || g->state == GC_STATE_ATOMIC) {
-    gc_mark(g, v);
+    gc_markf(g, v);
   } else {
     gc_make_white(g, o);
   }
 }
 
-void gc_barrierback(gc_global_t * g, gc_obj_t * o)
+void gc_barrierbackf(gc_global_t * g, gc_obj_t * o)
 {
   gc_assert(gc_is_black(o) && !gc_is_dead(g, o));
   gc_assert(g->state != GC_STATE_FINALIZE && g->state != GC_STATE_PAUSE);
@@ -554,11 +554,13 @@ gc_str_t * gc_mem_new_str(gc_global_t * g, const char * str, size_t len)
   gc_str_t * s = g->strhash[h & g->strmask];
 
   while (s) {
-    if (memcmp(str, s->data, len) == 0) {
-      if (gc_is_dead(g, s)) {
-        gc_flip_white(s);
+    if (len == s->len) {
+      if (memcmp(str, s->data, len) == 0) {
+        if (gc_is_dead(g, s)) {
+          gc_flip_white(s);
+        }
+        return s;
       }
-      return s;
     }
     s = s->_next;
   }
