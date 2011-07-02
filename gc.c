@@ -3,478 +3,747 @@
 
 #include <assert.h>
 
-#define GC_SWEEP_MAX     40
-#define GC_SWEEP_COST    10
-#define GC_FINALIZE_COST 100
-#define GC_STEP_SIZE     1024
-#define GC_PAUSE         200
-#define GC_STEP_MUL      200
-#define GC_MIN_VECSZ     8
-#define GC_MAX_STRHASH   (1 << 26)
-#define GC_MIN_STRHASH   8
+#include <stdarg.h>
 
-#define gc_assert(cond)      assert(cond)
-#define gc_gray2black(x)     ((x)->_flags |= GC_BLACK_FLAG)
-#define gc_black2gray(x)     ((x)->_flags &= (uint16_t) ~GC_BLACK_FLAG)
-#define gc_is_finalized(u)   ((u)->_flags & GC_FINALIZED_FLAG)
-#define gc_mark_finalized(u) ((u)->_flags |= GC_FINALIZED_FLAG)
-
-#define gc_is_grey(x)        (!((x)->_flags & GC_COLOR_FLAGS))
-#define gc_swap_white(x)     ((uint16_t) ((x)->white ^ GC_WHITE_FLAGS))
-#define gc_is_dead(x, y)     ((y)->_flags & gc_swap_white(x) & GC_WHITE_FLAGS)
-
-#define gc_curr_white(x)     ((x)->white & GC_WHITE_FLAGS)
-#define gc_new_white(x, y)   ((y)->_flags = gc_curr_white(x))
-#define gc_make_white(x, y) \
-  ((y)->_flags = ((y)->_flags & (uint16_t) ~GC_COLOR_FLAGS) | gc_curr_white(x))
-#define gc_flip_white(x)     ((x)->_flags ^= GC_WHITE_FLAGS)
-
-#define gc_next_prepend(__list, __obj) \
-  do { \
-    (__obj)->_next = __list; \
-    (__list) = __obj; \
-  } while (0)
-
-#define gc_list_prepend(__list, __obj) \
-  do { \
-    __obj->_list = __list; \
-    __list = __obj; \
-  } while (0)
-
-
-static void gc_shrink(gc_global_t * g);
-extern gc_vtable_t gc_str_vtable;
-
-
-void gc_err_mem(gc_global_t * g)
+inline static
+void log(unsigned N, const char * fmt, ...)
 {
-  // TODO: ERRORS
-  (void) g;
-  assert(0);
+  va_list ap;
+
+  va_start(ap, fmt);
+  switch (N) {
+    case 0:
+      // vfprintf(stderr, fmt, ap);
+      break;
+    case 1:
+      // vfprintf(stderr, fmt, ap);
+      break;
+    case 2:
+      // vfprintf(stderr, fmt, ap);
+      break;
+    case 3:
+      // vfprintf(stderr, fmt, ap);
+      break;
+    case 4:
+      // vfprintf(stderr, fmt, ap);
+      break;
+    case 5:
+      // vfprintf(stderr, fmt, ap);
+      break;
+    case 6:
+      // vfprintf(stderr, fmt, ap);
+      break;
+    default:
+      break;
+  }
+  va_end(ap);
 }
+
+#define log_obj(_N, _x, _y) \
+  log(_N, "# %s(g = %p [%s%s], obj = %p [%s%s%s][%u])\n", \
+    __FUNCTION__, \
+    (void *) _x, \
+    _x->white & GC_FLAG_WHITE0 ? "w0" : "", \
+    _x->white & GC_FLAG_WHITE1 ? "w1" : "", \
+    (void *) _y, \
+    _y->flag & GC_FLAG_WHITE0 ? "w0" : "", \
+    _y->flag & GC_FLAG_WHITE1 ? "w1" : "", \
+    _y->flag & GC_FLAG_BLACK ? "b" : "", \
+    obj_size(_y))
 
 void gc_mem_free(gc_global_t * g, size_t size, void * p)
 {
-  g->total -= size;
+  log(0, "# %s(%p [%zu])\n", __FUNCTION__, p, size);
   g->alloc.realloc(g->alloc.ud, p, size, 0);
 }
 
 void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p)
 {
-  gc_assert((osz == 0) == (p == NULL));
+  assert((osz == 0) == (p == NULL));
+  assert(g);
+  assert(g->alloc.realloc);
   p = g->alloc.realloc(g->alloc.ud, p, osz, nsz);
-  if (p == NULL && nsz > 0)
-    gc_err_mem(g);
-  gc_assert((nsz == 0) == (p == NULL));
-  g->total = (g->total - osz) + nsz;
+  log(0, "# %s(%p [%zu -> %zu]) -> %p", __FUNCTION__, p, osz, nsz, p);
+  /*if (p == NULL && nsz > 0)
+    gc_err_mem(g);*/
+  assert((nsz == 0) == (p == NULL));
+  assert(p || !nsz);
   return p;
 }
 
-void * gc_mem_grow(gc_global_t * g, size_t * szp, size_t lim, size_t esz, void * p)
-{
-  size_t sz = (*szp) << 1;
+#define TYPEOF(a) __typeof__(a)
 
-  if (sz < GC_MIN_VECSZ)
-    sz = GC_MIN_VECSZ;
-  if (sz > lim)
-    sz = lim;
-  p = gc_mem_realloc(g, (*szp) * esz, sz * esz, p);
-  *szp = sz;
-  return p;
+#define gc_mem_new(g, s) \
+  gc_mem_realloc(g, 0, (s), NULL)
+
+#define vector_init(_g, _v, _init) \
+  do { \
+    TYPEOF(_v) __v = (_v); \
+    gc_global_t * __g = (_g); \
+    __v->count = 0; \
+    __v->dsize = (_init); \
+    __v->data = gc_mem_new(__g, __v->dsize * sizeof(__v->data[0])); \
+    __v->psize = 0; \
+    __v->proc = NULL; \
+    memset(__v->data, 0, sizeof(TYPEOF(__v->data[0])) * __v->dsize); \
+  } while (0)
+
+#define vector_clear(_g, _v) \
+  do { \
+    TYPEOF(_v) __v = (_v); \
+    TYPEOF(_g) __g = (_g); \
+    if (__v->data) { \
+      gc_mem_free(__g, __v->dsize * sizeof(__v->data[0]), __v->data); \
+      __v->data = NULL; \
+      __v->dsize = 0; \
+      __v->count = 0; \
+    } \
+    if (__v->proc) { \
+      gc_mem_free(__g, __v->psize * sizeof(__v->proc[0]), __v->proc); \
+      __v->proc = NULL; \
+      __v->psize = 0; \
+    } \
+  } while (0)
+
+#define vector_reset(_g, _v) \
+  do { \
+    TYPEOF(_v) __v = (_v); \
+    __v->count = 0; \
+    memset(__v->data, 0, sizeof(TYPEOF(__v->data[0])) * __v->dsize); \
+    memset(__v->proc, 0, sizeof(TYPEOF(__v->proc[0])) * __v->psize); \
+  } while (0)
+
+
+#define vector_process(_g, _v, _grow) \
+  do { \
+    TYPEOF(_v) __v = (_v); \
+    TYPEOF(_g) __g = (_g); \
+    size_t __grow = (_grow); \
+    if (__v->proc) { \
+      __v->proc = gc_mem_realloc(__g, __v->psize * sizeof(__v->proc[0]), __grow * sizeof(__v->proc[0]), __v->proc); \
+      __v->psize = __grow; \
+    } else { \
+      __v->proc = gc_mem_new(__g, __grow * sizeof(__v->proc[0])); \
+      __v->psize = __grow; \
+    } \
+    memset(__v->proc, 0, __v->psize * sizeof(__v->proc[0])); \
+  } while (0)
+
+#define vector_swap(_g, _v) \
+  do { \
+    TYPEOF(_v) __v = (_v); \
+    if (__v->proc) { \
+      TYPEOF(__v->proc) __tmp = __v->data; \
+      size_t __tsize = __v->dsize; \
+      __v->data = __v->proc; \
+      __v->dsize = __v->psize; \
+      __v->count = 0; \
+      __v->psize = __tsize; \
+      __v->proc = __tmp; \
+    } \
+  } while (0)
+
+#define ALIGN16(_size) (((_size) + 15L) & ~15L)
+
+#define vector_append(_g, _v, _value) \
+  do { \
+    TYPEOF(_v) __v = (_v); \
+    TYPEOF(_g) __g = (_g); \
+    if (!(__v->count < __v->dsize)) { \
+      size_t __sz = ALIGN16(__v->count + 1); \
+      __v->data = gc_mem_realloc(__g, __v->dsize, __sz * sizeof(__v->data[0]), __v->data); \
+      __v->dsize = __sz; \
+    } \
+    __v->data[__v->count++] =  _value; \
+  } while (0)
+
+#define vector_remove_all(_g, _v, _value) \
+  do { \
+    TYPEOF(_v) __v = (_v); \
+    TYPEOF(_value) value = (_value); \
+    for (size_t k = 0; k < __v->count; k++) { \
+      if (__v->data[k] == value) { \
+        for (size_t l = k + 1, m = __v->count; l < m; l++) { \
+          __v->data[l - 1] = __v->data[l]; \
+        } \
+        __v->count--; \
+      } \
+    } \
+  } while (0)
+
+#define head_prepend(_l, _n) \
+  do { \
+    TYPEOF(_l) __l = (_l); \
+    TYPEOF(_n) __n = (_n); \
+    __n->next = __l->head; \
+    __l->head = __n; \
+  } while (0)
+
+#define head_unlink(_l, _p, _n) \
+  do { \
+    TYPEOF(_l) __l = (_l); \
+    TYPEOF(_p) __p = (_p); \
+    TYPEOF(_n) __n = (_n); \
+    *__p = __n->next; \
+    if (__n == __l->head) { \
+      __l->head = __n->next; \
+    } \
+  } while (0)
+
+#define head_prepare(_l) \
+  do { \
+    TYPEOF(_l) __l = (_l); \
+    __l->sweep = &__l->head; \
+  } while (0)
+
+#define head_reset(_l) \
+  do { \
+    TYPEOF(_l) __l = (_l); \
+    __l->head = 0; \
+    __l->sweep = &__l->head; \
+  } while (0)
+
+#define list_prepend(_l, _n) \
+  do { \
+    TYPEOF(_l) __l = (_l); \
+    TYPEOF(_n) __n = (_n); \
+    __n->list = __l->head; \
+    __l->head = __n; \
+  } while (0)
+
+#define list_reset(_l) \
+  do { \
+    TYPEOF(_l) __l = (_l); \
+    __l->head = 0; \
+  } while (0)
+
+#define list_pop(_l) \
+  ({ \
+     TYPEOF(_l) __l = (_l); \
+     TYPEOF(__l->head) __o = __l->head; \
+     if (__l->head) { \
+       __l->head = __l->head->list; \
+     } \
+     __o; \
+   })
+
+#define loop_insert(_l, _n) \
+  do { \
+    TYPEOF(_l) __l = (_l); \
+    TYPEOF(_n) __n = (_n); \
+    if (__l->loop) { \
+      TYPEOF(__l->loop) __clist = __l->loop; \
+      __n->next = __clist->next; \
+      __clist->next = __n; \
+      __l->loop = __n; \
+    } else { \
+      __n->next = __n; \
+      __l->loop = __n; \
+    } \
+  } while (0)
+
+#define loop_reset(_l) \
+  do { \
+    TYPEOF(_l) __l = (_l); \
+    __l->loop = 0; \
+  } while (0)
+
+#define loop_pop(_l) \
+  ({ \
+     TYPEOF(_l) __l = (_l); \
+     TYPEOF(__l->loop) __r = NULL; \
+     if (__l->loop) { \
+       __r = __l->loop->next; \
+       if (__r == __l->loop) { \
+         __l->loop = 0; \
+       } else { \
+         __l->loop->next = __r->next; \
+       } \
+     } \
+     __r; \
+   })
+
+static
+void strings_init(gc_global_t * g, gc_strings_t * ss)
+{
+  log(0, "# %s()\n", __FUNCTION__);
+  ss->count = 0;
+  ss->sweep = 0;
+
+  ss->mask = 7;
+  vector_init(g, &ss->buckets, ss->mask + 1);
+  for (size_t k = 0; k < ss->buckets.dsize; k++) {
+    gc_bucket_t * b = &ss->buckets.data[k];
+    head_reset(b);
+  }
 }
 
-void * gc_mem_new_obj(gc_global_t * g, gc_vtable_t * vtable, size_t size)
+static
+void strings_clear(gc_global_t * g, gc_strings_t * ss)
 {
-  gc_assert(size > sizeof(gc_obj_t));
-  gc_assert(vtable);
+  log(0, "# %s()\n", __FUNCTION__);
+  ss->count = 0;
+  ss->sweep = 0;
+  ss->mask = 0;
+  vector_clear(g, &ss->buckets);
+}
 
-  gc_obj_t * o = g->alloc.realloc(g->alloc.ud, NULL, 0, size);
+static
+void strings_prepare(gc_global_t * g, gc_strings_t * ss)
+{
+  log(0, "# %s()\n", __FUNCTION__);
+  (void) g;
+  ss->sweep = 0;
+  ss->run = 0;
 
-  memset(o, 0, size);
+  gc_buckets_t * b = &ss->buckets;
+  for (size_t k = 0; k < b->dsize; k++) {
+    head_prepare(&b->data[k]);
+  }
+}
 
-  o->_vtable = vtable;
-  o->_size = size;
-  o->_next = NULL;
-  o->_list = NULL;
+static
+void strings_resize(gc_global_t * g, gc_strings_t * ss, uint32_t newmask)
+{
+  log(0, "# %s(%08x->%08x)\n", __FUNCTION__, ss->mask, newmask);
+  gc_buckets_t * buckets = &ss->buckets;
 
-  if (o == NULL)
-    gc_err_mem(g);
+  vector_process(g, buckets, newmask + 1);
 
-  g->total += size;
-  gc_next_prepend(g->root, &o->gch);
-  gc_new_white(g, o);
+  for (size_t i = 0; i < buckets->dsize; i++) {
+    gc_bucket_t * b = &buckets->data[i];
+    gc_str_t    * p = b->head, * n;
+    while (p) {
+      n = p->next;
+      assert((p->hash & newmask) < buckets->psize);
+      head_prepend(&buckets->proc[p->hash & newmask], p);
+      p = n;
+    }
+  }
+  vector_swap(g, buckets);
 
-  if (vtable->gc_init) {
-    vtable->gc_init(g, o);
+  for (uint32_t k = 0; k < buckets->dsize; k++) {
+    gc_bucket_t * n = &buckets->data[k];
+    n->sweep = &n->head;
+  }
+  ss->mask = newmask;
+}
+
+static
+void strings_reset(gc_global_t * g, gc_strings_t * ss)
+{
+  log(0, "# %s()\n", __FUNCTION__);
+  (void) g;
+  gc_buckets_t * buckets = &ss->buckets;
+
+  for (size_t k = 0; k < buckets->dsize; k++) {
+    gc_bucket_t * b = &buckets->data[k];
+    head_reset(b);
+  }
+}
+
+void gc_init(gc_global_t * g, mem_allocator_t alloc)
+{
+  log(6, "# %s()\n", __FUNCTION__);
+  g->alloc = alloc;
+
+  g->state = GC_STATE_PAUSE;
+  g->total = 0;
+  g->thres = 0;
+  g->white = GC_FLAG_WHITE0 | GC_FLAG_FIXED;
+
+  strings_init(g, &g->strings);
+  head_reset(&g->objects);
+  loop_reset(&g->final);
+  list_reset(&g->grey0);
+  list_reset(&g->grey1);
+
+  vector_init(g, &g->roots, 0);
+}
+
+inline static
+uint32_t other_white(gc_global_t * g)
+{
+  return g->white ^ GC_FLAG_WHITES;
+}
+
+#define is_other(o, ow)  (((o)->flag ^ GC_FLAG_WHITES) & (ow & GC_FLAG_WHITES))
+#define is_dead(o, ow)   (((o)->flag & ow) & GC_FLAG_WHITES)
+#define is_fixed(o)      ((o)->flag & GC_FLAG_FIXED)
+#define make_white(o, w) ((o)->flag = ((o)->flag & ~GC_FLAG_COLORS) | (w))
+#define obj_size(o)      (((o)->flag & 0xffffff00) >> 8)
+
+static
+size_t sweep_objects(gc_global_t * g, gc_store_t * list, size_t limit)
+{
+  log(0, "# %s(list = %p, limit = %zu)\n", __FUNCTION__, (void *) list, limit);
+  uint32_t    ow = other_white(g);
+  size_t      counter = 0;
+  gc_obj_t  * o;
+  gc_obj_t ** p = list->sweep;
+
+  while ((o = *p) && limit-- > 0) {
+    if (is_other(o, ow)) {
+      log_obj(0, g, o);
+      assert(!is_dead(o, ow) || (is_fixed(o)));
+      make_white(o, g->white & GC_FLAG_WHITES);
+      p = &o->next;
+    } else {
+      assert(is_dead(o, ow) || ow == GC_FLAG_SFIXED);
+
+      head_unlink(list, p, o);
+
+      log_obj(1, g, o);
+
+      if (o->vtable->gc_clear) {
+        counter += o->vtable->gc_clear(g, o);
+      }
+
+      gc_mem_free(g, obj_size(o), o); counter++;
+
+      g->total--;
+    }
+  }
+  list->sweep = p;
+  return counter + 1;
+}
+
+static
+size_t sweep_strings(gc_global_t * g, gc_strings_t * strings, size_t limit)
+{
+  log(0, "# %s(strings = %p, limit = %zu)\n", __FUNCTION__, (void *) strings, limit);
+  uint32_t       ow = other_white(g);
+  size_t         counter = 0;
+  gc_str_t     * o;
+  gc_str_t    ** p;
+  size_t         max = (strings->mask + 1);
+  size_t         run = 0;
+  gc_buckets_t * buckets = &strings->buckets;
+
+  while (run++ < max) {
+    gc_bucket_t * b = &buckets->data[strings->sweep];
+    p = b->sweep ? b->sweep : &b->head;
+    while ((o = *p) && limit-- > 0) {
+      if (is_other(o, ow)) {
+        assert(!is_dead(o, ow) || (is_fixed(o)));
+        make_white(o, g->white & GC_FLAG_WHITES);
+        p = &o->next;
+      } else {
+        assert(is_dead(o, ow) || ow == GC_FLAG_SFIXED);
+        head_unlink(b, p, o);
+        gc_mem_free(g, obj_size(o), o); counter++; strings->count--;
+      }
+      limit--;
+    }
+    b->sweep = p;
+    strings->sweep = (strings->sweep + 1) & strings->mask;
   }
 
-  return o;
+  strings->sweep = (strings->sweep + 1) & strings->mask;
+  strings->run += run;
+  return counter + 1;
 }
 
-void gc_markf(gc_global_t * g, gc_hdr_t * o)
+static
+size_t step(gc_global_t * g);
+
+static
+void gc_free_all(gc_global_t * g)
 {
-  gc_assert(gc_is_white(o) && !gc_is_dead(g, o));
-  gc_white2gray(o);
-  if (o->_vtable->gc_propagate) {
-    gc_obj_t * vo = (gc_obj_t *) o; /* only objects may have propagators */
-    gc_list_prepend(g->grey, vo);
+  g->white = GC_FLAG_WHITES | GC_FLAG_SFIXED;
+
+  strings_prepare(g, &g->strings);
+  sweep_strings(g, &g->strings, SIZE_MAX);
+
+  head_prepare(&g->objects);
+  sweep_objects(g, &g->objects, SIZE_MAX);
+  assert(!g->objects.head);
+
+  g->white = GC_FLAG_WHITE0;
+  g->state = GC_STATE_PAUSE;
+
+  strings_reset(g, &g->strings);
+  head_reset(&g->objects);
+  loop_reset(&g->final);
+  list_reset(&g->grey0);
+  list_reset(&g->grey1);
+
+  vector_reset(g, &g->roots);
+
+  g->total = 0;
+}
+
+void gc_clear(gc_global_t * g)
+{
+  log(6, "# %s()\n", __FUNCTION__);
+  gc_free_all(g);
+
+  strings_clear(g, &g->strings);
+  vector_clear(g, &g->roots);
+}
+
+#define is_white(o)   ((o)->flag & GC_FLAG_WHITES)
+#define white2grey(o) ((o)->flag &= ~GC_FLAG_WHITES)
+#define grey2black(o) ((o)->flag |= GC_FLAG_BLACK)
+
+void gc_mark_obj_i(gc_global_t * g, gc_obj_t * o)
+{
+  log_obj(4, g, o);
+  assert(is_white(o) && !is_dead(o, other_white(g)));
+  white2grey(o);
+  if (o->vtable->gc_propagate) {
+    list_prepend(&g->grey0, o);
+  } else {
+    grey2black(o);
   }
 }
 
+#define str_len(s) ((((s)->flag & 0xffffff00) >> 8) - sizeof(gc_str_t) - 1)
 
-static void gc_mark_gcroot(gc_global_t * g)
+void gc_mark_str_i(gc_global_t * g, gc_str_t * s)
 {
-  for (size_t i = 0; i < g->gcroot_count; i++)
-    if (g->gcroot[i] != NULL)
-      gc_mark(g, g->gcroot[i]);
+  log_obj(4, g, s);
+  assert(is_white(s) && !is_dead(s, other_white(g)));
+  white2grey(s);
+  grey2black(s);
 }
 
-static void gc_mark_start(gc_global_t * g)
+static
+size_t mark_roots(gc_global_t * g)
 {
-  g->grey = NULL;
-  g->grey2 = NULL;
-  gc_mark_gcroot(g);
-  g->state = GC_STATE_PROPAGATE;
-}
-
-
-static size_t gc_propagate_mark(gc_global_t * g)
-{
-  gc_obj_t      * o = g->grey;
-  gc_function_t * fn;
-
-  gc_gray2black(o);
-  g->grey = g->grey->_list;
-
-  if ((fn = o->_vtable->gc_propagate)) {
-    return fn(g, o);
+  log(4, "# %s()\n", __FUNCTION__);
+  size_t counter = 0;
+  for (size_t k = 0; k < g->roots.count; k++) {
+    gc_mark_obj(g, g->roots.data[k]);
+    counter++;
   }
 
-  gc_assert(0);
+  return counter + 1;
+}
+
+static
+size_t propagate(gc_global_t * g, bool all)
+{
+  size_t     counter = 0;
+  gc_obj_t * o;
+
+  while ((o = list_pop(&g->grey0))) {
+    log_obj(1, g, o);
+    grey2black(o);
+    counter += o->vtable->gc_propagate(g, o);
+
+    if (!all)
+      break;
+  }
+
+  return counter + 1;
+}
+
+#define is_final(o)  ((o)->flag & GC_FLAG_FINAL)
+#define set_final(o) ((o)->flag |= GC_FLAG_FINAL)
+
+static
+size_t separate(gc_global_t * g, bool all)
+{
+  log(0, "# %s(%s)\n", __FUNCTION__, all ? "all" : "");
+  size_t      counter = 0;
+  gc_obj_t  * o;
+  gc_obj_t ** p = &g->objects.head;
+
+  while ((o = *p)) {
+    if (!(is_white(o) || all) || is_final(o)) {
+      p = &o->next;
+    } else if (!o->vtable->gc_finalize) {
+      p = &o->next;
+    } else {
+      set_final(o);
+      head_unlink(&g->objects, p, o);
+      loop_insert(&g->final, o);
+      counter += 2 + 1;
+    }
+  }
+
+  return counter + 1;
+}
+
+static
+size_t mark_final(gc_global_t * g)
+{
+  log(0, "# %s()\n", __FUNCTION__);
+  size_t     counter = 0;
+  gc_obj_t * clist = g->final.loop;
+  gc_obj_t * o = clist;
+
+  if (o) {
+    do {
+      o = o->next;
+      make_white(o, g->white);
+      gc_mark_obj(g, o);
+      counter += 2;
+    } while (o != clist);
+  }
+
+  return counter + 1;
+}
+
+static
+size_t atomic(gc_global_t * g)
+{
+  log(0, "# %s()\n", __FUNCTION__);
+  size_t counter = 0;
+  counter += mark_roots(g);
+  counter += propagate(g, 1);
+
+  g->grey0.head = g->grey1.head;
+  list_reset(&g->grey1);
+  counter += propagate(g, 1);
+
+  counter += separate(g, 0);
+  counter += mark_final(g);
+  counter += propagate(g, 1);
+
+  g->white = other_white(g);
+  head_prepare(&g->objects);
+
+  return counter + 1;
+}
+
+static
+void shrink(gc_global_t * g)
+{
+  log(0, "# %s()\n", __FUNCTION__);
+  if (g->strings.count <= (g->strings.mask >> 2) && g->strings.mask > 7 * 2 - 1) {
+    uint32_t newmask = g->strings.mask >> 1;
+    if (g->state != GC_STATE_SWEEP_STRING || newmask < 0xffffff - 1)
+      strings_resize(g, &g->strings, newmask);
+  }
+}
+
+static
+size_t finalize(gc_global_t * g)
+{
+  log(0, "# %s()\n", __FUNCTION__);
+  gc_obj_t * o = loop_pop(&g->final);
+
+  if (o) {
+    head_prepend(&g->objects, o);
+    return o->vtable->gc_finalize(g, o);
+  }
+
   return 0;
 }
 
-static size_t gc_propagate_grey(gc_global_t * g)
+static
+size_t step(gc_global_t * g)
 {
-  size_t m = 0;
+  size_t counter = 0;
 
-  while (g->grey != NULL)
-    m += gc_propagate_mark(g);
-  return m;
-}
-
-static size_t gc_separate_finalizers(gc_global_t * g, int all)
-{
-  size_t     m = 0;
-  gc_hdr_t * h, ** p = &g->root;
-
-  while ((h = *p) != NULL) {
-    if (!(gc_is_white(h) || all) || gc_is_finalized(h)) {
-      p = &h->gch._next;
-    } else if (h->_vtable == &gc_str_vtable && !h->_vtable->gc_finalize) {
-      p = &h->gch._next;
-    } else {
-      gc_obj_t * o = (gc_obj_t *) h; /* only objects may have finalizers */
-
-      m += o->_size;
-      gc_mark_finalized(o);
-      *p = o->gch._next;
-      if (g->fin) {
-        gc_obj_t * clist = g->fin;
-        o->_next = clist->_next;
-        clist->_next = o;
-        g->fin = o;
-      } else {
-        o->_next = o;
-        g->fin = o;
-      }
-    }
-  }
-  return m;
-}
-
-static void gc_mark_fin(gc_global_t * g)
-{
-  gc_obj_t * clist = g->fin;
-  gc_obj_t * u = clist;
-
-  if (u) {
-    do {
-      u = u->gco._next; /* list of objects */
-      gc_make_white(g, u);
-      gc_markf(g, &u->gch);
-    } while (u != clist);
-  }
-}
-
-static gc_hdr_t ** gc_sweep(gc_global_t * g, gc_hdr_t ** p, size_t lim)
-{
-  uint16_t   ow = gc_swap_white(g);
-  gc_hdr_t * o;
-
-  while ((o = *p) != NULL && lim-- > 0) {
-    if ((o->_flags ^ GC_WHITE_FLAGS) & ow) {
-      gc_assert(!gc_is_dead(g, o) || (o->_flags & GC_FIXED_FLAG));
-      gc_make_white(g, o);
-      p = (gc_hdr_t **) &o->_next;
-    } else {
-      gc_assert(gc_is_dead(g, o) || ow == GC_SFIXED_FLAG);
-      *p = o->_next;
-      if (o == g->root) {
-        g->root = o->gch._next;
-      }
-
-      if (o->_vtable->gc_clear) {
-        o->_vtable->gc_clear(g, o);
-      }
-      gc_mem_free(g, o->_size, o);
-    }
-  }
-  return p;
-}
-
-#define gc_full_sweep(x, y) gc_sweep(x, (y), SIZE_MAX)
-
-static void gc_atomic(gc_global_t * g)
-{
-  size_t finsize;
-
-  gc_mark_gcroot(g);
-  gc_propagate_grey(g);
-
-  g->grey = g->grey2;
-  g->grey2 = NULL;
-  gc_propagate_grey(g);
-
-  finsize = gc_separate_finalizers(g, 0);
-  gc_mark_fin(g);
-  finsize += gc_propagate_grey(g);
-
-  g->white = gc_swap_white(g);
-  g->sweep = (gc_hdr_t **) &g->root;
-  g->estimate = g->total - finsize;
-}
-
-static void gc_finalize(gc_global_t * g)
-{
-  gc_obj_t * o = g->fin->_next; /* list of objects */
-
-  if (o == g->fin) {
-    g->fin = NULL;
-  } else {
-    g->fin->_next = o->_next;
-  }
-
-  // o->gch._next = g->root->gch._next;
-  // g->root->gch._next = o;
-  o->gch._next = g->root;
-  g->root = &o->gch;
-
-  gc_make_white(g, o);
-
-  if (o->_vtable->gc_finalize) {
-    o->_vtable->gc_finalize(g, o);
-  }
-}
-
-static size_t gc_one_step(gc_global_t * g)
-{
   switch (g->state) {
     case GC_STATE_PAUSE: {
-      gc_mark_start(g);
-      return 0;
+      log(6, "# %s(%s)\n", __FUNCTION__, "PAUSE");
+      list_reset(&g->grey0);
+      list_reset(&g->grey1);
+      mark_roots(g);
+      strings_prepare(g, &g->strings);
+      g->state = GC_STATE_PROPAGATE;
+      break;
     }
     case GC_STATE_PROPAGATE: {
-      if (g->grey != NULL)
-        return gc_propagate_mark(g);
-      g->state = GC_STATE_ATOMIC;
-      return 0;
+      log(6, "# %s(%s)\n", __FUNCTION__, "PROPAGATE");
+      if (g->grey0.head) {
+        counter += propagate(g, 0);
+      } else {
+        g->state = GC_STATE_ATOMIC;
+      }
+      break;
     }
     case GC_STATE_ATOMIC: {
-      gc_atomic(g);
+      log(6, "# %s(%s)\n", __FUNCTION__, "ATOMIC");
+      counter += atomic(g);
       g->state = GC_STATE_SWEEP_STRING;
-      g->sweepstr = 0;
-      return 0;
+      /* strings_prepare(g, &g->strings); */
+      break;
     }
     case GC_STATE_SWEEP_STRING: {
-      size_t old = g->total;
-      gc_full_sweep(g, (gc_hdr_t **) &g->strhash[g->sweepstr++]);
-      if (g->sweepstr > g->strmask)
+      log(6, "# %s(%s)\n", __FUNCTION__, "SWEEP_STRING");
+      counter += sweep_strings(g, &g->strings,
+          g->strings.count > 100 ? g->strings.count >> 2 : 100);
+      if (g->strings.run > g->strings.mask) {
         g->state = GC_STATE_SWEEP;
-      gc_assert(old >= g->total);
-      g->estimate -= old - g->total;
-      return GC_SWEEP_COST;
+        for (gc_obj_t * o = g->objects.head; o; o = o->next) {
+          log_obj(0, g, o);
+        }
+      }
+      break;
     }
     case GC_STATE_SWEEP: {
-      size_t old = g->total;
-      g->sweep = gc_sweep(g, g->sweep, GC_SWEEP_MAX);
-      if (*g->sweep == NULL) {
-        gc_shrink(g);
-        if (g->fin) {
+      log(6, "# %s(%s)\n", __FUNCTION__, "SWEEP");
+      counter += sweep_objects(g, &g->objects,
+          g->total > 4 ? g->total >> 2 : g->total);
+      if (*g->objects.sweep == 0) {
+        shrink(g);
+        if (g->final.loop) {
           g->state = GC_STATE_FINALIZE;
         } else {
           g->state = GC_STATE_PAUSE;
-          g->debt = 0;
         }
       }
-      gc_assert(old >= g->total);
-      g->estimate -= old - g->total;
-      return GC_SWEEP_MAX * GC_SWEEP_COST;
+      break;
     }
     case GC_STATE_FINALIZE: {
-      if (g->fin != NULL) {
-        gc_finalize(g);
-        if (g->estimate > GC_FINALIZE_COST)
-          g->estimate -= GC_FINALIZE_COST;
-        return GC_FINALIZE_COST;
+      log(5, "# %s(%s)\n", __FUNCTION__, "FINALIZE");
+      if (g->final.loop) {
+        counter += finalize(g);
+        break;
       }
       g->state = GC_STATE_PAUSE;
-      g->debt = 0;
-      return 0;
-    }
-    default: {
-      gc_assert(0);
-      return 0;
+      break;
     }
   }
+  return counter + 1;
 }
 
-
-void gc_full_gc(gc_global_t * g)
+size_t gc_collect(gc_global_t * g, bool full)
 {
-  if (g->state <= GC_STATE_ATOMIC) {
-    g->sweep = (gc_hdr_t **) &g->root;
-    g->grey = NULL;
-    g->state = GC_STATE_SWEEP_STRING;
-    g->sweepstr = 0;
+  log(5, "# %s(%s)\n", __FUNCTION__, full ? "full" : "");
+  size_t counter = 0;
+
+  if (full) {
+    if (g->state < GC_STATE_ATOMIC) {
+      head_prepare(&g->objects);
+      list_reset(&g->grey0);
+      list_reset(&g->grey1);
+      g->state = GC_STATE_SWEEP_STRING;
+      strings_prepare(g, &g->strings); counter += 1;
+    }
+
+    while (g->state == GC_STATE_SWEEP_STRING || g->state == GC_STATE_SWEEP) {
+      counter += step(g);
+    }
+
+    assert(g->state == GC_STATE_FINALIZE || g->state == GC_STATE_PAUSE);
+
+    g->state = GC_STATE_PAUSE;
+    do {
+      counter += step(g);
+    } while (g->state != GC_STATE_PAUSE);
+
+    // TODO threshold
+    return counter + 1;
   }
-  while (g->state == GC_STATE_SWEEP_STRING || g->state == GC_STATE_SWEEP) {
-    gc_one_step(g);
-  }
 
-  gc_assert(g->state == GC_STATE_FINALIZE || g->state == GC_STATE_PAUSE);
-
-  g->state = GC_STATE_PAUSE;
-  do {
-    gc_one_step(g);
-  } while (g->state != GC_STATE_PAUSE);
-
-  g->threshold = (g->estimate / 100) * g->pause;
-}
-
-int gc_step(gc_global_t * g)
-{
-  size_t lim;
-
-  lim = (GC_STEP_SIZE / 100) * g->stepmul;
-
-  if (lim == 0)
-    lim = SIZE_MAX;
-
-  g->debt += g->total - g->threshold;
+  // TODO: metric
+  ssize_t limit = 20;
 
   do {
-    lim -= gc_one_step(g);
+    size_t c = step(g); counter += c; limit -= c;
     if (g->state == GC_STATE_PAUSE) {
-      g->threshold = (g->estimate / 100) * g->pause;
-      return 1;
+      return counter + 1;
     }
-  } while (lim > 0);
-  if (g->debt < GC_STEP_SIZE) {
-    g->threshold = g->total + GC_STEP_SIZE;
-  } else {
-    g->debt -= GC_STEP_SIZE;
-    g->threshold = g->total;
-  }
-  return 0;
+  } while (limit > 0);
+
+  return counter + 1;
 }
-
-void gc_add_root_obj(gc_global_t * g, gc_obj_t * o)
-{
-  if (g->gcroot && g->gcroot_count < g->gcroot_size) {
-    g->gcroot[g->gcroot_count++] = o;
-  } else {
-    gc_mem_growvec(g, g->gcroot_size, SIZE_MAX, gc_obj_t *, g->gcroot);
-    g->gcroot[g->gcroot_count++] = o;
-  }
-}
-
-void gc_del_root_obj(gc_global_t * g, gc_obj_t * o)
-{
-  for (size_t k = 0; k < g->gcroot_count; k++) {
-    if (g->gcroot[k] == o) {
-      for (size_t n = k + 1; n < g->gcroot_count; n++) {
-        g->gcroot[k++] = g->gcroot[n];
-      }
-      g->gcroot_count--;
-      return;
-    }
-  }
-}
-
-void gc_free_all(gc_global_t * g)
-{
-  g->white = GC_WHITE_FLAGS | GC_SFIXED_FLAG;
-  gc_full_sweep(g, (gc_hdr_t **) &g->root);
-  size_t m = g->strmask;
-  for (size_t k = 0; k <= m; k++)
-    gc_full_sweep(g, (gc_hdr_t **) &g->strhash[k]);
-
-}
-
-void gc_barrierf(gc_global_t * g, gc_obj_t * o, gc_hdr_t * v)
-{
-  gc_assert(gc_is_black(o) && gc_is_white(v) && !gc_is_dead(g, v) && !gc_is_dead(g, o));
-  gc_assert(g->state != GC_STATE_FINALIZE && g->state != GC_STATE_PAUSE);
-  if (g->state == GC_STATE_PROPAGATE || g->state == GC_STATE_ATOMIC) {
-    gc_markf(g, v);
-  } else {
-    gc_make_white(g, o);
-  }
-}
-
-void gc_barrierbackf(gc_global_t * g, gc_obj_t * o)
-{
-  gc_assert(gc_is_black(o) && !gc_is_dead(g, o));
-  gc_assert(g->state != GC_STATE_FINALIZE && g->state != GC_STATE_PAUSE);
-  gc_black2gray(o);
-  o->_list = g->grey2;
-  g->grey2 = o;
-}
-
-
-/*************************************************************************************************/
-
-void gc_strhash_resize(gc_global_t * g, size_t newmask)
-{
-  gc_str_t ** newhash;
-  size_t      i;
-
-  if (g->state == GC_STATE_SWEEP_STRING || newmask >= GC_MAX_STRHASH - 1)
-    return;
-
-  newhash = gc_mem_newvec(g, newmask + 1, gc_str_t *);
-  memset(newhash, 0, (newmask + 1) * sizeof(gc_str_t *));
-
-  if (g->strhash) {
-    for (i = g->strmask; i != ~((size_t) 0); i--) {
-      gc_str_t * p = g->strhash[i];
-      while (p) {
-        size_t     h = p->hash & newmask;
-        gc_str_t * next = p->_next; /* list of strings */
-        p->_next = newhash[h];
-        newhash[h] = p;
-        /* no barrier, since strhash is gc root */
-        p = next;
-      }
-    }
-    gc_mem_freevec(g, g->strmask + 1, gc_str_t *, g->strhash);
-  }
-  g->strmask = newmask;
-  g->strhash = newhash;
-}
-
-/* from lookup3.c by Bob Jenkins */
 
 #define rot(x, k) \
   (((x) << (k)) | ((x) >> (32 - (k))))
@@ -499,7 +768,6 @@ void gc_strhash_resize(gc_global_t * g, size_t newmask)
     b ^= a; b -= rot(a, 14); \
     c ^= b; c -= rot(b, 24); \
   }
-
 
 uint32_t hash(const void * key, size_t length, uint32_t initval)
 {
@@ -532,105 +800,106 @@ uint32_t hash(const void * key, size_t length, uint32_t initval)
   return c;
 }
 
-size_t gc_str_clear(gc_global_t * g, void * o)
+static
+void intern_obj(gc_global_t * g, gc_obj_t * o, uint32_t size)
 {
-  (void) o;
-  g->strcount--;
-  return 0;
+  log(0, "# %s(%p [%u])\n", __FUNCTION__, (void *) o, size);
+  o->flag = (g->white & GC_FLAG_WHITES) | (size << 8);
+  head_prepend(&g->objects, o);
+  g->total++;
 }
 
-gc_vtable_t gc_str_vtable = {
-  .gc_init = NULL,
-  .gc_finalize = NULL,
-  .gc_clear = gc_str_clear,
-  .gc_propagate = NULL,
-};
-
-
-
-gc_str_t * gc_mem_new_str(gc_global_t * g, const char * str, size_t len)
+static
+void intern_str(gc_global_t * g, gc_str_t * s, uint32_t size)
 {
+  log(0, "# %s(%p [%u])\n", __FUNCTION__, (void *) s, size);
+  s->flag = (g->white & GC_FLAG_WHITES) | (size << 8);
+  head_prepend(&g->strings.buckets.data[s->hash & g->strings.mask], s);
+  if (g->strings.count++ > g->strings.mask) {
+    uint32_t newmask = (g->strings.mask << 1) | 1;
+    if (g->state != GC_STATE_SWEEP_STRING && newmask < 0xffffff - 1) {
+      strings_resize(g, &g->strings, newmask);
+    }
+  }
+}
+
+#define flip_white(x) ((x)->flag ^= GC_FLAG_WHITES)
+
+gc_str_t * gc_new_str(gc_global_t * g, const char * str, uint32_t len)
+{
+  log(0, "# %s(%.*s)\n", __FUNCTION__, len, str);
   uint32_t   h = hash(str, len, 17);
-  gc_str_t * s = g->strhash[h & g->strmask];
+
+  assert((h & g->strings.mask) < g->strings.buckets.dsize);
+
+  gc_str_t * s = g->strings.buckets.data[h & g->strings.mask].head;
 
   while (s) {
-    if (len == s->len) {
+    if (len == str_len(s)) {
       if (memcmp(str, s->data, len) == 0) {
-        if (gc_is_dead(g, s)) {
-          gc_flip_white(s);
+        if (is_dead(s, other_white(g))) {
+          flip_white(s);
         }
         return s;
       }
     }
-    s = s->_next;
+    s = s->next;
   }
 
-  size_t sz = sizeof(gc_str_t) + len + 1;
+  uint32_t sz = sizeof(gc_str_t) + len + 1;
   s = gc_mem_new(g, sz);
-  gc_new_white(g, s);
-  s->_vtable = &gc_str_vtable;
-  s->_next = NULL;
-  s->_size  = sz;
-  s->len = len;
-  s->hash = h;
-  s->id = 0;
+  s->next = NULL;
+  s->hash  = h;
   memcpy(s->data, str, len);
   s->data[len] = '\0';
-  h &= g->strmask;
-  s->_next = g->strhash[h];
-  g->strhash[h] = s;
-  /* no barrier, since strhash is gc root */
-  if (g->strcount++ > g->strmask) {
-    gc_strhash_resize(g, (g->strmask << 1) + 1);
-  }
+
+  intern_str(g, s, sz);
   return s;
 }
 
-
-/*************************************************************************************************/
-
-static void gc_shrink(gc_global_t * g)
+void * gc_new_obj(gc_global_t * g, gc_vtable_t * vtable, uint32_t size)
 {
-  if (g->strcount <= (g->strmask >> 2) && g->strmask > GC_MIN_STRHASH * 2 - 1) {
-    gc_strhash_resize(g, g->strmask >> 1);
+  assert(size > sizeof(gc_obj_t));
+  assert(vtable);
+
+  gc_obj_t * o = gc_mem_new(g, size); memset(o, 0, size);
+
+  memset(o, 0, sizeof(gc_obj_t));
+
+  o->vtable = vtable;
+  o->next = NULL;
+  o->list = NULL;
+
+  log(5, "# %s(<%p> [%u]) -> %p\n", __FUNCTION__, (void *) vtable, size, (void *) o);
+
+  if (vtable->gc_init) {
+    vtable->gc_init(g, o);
   }
+
+  intern_obj(g, o, size);
+  return o;
 }
 
-gc_global_t * gc_global_init(gc_global_t * g, mem_allocator_t alloc)
+#define is_black(o)   ((o)->flag & GC_FLAG_BLACK)
+#define black2gray(x) ((x)->flag &= ~GC_FLAG_BLACK)
+
+void gc_barrier_back_o(gc_global_t * g, gc_obj_t * o)
 {
-  if (g) {
-    g->white = GC_WHITE0_FLAG | GC_FIXED_FLAG;
-    g->alloc = alloc;
-    g->state = GC_STATE_PAUSE;
-
-    g->strmask = 0;
-    g->strcount = 0;
-    g->sweepstr = 0;
-    g->strhash = 0;
-
-    g->root = NULL;
-    g->sweep = (gc_hdr_t **) &g->root;
-    g->grey = NULL;
-    g->fin = NULL;
-    g->gcroot = NULL;
-    g->gcroot_count = 0;
-    g->gcroot_size = 0;
-    g->total = 0;
-    g->threshold = 0;
-    g->estimate = 0;
-    g->debt = 0;
-    g->pause = GC_PAUSE;
-    g->stepmul = GC_STEP_MUL;
-
-    gc_strhash_resize(g, 0xF);
-    gc_mem_growvec(g, g->gcroot_size, SIZE_MAX, gc_obj_t *, g->gcroot);
-  }
-  return g;
+  log_obj(1, g, o);
+  assert(is_black(o) && !is_dead(o, other_white(g)));
+  assert(g->state != GC_STATE_FINALIZE && g->state != GC_STATE_PAUSE);
+  black2gray(o);
+  list_prepend(&g->grey1, o);
 }
 
-void gc_global_clear(gc_global_t * g)
+void gc_add_root(gc_global_t * g, gc_obj_t * o)
 {
-  gc_free_all(g);
-  gc_mem_freevec(g, g->gcroot_size, gc_obj_t *, g->gcroot);
-  gc_mem_freevec(g, g->strmask + 1, gc_str_t *, g->strhash);
+  log_obj(5, g, o);
+  vector_append(g, &g->roots, o);
+}
+
+void gc_del_root(gc_global_t * g, gc_obj_t * o)
+{
+  log_obj(5, g, o);
+  vector_remove_all(g, &g->roots, o);
 }

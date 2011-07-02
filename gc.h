@@ -6,73 +6,30 @@
 #include <stdlib.h>
 #include <memory.h>
 
-#define GC_WHITE0_FLAG    0x01
-#define GC_WHITE1_FLAG    0x02
-#define GC_BLACK_FLAG     0x04
-#define GC_FINALIZED_FLAG 0x08
-#define GC_FIXED_FLAG     0x10
-#define GC_SFIXED_FLAG    0x20
-
-#define GC_WHITE_FLAGS    (GC_WHITE0_FLAG | GC_WHITE1_FLAG)
-#define GC_COLOR_FLAGS    (GC_WHITE_FLAGS | GC_BLACK_FLAG)
-
-#define gc_is_white(x)   ((x)->_flags & GC_WHITE_FLAGS)
-#define gc_is_black(x)   ((x)->_flags & GC_BLACK_FLAG)
-#define gc_white2gray(x) ((x)->_flags &= (uint16_t) ~GC_WHITE_FLAGS)
-
-#define GC_PARTDEF(__name, __fields, __acc, ...)\
-  typedef union __name __name ## _t; \
-  union __name { \
-    struct { \
-      __fields \
-    } __acc; \
-    __extension__ struct { \
-      __fields \
-    }; \
-    __VA_ARGS__ \
-  }
+#define GC_FLAG_WHITE0 0x01
+#define GC_FLAG_WHITE1 0x02
+#define GC_FLAG_WHITES (GC_FLAG_WHITE0 | GC_FLAG_WHITE1)
+#define GC_FLAG_BLACK  0x04
+#define GC_FLAG_COLORS (GC_FLAG_WHITES | GC_FLAG_BLACK)
+#define GC_FLAG_FINAL  0x08
+#define GC_FLAG_FIXED  0x10
+#define GC_FLAG_SFIXED 0x20
 
 typedef struct gc_vtable gc_vtable_t;
-typedef struct gc_global gc_global_t;
 
-#define GC_HEADER_FIELDS(__base_t) \
-  /* type information and gc_functions */ \
-  gc_vtable_t * _vtable; \
-  uint16_t      _flags; \
-  size_t        _size; \
-  /* global object list */ \
-  __base_t    * _next;
+typedef struct gc_obj {
+  gc_vtable_t   * vtable;
+  uint32_t        flag;
+  struct gc_obj * next;
+  struct gc_obj * list;
+} gc_obj_t;
 
-#define GC_EMPTY_UNION_ADD
-
-GC_PARTDEF(gc_hdr, GC_HEADER_FIELDS(gc_hdr_t), gch, GC_EMPTY_UNION_ADD);
-
-#define GC_HEADER_UNION_ADD \
-  gc_hdr_t gch;
-
-#define GC_OBJ_FIELDS(__base_t) \
-  GC_HEADER_FIELDS(__base_t) \
-  /* collection list */ \
-  gc_obj_t * _list;
-
-GC_PARTDEF(gc_obj, GC_OBJ_FIELDS(gc_obj_t), gco, GC_HEADER_UNION_ADD);
-
-#define GC_OBJ_UNION_ADD \
-  gc_hdr_t gch; \
-  gc_obj_t o;
-
-#define GC_STR_FIELDS \
-  GC_HEADER_FIELDS(gc_str_t) \
-  uint16_t id; \
-  size_t   hash; \
-  size_t   len; \
-  char     data[];
-
-#define GC_STR_UNION_ADD \
-  gc_hdr_t gch;
-
-GC_PARTDEF(gc_str, GC_STR_FIELDS, gcs, GC_STR_UNION_ADD);
-extern gc_vtable_t gc_str_vtable;
+typedef struct gc_str {
+  uint32_t        flag;
+  uint32_t        hash;
+  struct gc_str * next;
+  char            data[];
+} gc_str_t;
 
 typedef enum gc_state {
   GC_STATE_PAUSE = 0,
@@ -83,29 +40,63 @@ typedef enum gc_state {
   GC_STATE_FINALIZE,
 } gc_state_t;
 
-struct gc_global {
-  mem_allocator_t alloc;
-  uint16_t        white; /* current white flag */
-  gc_str_t     ** strhash; /* note: array! */
-  size_t          strmask;
-  size_t          strcount;
-  size_t          sweepstr;
-  gc_hdr_t      * root; /* global object list */
-  gc_hdr_t     ** sweep;  /* global object list iterator */
-  gc_obj_t      * grey;   /* collection lists  */
-  gc_obj_t      * grey2;   /* collection lists  */
-  gc_obj_t      * fin;
-  gc_obj_t     ** gcroot; /* note: array! */
-  size_t          gcroot_count;
-  size_t          gcroot_size;
+
+typedef struct {
+  gc_str_t  * head;
+  gc_str_t ** sweep;
+} gc_bucket_t;
+
+typedef struct {
+  gc_bucket_t * data;
+  size_t        dsize;
+  size_t        count;
+  gc_bucket_t * proc;
+  size_t        psize;
+} gc_buckets_t;
+
+typedef struct {
+  gc_buckets_t buckets;
+  uint32_t     mask;
+  size_t       count;
+  uint32_t     sweep;
+  uint32_t     run;
+} gc_strings_t;
+
+typedef struct {
+  gc_obj_t  * head;
+  gc_obj_t ** sweep;
+} gc_store_t;
+
+typedef struct {
+  gc_obj_t * head;
+} gc_collect_t;
+
+typedef struct {
+  gc_obj_t * loop;
+} gc_circle_t;
+
+typedef struct {
+  gc_obj_t ** data;
+  size_t      dsize;
+  size_t      count;
+  gc_obj_t ** proc;
+  size_t      psize;
+} gc_roots_t;
+
+
+typedef struct {
+  gc_strings_t    strings;
+  gc_store_t      objects;
+  gc_collect_t    grey0;
+  gc_collect_t    grey1;
+  gc_circle_t     final;
+  gc_roots_t      roots;
   gc_state_t      state;
-  size_t          threshold;
+  uint32_t        white;
   size_t          total;
-  size_t          stepmul;
-  size_t          pause;
-  size_t          estimate;
-  size_t          debt;
-};
+  size_t          thres;
+  mem_allocator_t alloc;
+} gc_global_t;
 
 typedef size_t (gc_function_t)(gc_global_t * g, void * o);
 struct gc_vtable {
@@ -115,62 +106,45 @@ struct gc_vtable {
   gc_function_t * gc_finalize;
 };
 
+void       gc_init(gc_global_t * g, mem_allocator_t alloc);
+void       gc_clear(gc_global_t * g);
 
-gc_global_t * gc_global_init(gc_global_t * g, mem_allocator_t alloc);
-void          gc_global_clear(gc_global_t * g);
-void          gc_full_gc(gc_global_t * g);
-gc_str_t *    gc_mem_new_str(gc_global_t * g, const char * str, size_t len);
-void *        gc_mem_new_obj(gc_global_t * g, gc_vtable_t * vtable, size_t size);
-void          gc_add_root_obj(gc_global_t * g, gc_obj_t * o);
-void          gc_del_root_obj(gc_global_t * g, gc_obj_t * o);
-void          gc_barrierf(gc_global_t * g, gc_obj_t * o, gc_hdr_t * v);
-void          gc_barrierbackf(gc_global_t * g, gc_obj_t * o);
-void          gc_markf(gc_global_t * g, gc_hdr_t * o);
-int           gc_step(gc_global_t * g);
-void *        gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
-void *        gc_mem_grow(gc_global_t * g, size_t * szp, size_t lim, size_t esz, void * p);
-void          gc_mem_free(gc_global_t * g, size_t size, void * p);
+size_t     gc_collect(gc_global_t * g, bool full);
 
-#define gc_barrier(g, p, v) \
+gc_str_t * gc_new_str(gc_global_t * g, const char * str, uint32_t len);
+void *     gc_new_obj(gc_global_t * g, gc_vtable_t * vtable, uint32_t size);
+
+void       gc_add_root(gc_global_t * g, gc_obj_t * o);
+void       gc_del_root(gc_global_t * g, gc_obj_t * o);
+
+void       gc_barrier_os(gc_global_t * g, gc_obj_t * o, gc_str_t * s);
+void       gc_barrier_oo(gc_global_t * g, gc_obj_t * o, gc_obj_t * v);
+void       gc_barrier_back_o(gc_global_t * g, gc_obj_t * o);
+
+
+void       gc_mark_obj_i(gc_global_t * g, gc_obj_t * o);
+void       gc_mark_str_i(gc_global_t * g, gc_str_t * s);
+
+inline static
+void gc_mark_obj(gc_global_t * g, gc_obj_t * o)
+{
+  if (((o)->flag & GC_FLAG_WHITES)) {
+    gc_mark_obj_i(g, o);
+  }
+}
+
+inline static
+void gc_mark_str(gc_global_t * g, gc_str_t * s)
+{
+  if (((s)->flag & GC_FLAG_WHITES))
+    gc_mark_str_i(g, s);
+}
+
+#define gc_barrier_back(g, o, v) \
   do { \
-    if (gc_is_white(v) && gc_is_black(p)) { \
-      gc_barrierf(g, &(p)->gco, &(v)->gch); \
+    if (((v)->flag & GC_FLAG_WHITES) && ((o)->flag & GC_FLAG_BLACK)) { \
+      gc_barrier_back_o(g, o); \
     } \
   } while (0)
-
-#define gc_barrierback(g, t, o) \
-  do { \
-    if (gc_is_white(o) && gc_is_black(t)) { \
-      gc_barrierbackf(g, &(t)->gco); \
-    } \
-  } while (0)
-
-#define gc_mark(x, y) \
-  do { \
-    if (gc_is_white(y)) \
-      gc_markf(x, &(y)->gch); \
-  } while (0)
-
-#define gc_markh(x, y) \
-  do { \
-    if (gc_is_white(y)) \
-      gc_markf(x, y); \
-  } while (0)
-
-#define gc_check(x) \
-  do { \
-    if ((x)->total >= x->threshold) { \
-      gc_step(x); \
-    } \
-  } while (0)
-
-#define gc_mem_new(g, s) \
-  gc_mem_realloc(g, 0, (s), NULL)
-#define gc_mem_newvec(g, n, t) \
-  ((t *) gc_mem_new(g, (size_t) ((n) * sizeof(t))))
-#define gc_mem_growvec(g, n, m, t, p) \
-  ((p) = (t *) gc_mem_grow(g, &(n), (m), sizeof(t), (p)))
-#define gc_mem_freevec(g, n, t, p) \
-  gc_mem_free(g, (n) * sizeof(t), (p))
 
 #endif /* _GC_H */
