@@ -17,19 +17,27 @@
 
 typedef struct gc_vtable gc_vtable_t;
 
-typedef struct gc_obj {
+typedef struct gc_hdr {
   gc_vtable_t   * vtable;
   uint32_t        flag;
-  struct gc_obj * next;
+  struct gc_hdr * next;
+} gc_hdr_t;
+
+#define GC_HDR(_o) ((gc_hdr_t *) (_o))
+#define GC_HDRP(_p) ((gc_hdr_t **) (_p))
+
+typedef struct gc_obj {
+  gc_hdr_t        gch;
   struct gc_obj * list;
 } gc_obj_t;
 
 typedef struct gc_str {
-  uint32_t        flag;
+  gc_hdr_t        gch;
   uint32_t        hash;
-  struct gc_str * next;
   char            data[];
 } gc_str_t;
+
+#define gc_str_len(s) ((uint32_t) (((GC_HDR(s)->flag & 0xffffff00) >> 8) - sizeof(gc_str_t) - 1))
 
 typedef enum gc_state {
   GC_STATE_PAUSE = 0,
@@ -37,6 +45,7 @@ typedef enum gc_state {
   GC_STATE_ATOMIC,
   GC_STATE_SWEEP_STRING,
   GC_STATE_SWEEP,
+  GC_STATE_SWEEP_HEADER,
   GC_STATE_FINALIZE,
 } gc_state_t;
 
@@ -65,7 +74,12 @@ typedef struct {
 typedef struct {
   gc_obj_t  * head;
   gc_obj_t ** sweep;
-} gc_store_t;
+} gc_ostore_t;
+
+typedef struct {
+  gc_hdr_t  * head;
+  gc_hdr_t ** sweep;
+} gc_hstore_t;
 
 typedef struct {
   gc_obj_t * head;
@@ -86,7 +100,8 @@ typedef struct {
 
 typedef struct {
   gc_strings_t    strings;
-  gc_store_t      objects;
+  gc_ostore_t     objects;
+  gc_hstore_t     headers;
   gc_collect_t    grey0;
   gc_collect_t    grey1;
   gc_circle_t     final;
@@ -98,12 +113,32 @@ typedef struct {
   mem_allocator_t alloc;
 } gc_global_t;
 
-typedef size_t (gc_function_t)(gc_global_t * g, void * o);
 struct gc_vtable {
-  gc_function_t * gc_init;
-  gc_function_t * gc_clear;
-  gc_function_t * gc_propagate;
-  gc_function_t * gc_finalize;
+  const char  * name;
+  size_t     (* gc_init)(gc_global_t * g, gc_hdr_t * o);
+  size_t     (* gc_clear)(gc_global_t * g, gc_hdr_t * o);
+  size_t     (* gc_propagate)(gc_global_t * g, gc_obj_t * o);
+  size_t     (* gc_finalize)(gc_global_t * g, gc_obj_t * o);
+
+  gc_hdr_t * (* fld_concat)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
+  uint32_t   (* fld_len)(gc_global_t * g, gc_hdr_t * o);
+
+  signed     (* fld_cmp)(gc_global_t * g, gc_hdr_t * o);
+  unsigned   (* fld_le)(gc_global_t * g, gc_hdr_t * o);
+  unsigned   (* fld_eq)(gc_global_t * g, gc_hdr_t * o);
+
+  gc_hdr_t * (* fld_keyget)(gc_global_t * g, gc_obj_t * o, gc_hdr_t * key);
+  gc_hdr_t * (* fld_keyset)(gc_global_t * g, gc_obj_t * o, gc_hdr_t * key, gc_hdr_t * value);
+  gc_hdr_t * (* fld_idxget)(gc_global_t * g, gc_obj_t * o, uint32_t idx);
+  gc_hdr_t * (* fld_idxset)(gc_global_t * g, gc_obj_t * o, uint32_t idx, gc_hdr_t * value);
+
+  gc_hdr_t * (* fld_add)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
+  gc_hdr_t * (* fld_sub)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
+  gc_hdr_t * (* fld_div)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
+  gc_hdr_t * (* fld_mod)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
+  gc_hdr_t * (* fld_mul)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
+  gc_hdr_t * (* fld_pow)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
+  gc_hdr_t * (* fld_unm)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
 };
 
 void       gc_init(gc_global_t * g, mem_allocator_t alloc);
@@ -121,14 +156,14 @@ void       gc_barrier_os(gc_global_t * g, gc_obj_t * o, gc_str_t * s);
 void       gc_barrier_oo(gc_global_t * g, gc_obj_t * o, gc_obj_t * v);
 void       gc_barrier_back_o(gc_global_t * g, gc_obj_t * o);
 
-
 void       gc_mark_obj_i(gc_global_t * g, gc_obj_t * o);
+void       gc_mark_hdr_i(gc_global_t * g, gc_hdr_t * o);
 void       gc_mark_str_i(gc_global_t * g, gc_str_t * s);
 
 inline static
 void gc_mark_obj(gc_global_t * g, gc_obj_t * o)
 {
-  if (((o)->flag & GC_FLAG_WHITES)) {
+  if ((GC_HDR(o)->flag & GC_FLAG_WHITES)) {
     gc_mark_obj_i(g, o);
   }
 }
@@ -136,13 +171,19 @@ void gc_mark_obj(gc_global_t * g, gc_obj_t * o)
 inline static
 void gc_mark_str(gc_global_t * g, gc_str_t * s)
 {
-  if (((s)->flag & GC_FLAG_WHITES))
+  if ((GC_HDR(s)->flag & GC_FLAG_WHITES))
     gc_mark_str_i(g, s);
 }
 
+void   gc_mem_free(gc_global_t * g, size_t size, void * p);
+void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
+
+#define gc_mem_new(g, s) \
+  gc_mem_realloc(g, 0, (s), NULL)
+
 #define gc_barrier_back(g, o, v) \
   do { \
-    if (((v)->flag & GC_FLAG_WHITES) && ((o)->flag & GC_FLAG_BLACK)) { \
+    if ((GC_HDR(v)->flag & GC_FLAG_WHITES) && (GC_HDR(o)->flag & GC_FLAG_BLACK)) { \
       gc_barrier_back_o(g, o); \
     } \
   } while (0)

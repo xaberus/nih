@@ -24,11 +24,12 @@ typedef struct testobj {
   unsigned         count, flag;
 } testobj_t;
 
-size_t testobj_init(gc_global_t * g, void * o)
+static
+size_t testobj_init(gc_global_t * g, gc_hdr_t * o)
 {
   (void) g;
   // bt_log("[testobj:%p] init\n", o);
-  testobj_t * t = o;
+  testobj_t * t = (testobj_t *) o;
   for (unsigned k = 0; k < 20; k++)
     t->arr[k] = NULL;
   t->count = 0;
@@ -37,30 +38,33 @@ size_t testobj_init(gc_global_t * g, void * o)
   return 0;
 }
 
-size_t testobj_clear(gc_global_t * g, void * o)
+static
+size_t testobj_clear(gc_global_t * g, gc_hdr_t * o)
 {
   (void) g;
   // bt_log("[testobj:%p] clear\n", o);
-  testobj_t * t = o;
+  testobj_t * t = (testobj_t *) o;
 
   t->flag = 0;
   return 0;
 }
 
-size_t testobj_finalize(gc_global_t * g, void * o)
+static
+size_t testobj_finalize(gc_global_t * g, gc_obj_t * o)
 {
   (void) g;
   // bt_log("[testobj:%p] finalize\n", o);
-  testobj_t * t = o;
+  testobj_t * t = (testobj_t *) o;
   for (unsigned k = 0; k < t->count; k++)
     t->arr[k]->flag++;
   return 1;
 }
 
-size_t testobj_propagate(gc_global_t * g, void * o)
+static
+size_t testobj_propagate(gc_global_t * g, gc_obj_t * o)
 {
   (void) g;
-  testobj_t * t = o;
+  testobj_t * t = (testobj_t *) o;
   for (unsigned k = 0; k < t->count; k++) {
     // bt_log("[testobj:%p] propagate child %p\n", o, t->arr[k]);
     gc_mark_obj(g, &t->arr[k]->gco);
@@ -70,7 +74,9 @@ size_t testobj_propagate(gc_global_t * g, void * o)
 }
 
 
+static
 gc_vtable_t testobj_vtable = {
+  .name = "testobj_t",
   .gc_init = testobj_init,
   .gc_finalize = testobj_finalize,
   .gc_clear = testobj_clear,
@@ -195,10 +201,31 @@ BT_TEST_DEF(gc, pressure, object, "tests behaviour unter collect pressure")
 
 BT_TEST_DEF(gc, cycles, object, "cycles should not matter at all")
 {
+  struct gc_test * test = object;
+  gc_global_t    * g = test->g;
+  testobj_t      * a;
+  testobj_t      * b;
+  testobj_t      * c;
+
+  a = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+  b = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+  c = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+
+  a->arr[a->count++] = b;
+  a->arr[a->count++] = c;
+  b->arr[b->count++] = c;
+  b->arr[b->count++] = a;
+  c->arr[c->count++] = a;
+  c->arr[c->count++] = b;
+
+  gc_collect(g, 1);
+  gc_collect(g, 1);
+  bt_assert_int_equal(g->total, 0);
+
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(gc, misuse, object, "tests behavous under collection misuse")
+BT_TEST_DEF(gc, misuse, object, "tests behavour under collection misuse")
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;

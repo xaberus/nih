@@ -189,7 +189,7 @@ BT_TEST_DEF(trie, str, object, "str mode")
 
 
 
-  trie_print(trie, 1);
+  // trie_print(trie, 1);
 
 #undef test
 #undef delete
