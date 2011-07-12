@@ -18,6 +18,17 @@
     memset(__v->data, 0, sizeof(TYPEOF(__v->data[0])) * __v->dsize); \
   } while (0)
 
+#define gc_vector_init_basic(_g, _v, _init) \
+  do { \
+    TYPEOF(_v) __v = (_v); \
+    gc_global_t * __g = (_g); \
+    __v->count = 0; \
+    __v->dsize = (_init); \
+    __v->data = gc_mem_new(__g, __v->dsize * sizeof(__v->data[0])); \
+    memset(__v->data, 0, sizeof(TYPEOF(__v->data[0])) * __v->dsize); \
+  } while (0)
+
+
 #define gc_vector_clear(_g, _v) \
   do { \
     TYPEOF(_v) __v = (_v); \
@@ -35,6 +46,19 @@
     } \
   } while (0)
 
+#define gc_vector_clear_basic(_g, _v) \
+  do { \
+    TYPEOF(_v) __v = (_v); \
+    TYPEOF(_g) __g = (_g); \
+    if (__v->data) { \
+      gc_mem_free(__g, __v->dsize * sizeof(__v->data[0]), __v->data); \
+      __v->data = NULL; \
+      __v->dsize = 0; \
+      __v->count = 0; \
+    } \
+  } while (0)
+
+
 #define gc_vector_reset(_g, _v) \
   do { \
     TYPEOF(_v) __v = (_v); \
@@ -43,6 +67,12 @@
     memset(__v->proc, 0, sizeof(TYPEOF(__v->proc[0])) * __v->psize); \
   } while (0)
 
+#define gc_vector_reset_basic(_g, _v) \
+  do { \
+    TYPEOF(_v) __v = (_v); \
+    __v->count = 0; \
+    memset(__v->data, 0, sizeof(TYPEOF(__v->data[0])) * __v->dsize); \
+  } while (0)
 
 #define gc_vector_process(_g, _v, _grow) \
   do { \

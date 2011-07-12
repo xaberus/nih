@@ -2,7 +2,6 @@
 
 #include "tests/gc-tests.c"
 
-#include <assert.h>
 #include <stdarg.h>
 
 #if 0
@@ -359,14 +358,6 @@ void gc_mark_hdr_i(gc_global_t * g, gc_hdr_t * o)
   grey2black(o);
 }
 
-void gc_mark_str_i(gc_global_t * g, gc_str_t * s)
-{
-  log_obj(4, g, s);
-  assert(is_white(s) && !is_dead(s, other_white(g)));
-  white2grey(s);
-  grey2black(s);
-}
-
 static
 size_t mark_roots(gc_global_t * g)
 {
@@ -706,7 +697,13 @@ void intern_str(gc_global_t * g, gc_str_t * s, uint32_t size)
 
 #define flip_white(x) (GC_HDR(x)->flag ^= GC_FLAG_WHITES)
 
-gc_str_t * gc_new_str(gc_global_t * g, const char * str, uint32_t len)
+static
+gc_vtable_t gc_str_vtable = {
+  .name = "testobj_t",
+  .flag = GC_VT_FLAG_STR,
+};
+
+gc_str_t * gc_new_str(gc_global_t * g, uint32_t len, const char str[len])
 {
   log(0, "# %s(%.*s)\n", __FUNCTION__, len, str);
   uint32_t   h = hash(str, len, 17);
@@ -729,6 +726,7 @@ gc_str_t * gc_new_str(gc_global_t * g, const char * str, uint32_t len)
 
   uint32_t sz = sizeof(gc_str_t) + len + 1;
   s = gc_mem_new(g, sz);
+  GC_HDR(s)->vtable = &gc_str_vtable;
   GC_HDR(s)->next = NULL;
   s->hash = h;
   memcpy(s->data, str, len);
@@ -738,33 +736,53 @@ gc_str_t * gc_new_str(gc_global_t * g, const char * str, uint32_t len)
   return s;
 }
 
+gc_str_t * gc_new_strf(gc_global_t * g, const char * fmt, ...)
+{
+  va_list ap;
+  va_start(ap, fmt);
+  uint32_t len = vsnprintf(NULL, 0, fmt, ap);
+  va_end(ap);
+  char tmp[len + 1];
+  va_start(ap, fmt);
+  vsnprintf(tmp, len + 1, fmt, ap);
+  va_end(ap);
+  return gc_new_str(g, strlen(tmp), tmp);
+}
+
 void * gc_new_obj(gc_global_t * g, gc_vtable_t * vtable, uint32_t size)
 {
-  assert(size > sizeof(gc_obj_t));
   assert(vtable);
+  //assert(vtable->flag);
+  assert(size > sizeof(gc_hdr_t));
 
-  gc_obj_t * o = gc_mem_new(g, size); memset(o, 0, size);
-
-  memset(o, 0, sizeof(gc_obj_t));
+  gc_hdr_t * o = gc_mem_new(g, size); memset(o, 0, size);
 
   GC_HDR(o)->vtable = vtable;
-  GC_HDR(o)->next = NULL;
-  o->list = NULL;
 
   log(5, "# %s(<%p> [%u]) -> %p\n", __FUNCTION__, (void *) vtable, size, (void *) o);
 
   if (vtable->gc_init) {
-    vtable->gc_init(g, (gc_hdr_t *) o);
+    vtable->gc_init(g, o);
   }
 
-  intern_obj(g, o, size);
+  if ((vtable->flag & GC_VT_FLAG_OBJ) == GC_VT_FLAG_OBJ) {
+    intern_obj(g, (gc_obj_t *) o, size);
+  } else if ((vtable->flag & GC_VT_FLAG_HDR) == GC_VT_FLAG_HDR) {
+    intern_hdr(g, o, size);
+  } else {
+    if (vtable->gc_clear) {
+      vtable->gc_clear(g, o);
+    }
+    gc_mem_free(g, size, o);
+    o = NULL;
+    assert(0);
+  }
   return o;
 }
 
 #define is_black(_o)   (GC_HDR(_o)->flag & GC_FLAG_BLACK)
 #define black2gray(_o) (GC_HDR(_o)->flag &= ~GC_FLAG_BLACK)
 
-//void gc_barrier_os(gc_global_t * g, gc_obj_t * o, gc_str_t * s);
 void gc_barrier_oo(gc_global_t * g, gc_obj_t * o, gc_obj_t * v)
 {
   assert(is_black(o) && is_white(v) && !is_dead(v, other_white(g)) && !is_dead(o, other_white(g)));
@@ -775,6 +793,18 @@ void gc_barrier_oo(gc_global_t * g, gc_obj_t * o, gc_obj_t * v)
     make_white(o, g->white);
   }
 }
+
+void gc_barrier_oh(gc_global_t * g, gc_obj_t * o, gc_hdr_t * h)
+{
+  assert(is_black(o) && is_white(h) && !is_dead(h, other_white(g)) && !is_dead(o, other_white(g)));
+  assert(g->state != GC_STATE_FINALIZE && g->state != GC_STATE_PAUSE);
+  if (g->state == GC_STATE_PROPAGATE || g->state == GC_STATE_ATOMIC) {
+    gc_mark(g, h);
+  } else {
+    make_white(o, g->white);
+  }
+}
+
 
 void gc_barrier_back_o(gc_global_t * g, gc_obj_t * o)
 {

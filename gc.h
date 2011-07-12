@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <memory.h>
+#include <assert.h>
 
 #define GC_FLAG_WHITE0 0x01
 #define GC_FLAG_WHITE1 0x02
@@ -114,14 +115,14 @@ typedef struct {
 } gc_global_t;
 
 struct gc_vtable {
+  uint32_t      flag;
   const char  * name;
+
   size_t     (* gc_init)(gc_global_t * g, gc_hdr_t * o);
   size_t     (* gc_clear)(gc_global_t * g, gc_hdr_t * o);
+
   size_t     (* gc_propagate)(gc_global_t * g, gc_obj_t * o);
   size_t     (* gc_finalize)(gc_global_t * g, gc_obj_t * o);
-
-  gc_hdr_t * (* fld_concat)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
-  uint32_t   (* fld_len)(gc_global_t * g, gc_hdr_t * o);
 
   signed     (* fld_cmp)(gc_global_t * g, gc_hdr_t * o);
   unsigned   (* fld_le)(gc_global_t * g, gc_hdr_t * o);
@@ -132,6 +133,8 @@ struct gc_vtable {
   gc_hdr_t * (* fld_idxget)(gc_global_t * g, gc_obj_t * o, uint32_t idx);
   gc_hdr_t * (* fld_idxset)(gc_global_t * g, gc_obj_t * o, uint32_t idx, gc_hdr_t * value);
 
+  gc_hdr_t * (* fld_cat)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
+  uint32_t   (* fld_len)(gc_global_t * g, gc_hdr_t * o);
   gc_hdr_t * (* fld_add)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
   gc_hdr_t * (* fld_sub)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
   gc_hdr_t * (* fld_div)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
@@ -141,24 +144,46 @@ struct gc_vtable {
   gc_hdr_t * (* fld_unm)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
 };
 
+enum gc_vt_flags {
+  GC_VT_FLAG_HDR = 0x01,
+  GC_VT_FLAG_OBJ = 0x02 | GC_VT_FLAG_HDR,
+  GC_VT_FLAG_STR = 0x04 | GC_VT_FLAG_HDR,
+  GC_VT_FLAG_FLD = 0x08 | GC_VT_FLAG_OBJ,
+};
+
 void       gc_init(gc_global_t * g, mem_allocator_t alloc);
 void       gc_clear(gc_global_t * g);
 
 size_t     gc_collect(gc_global_t * g, bool full);
 
-gc_str_t * gc_new_str(gc_global_t * g, const char * str, uint32_t len);
+gc_str_t * gc_new_str(gc_global_t * g, uint32_t len, const char str[len]);
+gc_str_t * gc_new_strf(gc_global_t * g, const char * fmt, ...);
 void *     gc_new_obj(gc_global_t * g, gc_vtable_t * vtable, uint32_t size);
 
 void       gc_add_root(gc_global_t * g, gc_obj_t * o);
 void       gc_del_root(gc_global_t * g, gc_obj_t * o);
 
-void       gc_barrier_os(gc_global_t * g, gc_obj_t * o, gc_str_t * s);
+void       gc_barrier_oh(gc_global_t * g, gc_obj_t * o, gc_hdr_t * h);
 void       gc_barrier_oo(gc_global_t * g, gc_obj_t * o, gc_obj_t * v);
 void       gc_barrier_back_o(gc_global_t * g, gc_obj_t * o);
 
 void       gc_mark_obj_i(gc_global_t * g, gc_obj_t * o);
 void       gc_mark_hdr_i(gc_global_t * g, gc_hdr_t * o);
 void       gc_mark_str_i(gc_global_t * g, gc_str_t * s);
+
+inline static
+void gc_mark(gc_global_t * g, gc_hdr_t * o)
+{
+  if (o->flag & GC_FLAG_WHITES) {
+    if ((o->vtable->flag & GC_VT_FLAG_OBJ) == GC_VT_FLAG_OBJ) {
+      gc_mark_obj_i(g, (gc_obj_t *) o);
+    } else if ((o->vtable->flag & GC_VT_FLAG_HDR) == GC_VT_FLAG_HDR) {
+      gc_mark_hdr_i(g, o);
+    } else {
+      assert(0);
+    }
+  }
+}
 
 inline static
 void gc_mark_obj(gc_global_t * g, gc_obj_t * o)
@@ -171,8 +196,9 @@ void gc_mark_obj(gc_global_t * g, gc_obj_t * o)
 inline static
 void gc_mark_str(gc_global_t * g, gc_str_t * s)
 {
-  if ((GC_HDR(s)->flag & GC_FLAG_WHITES))
-    gc_mark_str_i(g, s);
+  if ((GC_HDR(s)->flag & GC_FLAG_WHITES)) {
+    gc_mark_hdr_i(g, GC_HDR(s));
+  }
 }
 
 void   gc_mem_free(gc_global_t * g, size_t size, void * p);
@@ -181,11 +207,19 @@ void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
 #define gc_mem_new(g, s) \
   gc_mem_realloc(g, 0, (s), NULL)
 
-#define gc_barrier_back(g, o, v) \
+#define gc_barrier_back(_g, _o, _v) \
   do { \
-    if ((GC_HDR(v)->flag & GC_FLAG_WHITES) && (GC_HDR(o)->flag & GC_FLAG_BLACK)) { \
-      gc_barrier_back_o(g, o); \
+    if ((GC_HDR(_v)->flag & GC_FLAG_WHITES) && (GC_HDR(_o)->flag & GC_FLAG_BLACK)) { \
+      gc_barrier_back_o((_g), (_o)); \
     } \
   } while (0)
+
+#define gc_barrier(_g, _o, _v) \
+  do { \
+    if ((GC_HDR(_v)->flag & GC_FLAG_WHITES) && (GC_HDR(_o)->flag & GC_FLAG_BLACK)) { \
+      gc_barrier_oh((_g), (_o), (_v)); \
+    } \
+  } while (0)
+
 
 #endif /* _GC_H */

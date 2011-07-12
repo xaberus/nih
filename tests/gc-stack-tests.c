@@ -90,6 +90,7 @@ size_t testobj_propagate(gc_global_t * g, gc_obj_t * o)
 static
 gc_vtable_t testobj_vtable = {
   .name = "testobj_t",
+  .flag = GC_VT_FLAG_OBJ,
   .gc_init = testobj_init,
   .gc_finalize = /*testobj_finalize*/ NULL,
   .gc_clear = testobj_clear,
@@ -128,7 +129,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 
     for (unsigned l = 0; l < 2; l++) {
       snprintf(buf, 9, "run %u", run++);
-      gc_str_t * s = gc_new_str(g, buf, sizeof(buf));
+      gc_str_t * s = gc_new_str(g, sizeof(buf), buf);
       tk->strv[tk->scount++] = s;
     }
 
@@ -138,7 +139,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 
       for (unsigned l = 0; l < 2; l++) {
         snprintf(buf, 9, "run %u", run++);
-        gc_str_t * s = gc_new_str(g, buf, sizeof(buf));
+        gc_str_t * s = gc_new_str(g, sizeof(buf), buf);
         tj->strv[tj->scount++] = s;
       }
 
@@ -148,7 +149,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 
         for (unsigned l = 0; l < 2; l++) {
           snprintf(buf, 9, "run %u", run++);
-          gc_str_t * s = gc_new_str(g, buf, sizeof(buf));
+          gc_str_t * s = gc_new_str(g, sizeof(buf), buf);
           tm->strv[tm->scount++] = s;
         }
       }
