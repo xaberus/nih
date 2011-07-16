@@ -115,7 +115,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 
   gc_init(g, a);
 
-  st = gc_new_obj(g, &gc_stack_vtable, sizeof(gc_stack_t));
+  st = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t));
   bt_assert_ptr_not_equal(st, NULL);
 
   gc_add_root(g, &st->gco);
@@ -125,7 +125,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
   unsigned run = 0;
 
   for (unsigned k = 0; k < 10; k++) {
-    testobj_t * tk = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+    testobj_t * tk = gc_new(g, &testobj_vtable, sizeof(testobj_t));
 
     for (unsigned l = 0; l < 2; l++) {
       snprintf(buf, 9, "run %u", run++);
@@ -134,7 +134,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
     }
 
     for (unsigned j = 0; j < 10; j++) {
-      testobj_t * tj = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+      testobj_t * tj = gc_new(g, &testobj_vtable, sizeof(testobj_t));
       tk->objv[tk->ocount++] = tj;
 
       for (unsigned l = 0; l < 2; l++) {
@@ -144,7 +144,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
       }
 
       for (unsigned m = 0; m < 10; m++) {
-        testobj_t * tm = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+        testobj_t * tm = gc_new(g, &testobj_vtable, sizeof(testobj_t));
         tj->objv[tj->ocount++] = tm;
 
         for (unsigned l = 0; l < 2; l++) {

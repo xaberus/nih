@@ -161,28 +161,28 @@ BT_TEST_DEF(gc, pressure, object, "tests behaviour unter collect pressure")
   bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
   bt_log("[GC] total: %zu\n", g->total);
 
-  o = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+  o = gc_new(g, &testobj_vtable, sizeof(testobj_t));
   gc_add_root(g, &o->gco);
 
   const unsigned   N = 10;
 
   for (unsigned j = 0; j < N; j++) {
-    testobj_t * lj = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+    testobj_t * lj = gc_new(g, &testobj_vtable, sizeof(testobj_t));
     o->arr[o->count++] = (gc_hdr_t *) lj;
     obj_barrier(g, o, lj);
     gc_collect(g, 0);
     for (unsigned k = 0; k < N; k++) {
-      testobj_t * lk = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+      testobj_t * lk = gc_new(g, &testobj_vtable, sizeof(testobj_t));
       lj->arr[lj->count++] = (gc_hdr_t *) lk;
       obj_barrier(g, lj, lk);
       gc_collect(g, 0);
       for (unsigned l = 0; l < N; l++) {
-        testobj_t * ll = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+        testobj_t * ll = gc_new(g, &testobj_vtable, sizeof(testobj_t));
         lk->arr[lk->count++] = (gc_hdr_t *) ll;
         obj_barrier(g, lk, ll);
         gc_collect(g, 0);
         for (unsigned m = 0; m < N; m++) {
-          testobj_t * lm = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+          testobj_t * lm = gc_new(g, &testobj_vtable, sizeof(testobj_t));
           ll->arr[ll->count++] = (gc_hdr_t *) lm;
           obj_barrier(g, ll, lm);
           gc_collect(g, 0);
@@ -208,9 +208,9 @@ BT_TEST_DEF(gc, cycles, object, "cycles should not matter at all")
   testobj_t      * b;
   testobj_t      * c;
 
-  a = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
-  b = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
-  c = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+  a = gc_new(g, &testobj_vtable, sizeof(testobj_t));
+  b = gc_new(g, &testobj_vtable, sizeof(testobj_t));
+  c = gc_new(g, &testobj_vtable, sizeof(testobj_t));
 
   a->arr[a->count++] = (gc_hdr_t *) b;
   a->arr[a->count++] = (gc_hdr_t *) c;
@@ -235,17 +235,17 @@ BT_TEST_DEF(gc, misuse, object, "tests behaviour under collection misuse")
   bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
   bt_log("[GC] total: %zu\n", g->total);
 
-  o = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+  o = gc_new(g, &testobj_vtable, sizeof(testobj_t));
   gc_add_root(g, &o->gco);
   for (unsigned j = 0; j < 20; j++) {
     gc_collect(g, 1);
-    testobj_t * lj = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+    testobj_t * lj = gc_new(g, &testobj_vtable, sizeof(testobj_t));
     o->arr[o->count++] = (gc_hdr_t *) lj;
     obj_barrier(g, o, lj);
     gc_collect(g, 1);
     for (unsigned k = 0; k < 20; k++) {
       gc_collect(g, 1);
-      testobj_t * lk = gc_new_obj(g, &testobj_vtable, sizeof(testobj_t));
+      testobj_t * lk = gc_new(g, &testobj_vtable, sizeof(testobj_t));
       lj->arr[lj->count++] = (gc_hdr_t *) lk;
       obj_barrier(g, lj, lk);
       gc_collect(g, 1);
@@ -294,31 +294,31 @@ BT_TEST_DEF(gc, general, object, "tests genralized behaviour")
   bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
   bt_log("[GC] total: %zu\n", g->total);
 
-  o = gc_new_obj(g, &testobj_genvtable, sizeof(testobj_t));
+  o = gc_new(g, &testobj_genvtable, sizeof(testobj_t));
   gc_add_root(g, &o->gco);
 
   const unsigned   N = 10;
 
   for (unsigned j = 0; j < N; j++) {
-    testobj_t * lj = gc_new_obj(g, &testobj_genvtable, sizeof(testobj_t));
+    testobj_t * lj = gc_new(g, &testobj_genvtable, sizeof(testobj_t));
     o->arr[o->count++] = (gc_hdr_t *) lj;
     o->arr[o->count++] = (gc_hdr_t *) gc_new_strf(g, "str after %x", (void *) lj);
     obj_barrier(g, o, lj);
     gc_collect(g, 0);
     for (unsigned k = 0; k < N; k++) {
-      testobj_t * lk = gc_new_obj(g, &testobj_genvtable, sizeof(testobj_t));
+      testobj_t * lk = gc_new(g, &testobj_genvtable, sizeof(testobj_t));
       lj->arr[lj->count++] = (gc_hdr_t *) lk;
       lj->arr[lj->count++] = (gc_hdr_t *) gc_new_strf(g, "str after %x", (void *) lk);
       obj_barrier(g, lj, lk);
       gc_collect(g, 0);
       for (unsigned l = 0; l < N; l++) {
-        testobj_t * ll = gc_new_obj(g, &testobj_genvtable, sizeof(testobj_t));
+        testobj_t * ll = gc_new(g, &testobj_genvtable, sizeof(testobj_t));
         lk->arr[lk->count++] = (gc_hdr_t *) ll;
         lk->arr[lk->count++] = (gc_hdr_t *) gc_new_strf(g, "str after %x", (void *) ll);
         obj_barrier(g, lk, ll);
         gc_collect(g, 0);
         for (unsigned m = 0; m < N; m++) {
-          testobj_t * lm = gc_new_obj(g, &testobj_genvtable, sizeof(testobj_t));
+          testobj_t * lm = gc_new(g, &testobj_genvtable, sizeof(testobj_t));
           ll->arr[ll->count++] = (gc_hdr_t *) lm;
           ll->arr[ll->count++] = (gc_hdr_t *) gc_new_strf(g, "str after %x", (void *) lm);
           obj_barrier(g, ll, lm);

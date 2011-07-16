@@ -749,7 +749,7 @@ gc_str_t * gc_new_strf(gc_global_t * g, const char * fmt, ...)
   return gc_new_str(g, strlen(tmp), tmp);
 }
 
-void * gc_new_obj(gc_global_t * g, gc_vtable_t * vtable, uint32_t size)
+void * gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size)
 {
   assert(vtable);
   //assert(vtable->flag);

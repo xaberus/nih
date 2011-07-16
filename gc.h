@@ -24,7 +24,7 @@ typedef struct gc_hdr {
   struct gc_hdr * next;
 } gc_hdr_t;
 
-#define GC_HDR(_o) ((gc_hdr_t *) (_o))
+#define GC_HDR(_o)  ((gc_hdr_t *) (_o))
 #define GC_HDRP(_p) ((gc_hdr_t **) (_p))
 
 typedef struct gc_obj {
@@ -33,9 +33,9 @@ typedef struct gc_obj {
 } gc_obj_t;
 
 typedef struct gc_str {
-  gc_hdr_t        gch;
-  uint32_t        hash;
-  char            data[];
+  gc_hdr_t gch;
+  uint32_t hash;
+  char     data[];
 } gc_str_t;
 
 #define gc_str_len(s) ((uint32_t) (((GC_HDR(s)->flag & 0xffffff00) >> 8) - sizeof(gc_str_t) - 1))
@@ -115,40 +115,22 @@ typedef struct {
 } gc_global_t;
 
 struct gc_vtable {
-  uint32_t      flag;
-  const char  * name;
+  uint32_t     flag;
+  const char * name;
 
-  size_t     (* gc_init)(gc_global_t * g, gc_hdr_t * o);
-  size_t     (* gc_clear)(gc_global_t * g, gc_hdr_t * o);
+  /* gc_hdr_t */
+  size_t       (* gc_init)(gc_global_t * g, gc_hdr_t * o);
+  size_t       (* gc_clear)(gc_global_t * g, gc_hdr_t * o);
 
-  size_t     (* gc_propagate)(gc_global_t * g, gc_obj_t * o);
-  size_t     (* gc_finalize)(gc_global_t * g, gc_obj_t * o);
-
-  signed     (* fld_cmp)(gc_global_t * g, gc_hdr_t * o);
-  unsigned   (* fld_le)(gc_global_t * g, gc_hdr_t * o);
-  unsigned   (* fld_eq)(gc_global_t * g, gc_hdr_t * o);
-
-  gc_hdr_t * (* fld_keyget)(gc_global_t * g, gc_obj_t * o, gc_hdr_t * key);
-  gc_hdr_t * (* fld_keyset)(gc_global_t * g, gc_obj_t * o, gc_hdr_t * key, gc_hdr_t * value);
-  gc_hdr_t * (* fld_idxget)(gc_global_t * g, gc_obj_t * o, uint32_t idx);
-  gc_hdr_t * (* fld_idxset)(gc_global_t * g, gc_obj_t * o, uint32_t idx, gc_hdr_t * value);
-
-  gc_hdr_t * (* fld_cat)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
-  uint32_t   (* fld_len)(gc_global_t * g, gc_hdr_t * o);
-  gc_hdr_t * (* fld_add)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
-  gc_hdr_t * (* fld_sub)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
-  gc_hdr_t * (* fld_div)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
-  gc_hdr_t * (* fld_mod)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
-  gc_hdr_t * (* fld_mul)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
-  gc_hdr_t * (* fld_pow)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
-  gc_hdr_t * (* fld_unm)(gc_global_t * g, gc_hdr_t * o, gc_hdr_t * d);
+  /* gc_obj_t */
+  size_t       (* gc_propagate)(gc_global_t * g, gc_obj_t * o);
+  size_t       (* gc_finalize)(gc_global_t * g, gc_obj_t * o);
 };
 
 enum gc_vt_flags {
   GC_VT_FLAG_HDR = 0x01,
   GC_VT_FLAG_OBJ = 0x02 | GC_VT_FLAG_HDR,
   GC_VT_FLAG_STR = 0x04 | GC_VT_FLAG_HDR,
-  GC_VT_FLAG_FLD = 0x08 | GC_VT_FLAG_OBJ,
 };
 
 void       gc_init(gc_global_t * g, mem_allocator_t alloc);
@@ -158,7 +140,7 @@ size_t     gc_collect(gc_global_t * g, bool full);
 
 gc_str_t * gc_new_str(gc_global_t * g, uint32_t len, const char str[len]);
 gc_str_t * gc_new_strf(gc_global_t * g, const char * fmt, ...);
-void *     gc_new_obj(gc_global_t * g, gc_vtable_t * vtable, uint32_t size);
+void *     gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size);
 
 void       gc_add_root(gc_global_t * g, gc_obj_t * o);
 void       gc_del_root(gc_global_t * g, gc_obj_t * o);
