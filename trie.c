@@ -378,7 +378,6 @@ err_t trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len])
 
 struct tnode_tuple trie_find_i(trie_t * trie, uint16_t len, const uint8_t word[len])
 {
-  int                out = 0;
   uint32_t           i = 0;
   uint8_t            c;
   uint8_t            nlen;
@@ -387,7 +386,7 @@ struct tnode_tuple trie_find_i(trie_t * trie, uint16_t len, const uint8_t word[l
 
   if (trie->root) {
     tuple = tnode_iter_get(&iter, trie->root);
-    for (i = 0, c = word[i], out = 1; tuple.index && i < len; c = word[i]) {
+    for (i = 0, c = word[i]; tuple.index && i < len; c = word[i]) {
       if (c == tuple.node->c) {
         i++;
         nlen = tuple.node->strlen;
