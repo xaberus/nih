@@ -26,6 +26,7 @@ typedef struct gc_hdr {
 
 #define GC_HDR(_o)  ((gc_hdr_t *) (_o))
 #define GC_HDRP(_p) ((gc_hdr_t **) (_p))
+#define GC_SIZE_MAX ((1 << 24) - 1)
 
 typedef struct gc_obj {
   gc_hdr_t        gch;
@@ -127,6 +128,8 @@ struct gc_vtable {
   size_t       (* gc_finalize)(gc_global_t * g, gc_obj_t * o);
 };
 
+extern gc_vtable_t gc_blob_vtable;
+
 enum gc_vt_flags {
   GC_VT_FLAG_HDR = 0x01,
   GC_VT_FLAG_OBJ = 0x02 | GC_VT_FLAG_HDR,
@@ -203,5 +206,7 @@ void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
     } \
   } while (0)
 
+
+#define gc_error(g, ...) ((void) g, assert(0))
 
 #endif /* _GC_H */

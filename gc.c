@@ -60,6 +60,13 @@ void gc_mem_free(gc_global_t * g, size_t size, void * p)
   g->alloc.realloc(g->alloc.ud, p, size, 0);
 }
 
+gc_vtable_t gc_blob_vtable = {
+  .name = "<blob>",
+  .flag = GC_VT_FLAG_HDR,
+  .gc_init = NULL,
+  .gc_clear = NULL,
+};
+
 void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p)
 {
   assert((osz == 0) == (p == NULL));
@@ -755,7 +762,7 @@ void * gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size)
   //assert(vtable->flag);
   assert(size > sizeof(gc_hdr_t));
 
-  gc_hdr_t * o = gc_mem_new(g, size); memset(o, 0, size);
+  gc_hdr_t * o = gc_mem_new(g, size);
 
   GC_HDR(o)->vtable = vtable;
 
