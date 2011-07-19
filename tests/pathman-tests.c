@@ -83,7 +83,7 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
 BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
 {
   struct pathman_test * test = object;
-  struct plookup        dlup;
+  struct plookup        dlup = {ERR_SUCCESS, {{NULL, 0}}, NULL, NULL};
   struct plookup        flup;
 
   for (unsigned k = 0; k < test->num; k++) {
