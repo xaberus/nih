@@ -4,6 +4,12 @@
 
 #include <stdarg.h>
 
+typedef __typeof__(((gc_global_t *) NULL)->strings) gc_strings_t;
+typedef __typeof__(((gc_global_t *) NULL)->strings.buckets) gc_buckets_t;
+typedef __typeof__(*((gc_global_t *) NULL)->strings.buckets.data) gc_bucket_t;
+typedef __typeof__(((gc_global_t *) NULL)->objects) gc_ostore_t;
+typedef __typeof__(((gc_global_t *) NULL)->headers) gc_hstore_t;
+
 #if 0
 inline static
 void __attribute__((format(printf, 2, 3))) log(unsigned N, const char * fmt, ...)
@@ -759,7 +765,7 @@ gc_str_t * gc_new_strf(gc_global_t * g, const char * fmt, ...)
 void * gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size)
 {
   assert(vtable);
-  //assert(vtable->flag);
+  assert(vtable->flag);
   assert(size > sizeof(gc_hdr_t));
 
   gc_hdr_t * o = gc_mem_new(g, size);

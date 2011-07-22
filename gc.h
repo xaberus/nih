@@ -27,6 +27,7 @@ typedef struct gc_hdr {
 #define GC_HDR(_o)  ((gc_hdr_t *) (_o))
 #define GC_HDRP(_p) ((gc_hdr_t **) (_p))
 #define GC_SIZE_MAX ((1 << 24) - 1)
+#define gc_hdr_size(s) ((uint32_t) (((GC_HDR(s)->flag & 0xffffff00) >> 8) - sizeof(gc_hdr_t)))
 
 typedef struct gc_obj {
   gc_hdr_t        gch;
@@ -51,63 +52,42 @@ typedef enum gc_state {
   GC_STATE_FINALIZE,
 } gc_state_t;
 
-
 typedef struct {
-  gc_str_t  * head;
-  gc_str_t ** sweep;
-} gc_bucket_t;
-
-typedef struct {
-  gc_bucket_t * data;
-  size_t        dsize;
-  size_t        count;
-  gc_bucket_t * proc;
-  size_t        psize;
-} gc_buckets_t;
-
-typedef struct {
-  gc_buckets_t buckets;
-  uint32_t     mask;
-  size_t       count;
-  uint32_t     sweep;
-  uint32_t     run;
-} gc_strings_t;
-
-typedef struct {
-  gc_obj_t  * head;
-  gc_obj_t ** sweep;
-} gc_ostore_t;
-
-typedef struct {
-  gc_hdr_t  * head;
-  gc_hdr_t ** sweep;
-} gc_hstore_t;
-
-typedef struct {
-  gc_obj_t * head;
-} gc_collect_t;
-
-typedef struct {
-  gc_obj_t * loop;
-} gc_circle_t;
-
-typedef struct {
-  gc_obj_t ** data;
-  size_t      dsize;
-  size_t      count;
-  gc_obj_t ** proc;
-  size_t      psize;
-} gc_roots_t;
-
-
-typedef struct {
-  gc_strings_t    strings;
-  gc_ostore_t     objects;
-  gc_hstore_t     headers;
-  gc_collect_t    grey0;
-  gc_collect_t    grey1;
-  gc_circle_t     final;
-  gc_roots_t      roots;
+  struct {
+    struct {
+      struct {
+        gc_str_t  * head;
+        gc_str_t ** sweep;
+      }    * data, * proc;
+      size_t dsize, psize;
+      size_t count;
+    }        buckets;
+    uint32_t mask;
+    size_t   count;
+    uint32_t sweep;
+    uint32_t run;
+  } strings;
+  struct {
+    gc_obj_t  * head;
+    gc_obj_t ** sweep;
+  } objects;
+  struct {
+    gc_hdr_t  * head;
+    gc_hdr_t ** sweep;
+  } headers;
+  struct {
+    gc_obj_t * head;
+  } grey0, grey1;
+  struct {
+    gc_obj_t * loop;
+  } final;
+  struct {
+    gc_obj_t ** data;
+    size_t      dsize;
+    size_t      count;
+    gc_obj_t ** proc;
+    size_t      psize;
+  } roots;
   gc_state_t      state;
   uint32_t        white;
   size_t          total;
@@ -118,11 +98,9 @@ typedef struct {
 struct gc_vtable {
   uint32_t     flag;
   const char * name;
-
   /* gc_hdr_t */
   size_t       (* gc_init)(gc_global_t * g, gc_hdr_t * o);
   size_t       (* gc_clear)(gc_global_t * g, gc_hdr_t * o);
-
   /* gc_obj_t */
   size_t       (* gc_propagate)(gc_global_t * g, gc_obj_t * o);
   size_t       (* gc_finalize)(gc_global_t * g, gc_obj_t * o);
