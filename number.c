@@ -2,13 +2,10 @@
 
 #define ALIGN32(_size) (((_size) + 31L) & ~31L)
 
-field_vtable_t number_vtable = {
-  .gcv = {
-    .name = "number_t",
-    .flag = FIELD_HDR_VT_FLAG,
-    .gc_init = NULL,
-    .gc_clear = NULL,
-  },
+gc_vtable_t number_vtable = {
+  .flag = GC_VT_FLAG_HDR,
+  .gc_init = NULL,
+  .gc_clear = NULL,
 };
 
 number_t * number_new(gc_global_t * g, uint64_t bits)
@@ -20,7 +17,7 @@ number_t * number_new(gc_global_t * g, uint64_t bits)
     return NULL;
   }
 
-  number_t * n = gc_new(g, &number_vtable.gcv, sizeof(number_t) + 4 * b);
+  number_t * n = gc_new(g, &number_vtable, sizeof(number_t) + 4 * b);
 
   n->s = 0;
 
@@ -138,15 +135,8 @@ uint32_t intern_add_one(uint32_t u, uint32_t rd[u], uint32_t ad[u], uint32_t b)
 inline static
 void intern_set_dec(number_t * n,  int sign, size_t len, const char str[len])
 {
-/*
-#define MP_BASES_CHARS_PER_LIMB_10      9
-#define MP_BASES_BIG_BASE_10            CNST_LIMB(0x3b9aca00)
-#define MP_BASES_BIG_BASE_INVERTED_10   CNST_LIMB(0x12e0be82)
-#define MP_BASES_NORMALIZATION_STEPS_10 2
-  10  { 9, 0.3010299956639811, CNST_LIMB(0x3b9aca00), CNST_LIMB(0x12e0be82) },
-*/
   uint32_t s;
-  uint32_t b = 0x3b9aca00;
+  uint32_t b;
   long j;
   const char * p, * pe;
   char c;
@@ -681,7 +671,6 @@ number_t * number_sub(gc_global_t * g, number_t * a, number_t * b)
   n->s = rs;
   return n;
 }
-
 
 #ifdef TEST
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢*/
