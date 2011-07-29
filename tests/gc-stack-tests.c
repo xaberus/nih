@@ -117,7 +117,6 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 
   st = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t));
   bt_assert_ptr_not_equal(st, NULL);
-
   gc_add_root(g, &st->gco);
 
   char buf[20] = {0};
@@ -165,15 +164,15 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 
   bt_log("[GC] total = %zu\n", g->total);
 
-  gc_stack_set(g, st, 20);
-  gc_stack_set(g, st, 4);
-  gc_stack_set(g, st, 20);
+  gc_stack_set(g, st, 20); bt_assert((st->de - st->d) >= 20);
+  gc_stack_set(g, st, 4); bt_assert((st->dp - st->d) == 4);
+  gc_stack_set(g, st, 20); bt_assert((st->de - st->d) >= 20);
 
   testobj_t * t;
 
-  for (unsigned k = 0; k < st->count; k++) {
-    if ((t = TESTOBJ(st->data[k]))) {
-      bt_log("%% %+4d testobj:%p\n", k, (void *) t);
+  for (gc_hdr_t ** c = st->d; c && c < st->dp; c++) {
+    if ((t = TESTOBJ(*c))) {
+      bt_log("%% %+4ld testobj:%p\n", (c-st->d), (void *) t);
       for (unsigned l = 0; l < t->scount; l++) {
         gc_str_t * s = t->strv[l];
         bt_log("%%%% %+4d str:%p = '%.*s'\n", l, (void *) s, gc_str_len(s), s->data);
@@ -183,16 +182,61 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
     }
   }
 
-  gc_stack_set(g, st, 100);
-  gc_stack_set(g, st, 4);
+  gc_stack_set(g, st, 100); bt_assert((st->de - st->d) >= 100);
+  gc_stack_set(g, st, 4); bt_assert((st->dp - st->d) == 4);
   gc_collect(g, 0);
   gc_collect(g, 0);
   gc_collect(g, 1);
 
   bt_log("[GC] total = %zu\n", g->total);
 
-  gc_del_root(g, &st->gco);
+  gc_stack_set(g, st, 0); bt_assert_ptr_equal(gc_stack_top(st), NULL);
+  bt_assert_int_equal(gc_stack_size(st), 0);
+  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t)));
+  bt_assert_int_equal(gc_stack_size(st), 1);
+  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t)));
+  bt_assert_int_equal(gc_stack_size(st), 2);
+  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t)));
+  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t)));
+  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t)));
+  bt_assert_int_equal(gc_stack_size(st), 5);
+  gc_stack_pop(st);
+  bt_assert_int_equal(gc_stack_size(st), 4);
+  gc_stack_pop(st);
+  gc_stack_pop(st);
+  gc_stack_pop(st);
+  gc_stack_pop(st);
+  bt_assert_int_equal(gc_stack_size(st), 0);
+  gc_stack_pop(st);
+  gc_stack_pop(st);
+  gc_stack_pop(st);
+  gc_stack_pop(st);
+  bt_assert_int_equal(gc_stack_size(st), 0);
 
+  testobj_t * tst[6] = {
+    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
+    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
+    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
+    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
+    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
+    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
+  };
+
+  gc_stack_push(g, st, tst[0]);
+  gc_stack_push(g, st, tst[1]);
+  gc_stack_push(g, st, tst[2]);
+  gc_stack_push(g, st, tst[3]);
+  gc_stack_push(g, st, tst[4]);
+  gc_stack_push(g, st, tst[5]);
+
+  bt_assert_ptr_equal(gc_stack_pop(st), GC_HDR(tst[5]));
+  bt_assert_ptr_equal(gc_stack_pop(st), GC_HDR(tst[4]));
+  bt_assert_ptr_equal(gc_stack_pop(st), GC_HDR(tst[3]));
+  bt_assert_ptr_equal(gc_stack_pop(st), GC_HDR(tst[2]));
+  bt_assert_ptr_equal(gc_stack_pop(st), GC_HDR(tst[1]));
+  bt_assert_ptr_equal(gc_stack_pop(st), GC_HDR(tst[0]));
+
+  gc_del_root(g, &st->gco);
   gc_collect(g, 1);
 
   bt_log("[GC] total = %zu\n", g->total);
