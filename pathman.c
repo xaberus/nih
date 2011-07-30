@@ -10,7 +10,8 @@ void pathman_clear(pathman_t * pman)
     {
       struct pdir_bank * p = pman->dirs, * n = p ? p->next : NULL;
       for (; p; p = n, n = p ? p->next : NULL) {
-        mem_free(pman->a, p);
+        uint32_t size = p->end - p->start;
+        gc_mem_free(pman->trie->g, PDIR_BANK_SIZEOF(size), p);
       }
       pman->dirs = NULL;
     }
@@ -18,7 +19,8 @@ void pathman_clear(pathman_t * pman)
     {
       struct pfile_bank * p = pman->files, * n = p ? p->next : NULL;
       for (; p; p = n, n = p ? p->next : NULL) {
-        mem_free(pman->a, p);
+        uint32_t size = p->end - p->start;
+        gc_mem_free(pman->trie->g, PFILE_BANK_SIZEOF(size), p);
       }
       pman->files = NULL;
     }
@@ -27,31 +29,15 @@ void pathman_clear(pathman_t * pman)
   }
 }
 
-pathman_t * pathman_init(pathman_t * pman, const mem_allocator_t * a)
+pathman_t * pathman_init(gc_global_t * g, pathman_t * pman)
 {
-  if (!pman || !a)
-    return NULL;
-
-  pman->dirs = pdir_bank_alloc(0, PDIR_BANK_SIZE, a);
-  if (!pman->dirs)
-    return NULL;
+  pman->dirs = pdir_bank_alloc(g, 0, PDIR_BANK_SIZE);
   pman->dfreelist = 0;
   pman->dabank = pman->dirs;
-
-  pman->files = pfile_bank_alloc(0, PFILE_BANK_SIZE, a);
-  if (!pman->files) {
-    mem_free(a, pman->dirs);
-    return NULL;
-  }
+  pman->files = pfile_bank_alloc(g, 0, PFILE_BANK_SIZE);
   pman->ffreelist = 0;
   pman->fabank = pman->files;
-
-  if (!trie_init(pman->trie, a, 2048)) {
-    mem_free(a, pman->dirs);
-    mem_free(a, pman->files);
-    return NULL;
-  }
-  pman->a = a;
+  trie_init(g, pman->trie, 2048);
 
   {
     struct pdir_tuple root;
@@ -109,18 +95,13 @@ struct pdir_tuple pathman_mkdir(pathman_t * pman)
       uint32_t start = pman->dabank->end;
       uint32_t end = start + PDIR_BANK_SIZE;
 
-      bank = pdir_bank_alloc(start, end, pman->a);
-      if (!bank)
-        return tuple;
+      bank = pdir_bank_alloc(pman->trie->g, start, end);
+      assert(bank);
 
       /* link bank in */
 
       tuple = pdir_bank_mknode(bank);
-
-      if (!tuple.index) {
-        mem_free(pman->a, bank);
-        return tuple;
-      }
+      assert(tuple.index);
 
       /* link bank in */
       if (pman->dirs)
@@ -164,18 +145,13 @@ struct pfile_tuple pathman_mkfile(pathman_t * pman)
       uint32_t start = pman->dabank->end;
       uint32_t end = start + PFILE_BANK_SIZE;
 
-      bank = pfile_bank_alloc(start, end, pman->a);
-      if (!bank)
-        return tuple;
+      bank = pfile_bank_alloc(pman->trie->g, start, end);
+      assert(bank);
 
       /* link bank in */
 
       tuple = pfile_bank_mknode(bank);
-
-      if (!tuple.index) {
-        mem_free(pman->a, bank);
-        return tuple;
-      }
+      assert(tuple.index);
 
       /* link bank in */
       if (pman->files)

@@ -75,12 +75,12 @@ struct plookup plookup(err_t err, struct pstate state, struct pdir * dir, struct
 }
 
 inline static
-struct pdir_bank * pdir_bank_alloc(uint32_t start, uint32_t end, const mem_allocator_t * a)
+struct pdir_bank * pdir_bank_alloc(gc_global_t * g, uint32_t start, uint32_t end)
 {
   uint32_t            size = (end - start);
   struct pdir_bank * bank;
 
-  bank = mem_alloc(a, PDIR_BANK_SIZEOF(size));
+  bank = gc_mem_new(g, PDIR_BANK_SIZEOF(size));
 
   if (bank) {
     memset(bank, 0, PDIR_BANK_SIZEOF(size));
@@ -93,12 +93,12 @@ struct pdir_bank * pdir_bank_alloc(uint32_t start, uint32_t end, const mem_alloc
 }
 
 inline static
-struct pfile_bank * pfile_bank_alloc(uint32_t start, uint32_t end, const mem_allocator_t * a)
+struct pfile_bank * pfile_bank_alloc(gc_global_t * g, uint32_t start, uint32_t end)
 {
   uint32_t            size = (end - start);
   struct pfile_bank * bank;
 
-  bank = mem_alloc(a, PFILE_BANK_SIZEOF(size));
+  bank = gc_mem_new(g, PFILE_BANK_SIZEOF(size));
 
   if (bank) {
     memset(bank, 0, PFILE_BANK_SIZEOF(size));

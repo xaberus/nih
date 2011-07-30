@@ -1,4 +1,6 @@
 #include "trie.h"
+#include "trie-private.h"
+#include "tests/trie-tests.c"
 
 #include <string.h>
 #include <stdlib.h>
@@ -9,22 +11,20 @@
 
 #include <time.h>
 
-#include "trie-private.h"
-
-trie_t * trie_init(trie_t * trie, const mem_allocator_t * a, uint32_t basize)
+trie_t * trie_init(gc_global_t * g, trie_t * trie, uint32_t basize)
 {
-  if (!trie || !a)
+  if (!trie)
     return NULL;
 
   memset(trie, 0, sizeof(trie_t));
 
-  trie->nodes = tnode_bank_alloc(0, basize, a);
+  trie->nodes = tnode_bank_alloc(g, 0, basize);
   if (!trie->nodes)
     return NULL;
 
   trie->basize = basize;
   trie->abank = trie->nodes;
-  trie->a = a;
+  trie->g = g;
 
   return trie;
 }
@@ -35,7 +35,8 @@ void trie_clear(trie_t * trie)
     return;
 
   tnode_bank_safe_foreach(bank, trie->nodes) {
-    mem_free(trie->a, bank);
+    uint32_t size = bank->end - bank->start;
+    gc_mem_free(trie->g, sizeof(tbank_t) + sizeof(tnode_t) * size, bank);
   }
 
   memset(trie, 0, sizeof(trie_t));
@@ -43,19 +44,19 @@ void trie_clear(trie_t * trie)
 
 struct tnode_tuple trie_mknode(trie_t * trie)
 {
-  struct tnode_bank * bank;
+  tbank_t * bank;
 
   if (trie->freelist) { /* reuse nodes from freelist */
     struct tnode_iter   iter = tnode_iter(trie->nodes, INDEX2IDX(trie->freelist));
-    struct tnode_bank * bank;
-    struct tnode      * node;
+    tbank_t * bank;
+    tnode_t      * node;
 
     if ((bank = tnode_iter_get_bank(&iter))) {
       /* get */
       node = &bank->nodes[iter.idx - bank->start];
       if (!node->isused) {
         trie->freelist = node->next;
-        memset(node, 0, sizeof(struct tnode));
+        memset(node, 0, sizeof(tnode_t));
         return tnode_tuple(node, IDX2INDEX(iter.idx));
       }
     }
@@ -68,18 +69,13 @@ struct tnode_tuple trie_mknode(trie_t * trie)
       uint32_t start = trie->abank->end;
       uint32_t end = start + trie->basize;
 
-      bank = tnode_bank_alloc(start, end, trie->a);
-      if (!bank)
-        return tuple;
+      bank = tnode_bank_alloc(trie->g, start, end);
+      assert(bank);
 
       /* link bank in */
 
       tuple = tnode_bank_mknode(bank);
-
-      if (!tuple.index) {
-        mem_free(trie->a, bank);
-        return tuple;
-      }
+      assert(tuple.index);
 
       /* link bank in */
       if (trie->nodes)
@@ -458,6 +454,7 @@ void tuple_print(struct tnode_tuple tu)
 trie_iter_t * trie_iter_init(trie_t * trie, trie_iter_t * iter)
 {
   if (trie && iter) {
+    iter->g = trie->g;
     iter->len = iter->alen = 0;
     iter->word = NULL;
     iter->spos = 0;
@@ -488,11 +485,9 @@ int trie_iter_next(trie_iter_t * iter)
           oslen = iter->aslen;
           iter->aslen = ALIGN16(iter->slen);
 
-          tmp = mem_realloc(iter->trie->a, iter->stride,
+          tmp = gc_mem_realloc(iter->g,
               sizeof(struct tnode_tuple) * oslen,
-              sizeof(struct tnode_tuple) * iter->aslen);
-          if (!tmp)
-            return -1;
+              sizeof(struct tnode_tuple) * iter->aslen, iter->stride);
           iter->stride = tmp;
         }
 
@@ -511,9 +506,7 @@ int trie_iter_next(trie_iter_t * iter)
             uint8_t * tmp;
 
             iter->alen = ALIGN16(iter->len);
-            tmp = mem_realloc(iter->trie->a, iter->word, olen, iter->alen);
-            if (!tmp)
-              return -1;
+            tmp = gc_mem_realloc(iter->g, olen, iter->alen, iter->word);
             iter->word = tmp;
           }
           for (int32_t k = 0, j = 0; k < iter->slen; k++) {
@@ -562,10 +555,9 @@ int trie_iter_next(trie_iter_t * iter)
 void trie_iter_clear(trie_iter_t * iter)
 {
   if (iter) {
-    mem_free(iter->trie->a, iter->stride);
-    mem_free(iter->trie->a, iter->word);
+    gc_mem_free(iter->g, iter->aslen, iter->stride);
+    gc_mem_free(iter->g, iter->alen, iter->word);
     memset(iter, 0, sizeof(iter));
   }
 }
 
-#include "tests/trie-tests.c"

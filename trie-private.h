@@ -16,7 +16,7 @@ struct tnode_tuple trie_mknode(trie_t * trie);
 void               trie_remnode(trie_t * trie, uint32_t index);
 
 inline static
-struct tnode_tuple tnode_tuple(struct tnode * node, uint32_t index)
+struct tnode_tuple tnode_tuple(tnode_t * node, uint32_t index)
 {
   struct tnode_tuple ret = {
     .node = node,
@@ -27,7 +27,7 @@ struct tnode_tuple tnode_tuple(struct tnode * node, uint32_t index)
 }
 
 inline static
-struct tnode_iter  tnode_iter(struct tnode_bank * bank, uint32_t idx)
+struct tnode_iter  tnode_iter(tbank_t * bank, uint32_t idx)
 {
   struct tnode_iter ret = {
     .bank = bank,
@@ -38,18 +38,18 @@ struct tnode_iter  tnode_iter(struct tnode_bank * bank, uint32_t idx)
 }
 
 #define tnode_bank_safe_foreach(__iter, __init) \
-  linked_list_safe_foreach(struct tnode_bank, __iter, __init)
+  linked_list_safe_foreach(tbank_t, __iter, __init)
 
 inline static
-struct tnode_bank * tnode_bank_alloc(uint32_t start, uint32_t end, const mem_allocator_t * a)
+tbank_t * tnode_bank_alloc(gc_global_t * g, uint32_t start, uint32_t end)
 {
   uint32_t            size = (end - start);
-  struct tnode_bank * bank;
+  tbank_t * bank;
 
-  bank = mem_alloc(a, sizeof(struct tnode_bank) + sizeof(struct tnode) * size);
+  bank = gc_mem_new(g, sizeof(tbank_t) + sizeof(tnode_t) * size);
 
   if (bank) {
-    memset(bank, 0, sizeof(struct tnode_bank) + sizeof(struct tnode) * size);
+    memset(bank, 0, sizeof(tbank_t) + sizeof(tnode_t) * size);
 
     bank->start = start;
     bank->end = end;
@@ -59,7 +59,7 @@ struct tnode_bank * tnode_bank_alloc(uint32_t start, uint32_t end, const mem_all
 }
 
 inline static
-struct tnode_tuple tnode_bank_mknode(struct tnode_bank * bank)
+struct tnode_tuple tnode_bank_mknode(tbank_t * bank)
 {
   if (!bank)
     return tnode_tuple(NULL, 0);
@@ -67,9 +67,9 @@ struct tnode_tuple tnode_bank_mknode(struct tnode_bank * bank)
   uint32_t next = bank->start + bank->length;
 
   if (next < bank->end) {
-    struct tnode * node = &bank->nodes[bank->length];
+    tnode_t * node = &bank->nodes[bank->length];
 
-    memset(node, 0, sizeof(struct tnode));
+    memset(node, 0, sizeof(tnode_t));
 
     bank->length++;
 
@@ -80,9 +80,9 @@ struct tnode_tuple tnode_bank_mknode(struct tnode_bank * bank)
 }
 
 inline static
-struct tnode_bank * tnode_iter_get_bank(struct tnode_iter * iter)
+tbank_t * tnode_iter_get_bank(struct tnode_iter * iter)
 {
-  struct tnode_bank * bank = iter->bank;
+  tbank_t * bank = iter->bank;
   uint32_t            idx = iter->idx;
 
   /* rewind */
@@ -103,8 +103,8 @@ struct tnode_bank * tnode_iter_get_bank(struct tnode_iter * iter)
 inline static
 struct tnode_tuple tnode_iter_get(struct tnode_iter * iter, uint32_t index)
 {
-  struct tnode_bank * bank;
-  struct tnode      * node;
+  tbank_t * bank;
+  tnode_t      * node;
 
   if (!index || !iter)
     return tnode_tuple(NULL, 0);

@@ -19,11 +19,11 @@
 BT_SUITE_DEF(pathman, "pathman tests");
 
 struct pathman_test {
-  pathman_t       pman[1];
-  mem_allocator_t a[1];
-  size_t          num;
-  char          * flag;
-  char         ** strv;
+  pathman_t   pman[1];
+  gc_global_t g[1];
+  size_t      num;
+  char      * flag;
+  char     ** strv;
 };
 
 BT_SUITE_SETUP_DEF(pathman, objectref)
@@ -36,6 +36,12 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
   bt_assert_int_equal(sizeof(union paccess), sizeof(uint64_t));
 
   bt_assert_ptr_not_equal(test, NULL);
+
+  mem_allocator_t a;
+  a.realloc = plain_realloc;
+  a.ud = NULL;
+
+  gc_init(test->g, a);
 
   n = 0;
   fp = fopen("tests/pathman-tests.txt", "r");
@@ -70,10 +76,7 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
 
   fclose(fp);
 
-  test->a->realloc = plain_realloc;
-  test->a->ud = NULL;
-
-  bt_assert_ptr_not_equal(pathman_init(test->pman, test->a), NULL);
+  bt_assert_ptr_not_equal(pathman_init(test->g, test->pman), NULL);
 
   *objectref = test;
 
@@ -130,6 +133,8 @@ BT_SUITE_TEARDOWN_DEF(pathman, objectref)
   }
   free(test->strv);
   free(test->flag);
+
+  gc_clear(test->g);
 
   free(test);
 

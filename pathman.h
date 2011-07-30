@@ -95,12 +95,11 @@ struct pathman {
   struct pfile_bank     * files;
   struct pfile_bank     * fabank;
   uint32_t                ffreelist;
-  const mem_allocator_t * a;
 };
 
 typedef struct pathman pathman_t;
 
-pathman_t * pathman_init(pathman_t * pman, const mem_allocator_t * a);
+pathman_t * pathman_init(gc_global_t * g, pathman_t * pman);
 void        pathman_clear(pathman_t * pman);
 
 struct plookup {
