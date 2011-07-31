@@ -475,8 +475,6 @@ gc_str_t * number_gethex(gc_global_t * g, number_t * n)
     }
   }
 
-  *(p++) = '\0';
-
   return gc_new_str(g, p - buf, buf);
 }
 
