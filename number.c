@@ -12,13 +12,13 @@ number_t * number_new(gc_global_t * g, uint64_t bits)
 {
   uint64_t s = ALIGN32(bits) >> 5; /* bits / 32 */
   uint64_t b = s << 2; /* s * 4 */
+
   if (s > INT32_MAX || b > GC_SIZE_MAX) {
     gc_error(g, "number: cannot store %Qu bits", bits);
     return NULL;
   }
 
   number_t * n = gc_new(g, &number_vtable, sizeof(number_t) + 4 * b);
-
   n->s = 0;
 
   return n;
@@ -31,7 +31,7 @@ uint32_t number_size(number_t * n)
 }
 
 inline static
-void intern_set_bin(number_t * n,  int sign, size_t len, const char str[len])
+void intern_set_bin(number_t * n, int sign, size_t len, const char str[len])
 {
   const char * p;
   uint8_t      u, m;
@@ -61,7 +61,7 @@ void intern_set_bin(number_t * n,  int sign, size_t len, const char str[len])
 }
 
 inline static
-void intern_set_oct(number_t * n,  int sign, size_t len, const char str[len])
+void intern_set_oct(number_t * n, int sign, size_t len, const char str[len])
 {
   const char * p;
   uint8_t      u, m;
@@ -94,7 +94,7 @@ inline static
 uint32_t intern_mul_one(uint32_t u, uint32_t rd[u], uint32_t ad[u], uint32_t b)
 {
   uint32_t * lim = ad + u; /* must be here */
-  uint64_t r = 0;
+  uint64_t   r = 0;
 
   do {
     r = r + (uint64_t) *(ad++) * (uint64_t) b;
@@ -114,7 +114,7 @@ inline static
 uint32_t intern_add_one(uint32_t u, uint32_t rd[u], uint32_t ad[u], uint32_t b)
 {
   uint32_t * lim = ad + u; /* must be here */
-  uint64_t r;
+  uint64_t   r;
 
   r = (uint64_t) *(ad++) + (uint64_t) b; u--;
   *(rd++) = (uint32_t) r; r >>= 32;
@@ -133,16 +133,16 @@ uint32_t intern_add_one(uint32_t u, uint32_t rd[u], uint32_t ad[u], uint32_t b)
 }
 
 inline static
-void intern_set_dec(number_t * n,  int sign, size_t len, const char str[len])
+void intern_set_dec(number_t * n, int sign, size_t len, const char str[len])
 {
-  uint32_t s;
-  uint32_t b;
-  long j;
+  uint32_t     s;
+  uint32_t     b;
+  long         j;
   const char * p, * pe;
-  char c;
-  uint8_t u;
-  uint32_t * d = n->data;
-  uint32_t r, m;
+  char         c;
+  uint8_t      u;
+  uint32_t   * d = n->data;
+  uint32_t     r, m;
 
   for (s = 0, r = 0, j = 9, b = 1, p = str, pe = str + len; p < pe; p++) {
     if ('0' <= (c = *(p)) && c <= '9') {
@@ -188,7 +188,7 @@ void intern_set_dec(number_t * n,  int sign, size_t len, const char str[len])
 }
 
 inline static
-void intern_set_hex(number_t * n,  int sign, size_t len, const char str[len])
+void intern_set_hex(number_t * n, int sign, size_t len, const char str[len])
 {
   const char * p;
   uint8_t      u, m;
@@ -224,18 +224,17 @@ void intern_set_hex(number_t * n,  int sign, size_t len, const char str[len])
 number_t * number_setstrc(gc_global_t * g, number_t * n, size_t len, const char str[len])
 {
   const char * p = str, * pe = p + len, * ps;
-
-  char c;
-  int sign = 1;
-  unsigned form;
-  uint64_t digits = 0;
+  char         c;
+  int          sign = 1;
+  unsigned     form;
+  uint64_t     digits = 0;
 
   enum {
     ERROR = 0, START = 1, NUMBER0, NUMBERX, BIN, BINC, OCT, OCTC, HEX, HEXC, DEC, DECC,
   } cs = START;
 
-#define TC(_state) do {cs = _state; p++; goto loop;} while (0)
-#define TA(_state) do {cs = _state; goto loop;} while (0)
+#define TC(_state) do { cs = _state; p++; goto loop; } while (0)
+#define TA(_state) do { cs = _state; goto loop; } while (0)
 
 loop:
   if (p < pe) {
@@ -357,9 +356,9 @@ loop:
 #define PREPARE(_g, _n, _bits) \
   do { \
     if (!(_n)) { \
-      (_n) = number_new((_g), (_bits));\
+      (_n) = number_new((_g), (_bits)); \
     } else if ((number_size(n) << 5) < (_bits)) { \
-      (_n) = number_new((_g), (_bits));\
+      (_n) = number_new((_g), (_bits)); \
     } \
   } while (0)
 
@@ -417,9 +416,9 @@ uint32_t iabs(int32_t i)
 gc_str_t * number_gethex(gc_global_t * g, number_t * n)
 {
   uint32_t * d = n->data;
-  uint32_t len = 2;
-  uint32_t s = abs(n->s);
-  char   * buf, * p;
+  uint32_t   len = 2;
+  uint32_t   s = abs(n->s);
+  char     * buf, * p;
 
   if (n->s <= 0) {
     len = 3;
@@ -445,7 +444,7 @@ gc_str_t * number_gethex(gc_global_t * g, number_t * n)
 
   if (s) {
     uint32_t i = d[s - 1], m = 0;
-    uint8_t nib;
+    uint8_t  nib;
 
     if (i & 0xf0000000) {
       m = 28;
@@ -466,9 +465,9 @@ gc_str_t * number_gethex(gc_global_t * g, number_t * n)
     }
 
     for (uint32_t k = s; k > 0; k--, m = 28) {
-      i = d[k-1];
+      i = d[k - 1];
 
-      for (uint32_t j = 0, l = m/4+1; j < l; j++, m -= 4) {
+      for (uint32_t j = 0, l = m / 4 + 1; j < l; j++, m -= 4) {
         nib = (i & (0xf << m)) >> m;
         *(p++) = nib < 10 ? nib + '0' : nib - 10 + 'a';
       }
@@ -478,15 +477,83 @@ gc_str_t * number_gethex(gc_global_t * g, number_t * n)
   return gc_new_str(g, p - buf, buf);
 }
 
+static const
+uint8_t lbz_tab[128] = {
+  1, 2, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+  7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8
+};
+
+
+/* lbz = leading bit zeros  */
+uint32_t intern_lbz(uint32_t msl)
+{
+
+  uint32_t a = msl < (0x10000)
+               ? (msl < (0x100) ? 1 : 8 + 1)
+               : (msl < (0x1000000) ? 16 + 1 : 24 + 1);
+
+  return 32 + 1 - a - lbz_tab[msl >> a];
+}
+
+gc_str_t * number_getdec(gc_global_t * g, number_t * n)
+{
+  uint32_t s = abs(n->s);
+
+  if (s == 0) {
+    return gc_new_str(g, 1, "0");
+  }
+
+  uint64_t bits = (uint64_t) s * 32 - intern_lbz(n->data[s - 1]);
+  uint64_t sz = (uint64_t) (bits * 0.3010299956639811) + 1;
+
+  if (n->s < 0) {
+    sz++;
+  }
+
+  uint32_t * tn = alloc_buffer((s) * sizeof(uint32_t));
+  memcpy(tn, n->data, s * sizeof(uint32_t));
+
+  char * buf = alloc_buffer(sz + 1), * p = buf + sz;
+
+  uint64_t r;
+
+  while (s > 1) {
+    uint32_t * d = tn + s - 1;
+    r = 0;
+    do {
+      r = (r << 32) | *d;
+      *(d--) = r / 1000000000;
+      r = r % 1000000000;
+    } while (d >= tn);
+    s -= tn[s - 1] == 0;
+    for (unsigned k = 0; k < 9; k++) {
+      *(--p) = (r % 10) + '0';
+      r /= 10;
+    }
+  }
+
+  r = tn[0];
+  while (r != 0) {
+    *(--p) = (r % 10) + '0';
+    r /= 10;
+  }
+
+  if (n->s < 0) {
+    *(--p) = '-';
+  }
+
+  return gc_new_str(g, sz - (p - buf), p);
+}
+
 inline static
 uint32_t max(uint32_t a, uint32_t b)
 {
   return a > b ? b : a;
 }
 
-#define TYPEOF(_a) __typeof__(_a)
-
-#define swap(_a, _b) do { TYPEOF(_a) _t = (_a); _a = (_b); _b = _t; } while (0)
+#define swap(_a, _b) do { __typeof__(_a) _t = (_a); _a = (_b); _b = _t; } while (0)
 
 inline static
 uint32_t intern_size(uint32_t s, uint32_t d[s])
@@ -617,7 +684,7 @@ number_t * number_add(gc_global_t * g, number_t * a, number_t * b)
     }
   } else {
     uint32_t c = intern_add_dl(au, rd, ad, bu, bd); rd[au] = c;
-    rs = (t = au +c, as < 0) ? -t : t;
+    rs = (t = au + c, as < 0) ? -t : t;
   }
   n->s = rs;
   return n;
@@ -664,7 +731,7 @@ number_t * number_sub(gc_global_t * g, number_t * a, number_t * b)
     }
   } else {
     uint32_t c = intern_add_dl(au, rd, ad, bu, bd); rd[au] = c;
-    rs = (t = au +c, as < 0) ? -t : t;
+    rs = (t = au + c, as < 0) ? -t : t;
   }
   n->s = rs;
   return n;
@@ -680,22 +747,22 @@ number_t * number_sub(gc_global_t * g, number_t * a, number_t * b)
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢╰──╯▢▢▢▢▢▢╰────────╯▢▢▢╰────────╯▢▢▢▢▢▢╰──╯▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢*/
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢*/
 
-#include <bt.h>
-#include <stdio.h>
-#include <string.h>
-
-#include <stdlib.h>
+# include <bt.h>
+# include <stdio.h>
+# include <string.h>
+# include <stdlib.h>
 
 BT_SUITE_DEF(number, "number (big int) tests");
 
 BT_SUITE_SETUP_DEF(number, objectref)
 {
-  gc_global_t * g = malloc(sizeof(gc_global_t));
-  bt_assert_ptr_not_equal(g, NULL);
+  gc_global_t   * g = malloc(sizeof(gc_global_t));
+  mem_allocator_t a = {
+    .realloc = plain_realloc,
+    .ud = NULL
+  };
 
-  mem_allocator_t a;
-  a.realloc = plain_realloc;
-  a.ud = NULL;
+  bt_assert_ptr_not_equal(g, NULL);
 
   gc_init(g, a);
 
@@ -707,6 +774,7 @@ BT_SUITE_SETUP_DEF(number, objectref)
 BT_SUITE_TEARDOWN_DEF(number, objectref)
 {
   gc_global_t * g = *objectref;
+
   gc_clear(g);
   free(g);
   return BT_RESULT_OK;
@@ -720,7 +788,7 @@ BT_TEST_DEF(number, plain, object, "simple tests")
     number_t * n;
     gc_str_t * s;
 
-#define testnum(_A, _B) \
+# define testnum(_A, _B) \
   do { \
     n = number_setstrc(g, NULL, strlen(_A), (_A)); \
     bt_assert_ptr_not_equal(n, NULL); \
@@ -728,7 +796,7 @@ BT_TEST_DEF(number, plain, object, "simple tests")
     bt_assert_str_equal(s->data, (_B)); \
     bt_log("number_setstrc: %s OK\n", (_A)); \
     gc_collect(g, 1); \
-  } while (0)\
+  } while (0)
 
     testnum("0", "0x0");
     testnum("-0", "0x0");
@@ -748,20 +816,61 @@ BT_TEST_DEF(number, plain, object, "simple tests")
     testnum("-0xaffe", "-0xaffe");
     testnum("0x53777c3b3fa0634e9", "0x53777c3b3fa0634e9");
     testnum("0b1010011011101110111110000111011001111111010000001100011010011101001",
-      "0x53777c3b3fa0634e9");
+        "0x53777c3b3fa0634e9");
     testnum("0o12335676073177201432351", "0x53777c3b3fa0634e9");
     testnum("12345", "0x3039");
     testnum("123456789", "0x75bcd15");
     testnum("1234567890", "0x499602d2");
     testnum("9623059874062364543635689", "0x7f5c31efe7f61f29550e9");
     testnum("2428709456692296977609751958670727914210672555000931124765335",
-      "0x182ea6ddeea13922688e1d6144be59bca3181c7a09f3573e297");
+        "0x182ea6ddeea13922688e1d6144be59bca3181c7a09f3573e297");
     testnum("7140998891406386129369914639483065433377313489390143087346139",
-      "0x471a07327c22bc0d710ed9687b161fca9c987a1f9bb7f3081db");
-#undef testnum
+        "0x471a07327c22bc0d710ed9687b161fca9c987a1f9bb7f3081db");
+# undef testnum
   }
 
-#define testop(_N, _OP, _A, _B, _C) \
+  {
+    number_t * n;
+    gc_str_t * s;
+
+# define testnum(_A, _B) \
+  do { \
+    n = number_setstrc(g, NULL, strlen(_A), (_A)); \
+    bt_assert_ptr_not_equal(n, NULL); \
+    s = number_getdec(g, n); \
+    bt_assert_str_equal(s->data, (_B)); \
+    bt_log("number_setstrc: %s OK\n", (_A)); \
+    gc_collect(g, 1); \
+  } while (0)
+
+    testnum("0", "0");
+    testnum("-0", "0");
+    testnum("0x0", "0");
+    testnum("-0x0", "0");
+    testnum("0o0", "0");
+    testnum("-0o0", "0");
+    testnum("0b0", "0");
+    testnum("-0b0", "0");
+
+    testnum("0xaffe", "45054");
+    testnum("-0xaffe", "-45054");
+    testnum("0x53777c3b3fa0634e9", "96230598740623635689");
+    testnum("12345", "12345");
+    testnum("123456789", "123456789");
+    testnum("1234567890", "1234567890");
+
+    testnum("-0x7fffffffffffffff", "-9223372036854775807");
+
+    testnum("9623059874062364543635689", "9623059874062364543635689");
+    testnum("2428709456692296977609751958670727914210672555000931124765335",
+        "2428709456692296977609751958670727914210672555000931124765335");
+    testnum("7140998891406386129369914639483065433377313489390143087346139",
+        "7140998891406386129369914639483065433377313489390143087346139");
+# undef testnum
+  }
+
+
+# define testop(_N, _OP, _A, _B, _C) \
   do { \
     number_t * c, * a, * b; \
     gc_str_t * s; \
@@ -777,38 +886,35 @@ BT_TEST_DEF(number, plain, object, "simple tests")
     bt_assert_ptr_not_equal((s = number_gethex(g, c)), NULL); \
     bt_assert_str_equal(s->data, (_C)); \
     /*bt_log("number: %s = %s(%s, %s) == %s, OK\n", s->data, #_OP, (_A), (_B), (_C));*/ \
-    bt_log("%s: %s == %s, OK\n", #_OP, s->data, (_C)); \
+    bt_log("%s: %s == %s, OK\n", # _OP, s->data, (_C)); \
     gc_collect(g, 1); \
   } while (0)
 
   testop(128, number_add, "0x0", "0x0", "0x0");
   testop(128, number_add, "0x1", "0x1", "0x2");
   testop(128, number_add, "0xffffffff", "0x1", "0x100000000");
-  testop(128, number_add, 
-    "0xffffffffffffffff",
-    "0xffffffff",
-    "0x100000000fffffffe");
+  testop(128, number_add, "0xffffffffffffffff", "0xffffffff", "0x100000000fffffffe");
   testop(128, number_add,
-    "0x53777c3b3fa0634e9",
-    "0x29a2c3dae9b2aa2c3f954a72b7ef7f8",
-    "0x29a2c3dae9b2aa7fb71185b25852ce1");
+      "0x53777c3b3fa0634e9",
+      "0x29a2c3dae9b2aa2c3f954a72b7ef7f8",
+      "0x29a2c3dae9b2aa7fb71185b25852ce1");
 
   testop(128, number_sub, "0x0", "0x0", "0x0");
   testop(128, number_sub, "0x1", "0x0", "0x1");
   testop(128, number_sub, "0x0", "0x1", "-0x1");
   testop(128, number_sub, "0x10", "0x5", "0xb");
   testop(128, number_sub,
-    "0x29a2c3dae9b2aa7fb71185b25852ce1",
-    "0x53777c3b3fa0634e9",
-    "0x29a2c3dae9b2aa2c3f954a72b7ef7f8");
+      "0x29a2c3dae9b2aa7fb71185b25852ce1",
+      "0x53777c3b3fa0634e9",
+      "0x29a2c3dae9b2aa2c3f954a72b7ef7f8");
   testop(128, number_add,
-    "0x29a2c3dae9b2aa7fb71185b25852ce1",
-    "-0x53777c3b3fa0634e9",
-    "0x29a2c3dae9b2aa2c3f954a72b7ef7f8");
+      "0x29a2c3dae9b2aa7fb71185b25852ce1",
+      "-0x53777c3b3fa0634e9",
+      "0x29a2c3dae9b2aa2c3f954a72b7ef7f8");
   testop(128, number_sub,
-    "0x100000000fffffffe",
-    "0xffffffff",
-    "0xffffffffffffffff");
+      "0x100000000fffffffe",
+      "0xffffffff",
+      "0xffffffffffffffff");
 
 
   /*bt_assert_ptr_not_equal((n = number_sub(g, a, b)), NULL);
