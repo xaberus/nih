@@ -1,128 +1,79 @@
-#ifndef _SX_H
-#define _SX_H
+#include "gc.h"
+#include "gc-stack.h"
+#include "utf8.h"
+#include "field.h"
 
-#include <stdint.h>
-#include <malloc.h>
-
-#include "err.h"
+enum sx_kind {
+  SX_NONE  = 0x00,
+  SX_LIST  = 0x01,
+  SX_ATOM  = 0x02,
+  SX_PLAIN = 0x04 | SX_ATOM,
+  SX_SQ    = 0x08 | SX_ATOM,
+  SX_DQ    = 0x10 | SX_ATOM,
+  SX_NUM   = 0x20 | SX_ATOM,
+};
 
 typedef struct sx sx_t;
-
-#include "sx-strings.h"
-
-union sx_atom {
-  sx_str_t * string;
-  uint64_t uint;
-  int64_t sint;
-};
-
-#include "sx-utf8-decode.h"
-#include "sx-utf8-encode.h"
-
-
 struct sx {
-  __extension__ struct {
-    /* type */
-    unsigned int islist : 1;
-    unsigned int isatom : 1;
-
-    unsigned int _reserved0 : 6;
-
-    /* atom */
-    unsigned int isplain : 1;
-    unsigned int issquot : 1;
-    unsigned int isdquot : 1;
-
-    unsigned int issint : 1;
-    unsigned int isuint : 1;
-    unsigned int isdouble : 1;
-
-    unsigned int _reserved1 : 2;
-  };
-
-  sx_t * next;
-  unsigned int line;
-
-  __extension__ union {
-    sx_t * list;
-    union sx_atom atom;
+  gc_hdr_t gco;
+  uint16_t kind;
+  sx_t   * next;
+  union {
+    sx_t     * lst;
+    gc_str_t * str;
+    number_t * num;
   };
 };
 
-
-#include "sx-stack.h"
-
-enum sx_parser_error {
-  SX_ERROR_SUCCESS = 0,
-  SX_ERROR_PAREN_MISMATCH,
-  SX_ERROR_MALFORMED_ATOM,
-  SX_ERROR_UTF8_ERROR,
-  SX_ERROR_LIST_START_GARBAGE,
-  SX_ERROR_LIST_END_GARBAGE,
-  SX_ERROR_ATOM_END_GARBAGE,
-  SX_ERROR_UNHANDLED,
-};
-
-enum sx_parser_state {
-  SX_PARSER_ERROR,
-  SX_PARSER_INTERMEDIATE,
-  SX_PARSER_COMMENT,
-  SX_PARSER_LIST_START,
-  SX_PARSER_LIST_END,
-  SX_PARSER_ATOM_START,
-  SX_PARSER_ATOM_END,
-  SX_PARSER_ESTRING,
-  SX_PARSER_STRING,
-};
-
-enum sx_atom_type {
-  SX_ATOM_PLAIN,
-  SX_ATOM_QUOTE,
-  SX_ATOM_SQUOTE,
-  SX_ATOM_DQUOTE,
-  SX_ATOM_INT,
-  SX_ATOM_UINT,
-  SX_ATOM_FLOAT,
-};
+typedef enum {
+  SXBS_START = 0,
+  SXBS_ERROR,
+  SXBS_INTERMEDIATE,
+  SXBS_COMMENT,
+  SXBS_LIST_START,
+  SXBS_LIST_END,
+  SXBS_ATOM_START,
+  SXBS_ATOM_END,
+  SXBS_ESTRING,
+    SXBS_ES_ESC,
+    SXBS_ES_OCT, SXBS_ES_OCTW,
+    SXBS_ES_HEX, SXBS_ES_HEXW,
+    SXBS_ES_UNI, SXBS_ES_UNIW,
+  SXBS_STRING,
+  SXBS_EOB,
+} sxbs_t;
 
 
-struct sx_ucr {
-  unsigned int l : 3;
-  unsigned int eob : 1;
-  unsigned int err : 1;
+typedef enum {
+  SXBE_SUCCESS = 0,
+  SXBE_UTF8,
+} sxbe_t;
 
-  char n[7];
-  uint32_t s;
-  uint32_t c;
-};
+typedef struct {
+  gc_hdr_t gco;
+  sxbs_t       s, v;
+  sxbe_t       e;
+  const char * bp, * ba, * be, * b;
+  ur_t         u;
+  uint32_t     at;
+  uint32_t     depth;
+  uint32_t     line;
+  uint32_t     aline;
 
-struct sx_parser {
-#define FIELD(_type, _name) _type _name;
-#include "sx-parser-fields.h"
-#undef FIELD
-  sx_strgen_t gen[1];
-  sx_stack_t stack[1];
+  struct {
+    uint32_t     b[4], l;
+    uint32_t     s, ss;
+    uint64_t     n;
+    sxbs_t       t;
+  } sg;
+  struct {
+    char * s, * sp, * se;
+  } ag;
 
-};
+  sx_t       * cue;
+  sx_t       * root, * last;
+  gc_stack_t * stack;
+} sxb_t;
 
-typedef struct sx_parser sx_parser_t;
-typedef err_t (sx_event_function_t)(sx_parser_t *);
-
-sx_parser_t * sx_parser_init(sx_parser_t * parser);
-void          sx_parser_clear(sx_parser_t * parser);
-
-err_t         sx_parser_atom_sq_fsm(sx_parser_t * parser, sx_str_t * str);
-err_t         sx_parser_atom_dq_fsm(sx_parser_t * parser, sx_str_t * str);
-err_t         sx_parser_atom_plain_fsm(sx_parser_t * parser, sx_t * sx, sx_str_t * str);
-err_t         sx_parser_events(sx_parser_t * parser, sx_event_function_t * ef);
-
-err_t         sx_parser_read(sx_parser_t * parser, const char * buffer, size_t length);
-
-const char *  sx_parser_strerror(sx_parser_t * parser);
-
-# ifdef TEST
-int sx_test_print(sx_t * sx, unsigned int level, int len, unsigned int brk, unsigned int sl);
-# endif /* TEST */
-
-#endif /* _SX_H */
-
+sxb_t  * sxb_new(gc_global_t * g);
+sx_t   * sxb_read(gc_global_t * g, sxb_t * b, size_t len, const char str[len]);

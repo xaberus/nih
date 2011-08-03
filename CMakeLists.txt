@@ -3,16 +3,12 @@ project(libnih)
 
 #set(CMAKE_VERBOSE_MAKEFILE true)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/Modules)
-
-find_package(RAGEL)
-
 include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}/../butcher/
 	/usr/include/sexpr
 )
 
-set(CMAKE_C_COMPILER clang)
+#set(CMAKE_C_COMPILER clang)
 #set(CMAKE_C_COMPILER ccc-analyzer)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
@@ -22,6 +18,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pedantic")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g3")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-gnu")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-inline")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O1")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
@@ -50,12 +47,6 @@ include_directories(${libnih_SOURCE_DIR})
 
 add_library(nih SHARED
   #blobtree.c
-  #sx-strgen.c
-  #sx-parser.c
-  #${libnih_SOURCE_DIR}/tests/sx-stack-tests.c
-  #${RAGEL_sx-parser-sq-machine_OUTPUTS}
-  #${RAGEL_sx-parser-dq-machine_OUTPUTS}
-  #${RAGEL_sx-parser-plain-machine_OUTPUTS}
   memory.c
   sr.c
   trie.c
@@ -65,6 +56,7 @@ add_library(nih SHARED
   gc-stack.c
 
   number.c
+  sx.c
 )
 
 #target_link_libraries(nih sexp m lua)

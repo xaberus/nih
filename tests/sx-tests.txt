@@ -1,0 +1,459 @@
+; plain
+foo
+()
+
+(a (b (c (d e)
+         (f g))
+      (h i j))
+   (k l m n))
+
+(a b c)
+
+(s ('l' (u 16 le)) ('b' (u 16 be)))
+
+; this is from http://sexpr.sourceforge.net
+(we should be able to have () arbitrary empty expressions () right?)
+(this file contains a set of test s-expressions to try and break the library)
+(add your own if you want!)
+(")" this should not break read_sexp)
+("\" ) " this should also not break read_sexp.)
+(this one"is supposed to behave like common lisp" would)
+(lets make sure single character a t o m s work fine...)
+;FIXME (single quote '(tells the parser to ignore what appears in here ")"))
+(thisissupposedtobeareallylongatomtotestthegrowingoftheparservaluebuffersoihopetoputabunchofgibberishherenowoksfhaskdjhflkewrhtlkwehtlksdfjhglskdfjhglsdkfjghlskdfjhgksdjfghlskdjfghlsdfhglsdkfjghgksdfjhglskdfjghlsdkfjghlsdkfjghsldkfjghslkdfjghlskjrhtlkwerjthlwkerjthwlkerjthwlerktjhwelrkjthwelkrjthwelkrtjhwlekrjthwelkrjthwlekrjthwlekjrthwlerkjthlwkerjthwlekrjthwlekrjthlwkerjthwlekrjthwlekrjthwlekrjthwlekrjthwlkerjthwlekrthwiuertyowieruytoweiurtyowierutywoeirutywoeirutywoeirutyoweirutyowiuertyoiweruylgjkhdlsdkjfghsdfng,mdfgnbs,fnmdbgbsbngfsngfnsd,fmngbsbfngbnmsfdbgs,bfmnfngnb,dfg hopefully that worked)
+(lets see if this ; this comment should be ignored
+; and so should this one, and their parens shouldn't mess things up 
+is ok)
+"another valid atom"
+'(yet another valid atom "to parse")
+"'\"''\'''\'" ;; this one has lots of funky quotes - make sure all is ok
+(#blah)
+
+; escapes
+"\150\145\154\154\1577\40 1\167\157\162\154\144\41 7"
+("\x65\x56f\x9z\x09")
+("\u257e\u2500\u257c" 123)
+"\n"
+
+; numbers
+1193046 -123 -1 -2 -3 -4 -5
+(these are numbers
+ 0x123
+ 18446744073709551615
+ 9223372036854775807
+ 18446744073709551615
+ 18446744073709551615
+ 18446744073709551615
+ 9223372036854775807
+ -9223372036854775806
+ 0x123
+ 0b10101010101000101010
+ 0o17235723751273
+ -9223372036854775807
+  done)
+
+; draft, for historical reasons mainly...
+(
+"  the s-expression parser (simplified):                 "
+"                                  ╭──────╮              "
+"                                  ▼      │              "
+"                                ╭────────┴─╮            "
+"   ╭───────╮         ╭──────────┤  string  │            "
+"   │ start │         │          ╰──────────╯            "
+"   ╰───┬───╯         │            ▲                     "
+"       │             │            │ [a-zA-Z0-9:.@#-]    "
+"       ▼             ▼            │                     "
+"     ╔════════════════╗  else   ╭─┴────────╮            "
+"     ║                ╟────────▶│   atom   ├╮           "
+"     ║                ║         ╰──────────╯│           "
+"     ║                ║          ╭──────╮   │           "
+"     ║                ║          ▼      │   │ isquote   "
+"     ║                ║         ╭───────┴─╮ │           "
+"     ║                ║         │ estring │◀╯           "
+"     ║                ║         ╰─┬───────╯             "
+"     ║                ║◀──────────╯                     "
+"     ║  intermediate  ║                                 "
+"     ║                ║                                 "
+"     ║                ║◀──────────╮                     "
+"     ║                ║           │                     "
+"     ║                ║  [)]    ╭─┴────────╮            "
+"     ║                ╟────────▶│ list_end │            "
+"     ║                ║         ╰──────────╯            "
+"     ║                ║                                 "
+"  ╭─▶║                ║◀─────────────────────────────╮  "
+"  │  ╚═╤═════════════╤╝                              │  "
+"  │    │             │                               │  "
+"  │    │ [(]         │ iswhite          ╭──────╮     │  "
+"  │    ▼             │                  ▼      │     │  "
+"  │  ╭────────────╮  │               ╭─────────┴──╮  │  "
+"  ╰──┤ list_start │  ╰──────────────>│ whitespace ├──╯  "
+"     ╰────────────╯                  ╰────────────╯     "
+)
+; actual use: template
+(unitsystem
+  (template
+    (rbrace "{")
+    (lbrace "}")
+    (rpar "(")
+    (lpar ")")
+    (frac_s "\\nicefrac{")
+    (frac_m "}{")
+    (frac_e "}")
+    (pow_s "{")
+    (pow_m "}^{")
+    (pow_e "}")
+    (prefix_s "\\siprefix{")
+    (prefix_e "}")
+    (sep " ")
+    (atom_s "\\siatom{")
+    (atom_e "}")
+    (part_s "\\sipart{")
+    (part_e "}")
+    (sign "-")
+    (unit_s "\\unit{")
+    (unit_e "}")
+    (unitfrac_s "\\frac{")
+    (unitfrac_m "}{")
+    (unitfrac_e "}"))
+  (prefixes
+    (prefix
+      (symbol "Y")
+      (text "Y")
+      (base 10)
+      (power 24))
+    (prefix
+      (symbol "Z")
+      (text "Z")
+      (base 10)
+      (power 21))
+    (prefix
+      (symbol "E")
+      (text "E")
+      (base 10)
+      (power 18))
+    (prefix
+      (symbol "P")
+      (text "P")
+      (base 10)
+      (power 15))
+    (prefix
+      (symbol "T")
+      (text "T")
+      (base 10)
+      (power 12))
+    (prefix
+      (symbol "G")
+      (text "G")
+      (base 10)
+      (power 9))
+    (prefix
+      (symbol "M")
+      (text "M")
+      (base 10)
+      (power 6))
+    (prefix
+      (symbol "k")
+      (text "k")
+      (base 10)
+      (power 3))
+    (prefix
+      (symbol "")
+      (text "")
+      (base 10)
+      (power 0))
+    (prefix
+      (symbol "c")
+      (text "c")
+      (base 10)
+      (power -2))
+    (prefix
+      (symbol "m")
+      (text "m")
+      (base 10)
+      (power -3))
+    (prefix
+      (symbol "\302\265")
+      (text "\\mu")
+      (base 10)
+      (power -6))
+    (prefix
+      (symbol "n")
+      (text "n")
+      (base 10)
+      (power -9))
+    (prefix
+      (symbol "p")
+      (text "p")
+      (base 10)
+      (power -12))
+    (prefix
+      (symbol "f")
+      (text "f")
+      (base 10)
+      (power -15))
+    (prefix
+      (symbol "a")
+      (text "a")
+      (base 10)
+      (power -18))
+    (prefix
+      (symbol "z")
+      (text "z")
+      (base 10)
+      (power -21))
+    (prefix
+      (symbol "y")
+      (text "y")
+      (base 10)
+      (power -24)))
+  (atoms (atom (symbol "m") (text "m"))
+         (atom (symbol "g") (text "g"))
+         (atom (symbol "s") (text "s"))
+         (atom (symbol "A") (text "A")))
+  (base_units
+    (base_unit
+      (atomref "m")
+      (parts (part (atomref "m"))))
+    (base_unit
+      (atomref "g")
+      (parts (part (atomref "g"))))
+    (base_unit
+      (atomref "s")
+      (parts (part (atomref "s"))))
+    (base_unit
+      (atomref "A")
+      (parts (part (atomref "A"))))
+    (base_unit
+      (atom (symbol "kg") (text "kg"))
+      (parts (part (prefixref "k") (atomref "g"))))
+    (base_unit
+      (atom (symbol "C") (text "C"))
+      (parts (part (atomref "A")) (part (atomref "s"))))
+    (base_unit
+      (atom (symbol "N") (text "N"))
+      (parts (part (prefixref "k") (atomref "g"))
+             (part (atomref "m"))
+             (part (atomref "s") (power -2))))
+    (base_unit
+      (atom (symbol "Pa") (text "Pa"))
+      (parts (part (prefixref "k") (atomref "g"))
+             (part (atomref "m" (power -1)))
+             (part (atomref "s") (power -2))))
+    (base_unit
+      (atom (symbol "V") (text "V"))
+      (parts (part (prefixref "k") (atomref "g"))
+             (part (atomref "m") (power 2))
+             (part (atomref "s") (power -3))
+             (part (atomref "A") (power -1))))
+    (base_unit
+      (atom (symbol "Ohm") (text "\\Omega"))
+      (parts (part (prefixref "k") (atomref "g"))
+             (part (atomref "m") (power 2))
+             (part (atomref "s") (power -3))
+             (part (atomref "A") (power -2))))
+    (base_unit
+      (atom (symbol "V") (text "V"))
+      (parts (part (atomref "A") (power 2))
+             (part (atomref "s") (power 4))
+             (part (prefixref "k") (atomref "g") (power -1))
+             (part (atomref "m") (power -2))))))
+
+; model
+(include int:little_endian lint)
+(type (tga "Truevision Advanced Raster Graphics Array (TGA) image file")
+      (define
+        tga_header
+        (field lint:u8 id_length)
+        (field lint:u8 colormap_type)
+        (field lint:u8 image_type)
+        (field lint:u16 colormap_first)
+        (field lint:u16 colormap_length)
+        (field lint:u8 colormap_bpp)
+        (field lint:u16 x_origin)
+        (field lint:u16 y_origin)
+        (field lint:u16 width)
+        (field lint:u16 height)
+        (field lint:u8 bpp)
+        (field (bitfield
+                 (bits lint:u8 4 alpha_bpp)
+                 (bits lint:u8 1 origin_is_right)
+                 (bits lint:u8 1 origin_is_top)
+                 (bits lint:u8 2 zero))
+               attributes))
+      (read tga_header @header)
+      (read (array lint:u8 @header.id_length) id)
+      (if (eq colormap_type 1)
+          (define
+            tga_colormap_entry
+            (case ((eq @header.colormap_bpp 15)
+                   (field (bitfield
+                            (bits lint:u8 5 blue)
+                            (bits lint:u8 5 green)
+                            (bits lint:u8 5 red)
+                            (bits lint:u8 1 zero))
+                          color))
+                  ((eq @header.colormap_bpp 16)
+                   (field (bitfield
+                            (bits lint:u8 5 blue)
+                            (bits lint:u8 6 green)
+                            (bits lint:u8 5 red))
+                          color))
+                  ((eq @header.colormap_bpp 24)
+                   (field (bitfield
+                            (bits lint:u8 8 blue)
+                            (bits lint:u8 8 green)
+                            (bits lint:u8 8 red))
+                          color))
+                  ((eq @header.colormap_bpp 32)
+                   (field (bitfield
+                            (bits lint:u8 8 blue)
+                            (bits lint:u8 8 green)
+                            (bits lint:u8 8 red)
+                            (bits lint:u8 8 alpha))
+                          color))
+                  abort)))
+      (define_rle_reader
+        tga_rle
+        (control_type mask 0x80 1)
+        (control_add 1)
+        (data_type mask 0x80 0)
+        (data_add 1))
+      ; data
+      (cond ((eq @header.image_type 0)
+             (; empty
+             ))
+            ((eq @header.image_type 1)
+             (; uncompressed color index
+              (if (eq colormap_type 1)
+                  ((dynread
+                     (array tga_colormap_entry
+                            @header.colormap_length)
+                     colormap))
+                  abort)
+              (define
+                tga_pixel
+                (cond ((eq @header.bpp 8) (field lint:u8 index))
+                      ((eq @header.bpp 16) (field lint:u16 index))
+                      abort))
+              (reader
+                RAW
+                (data tga_pixel
+                      (mul @header.with @header.height))
+                (target tga_pixel)
+                pixels)))
+            ((eq @header.image_type 2)
+             (; RGB24
+              (define
+                tga_pixel
+                (cond ((eq @header.bpp 24)
+                       (field (bitfield
+                                (bits lint:u8 8 blue)
+                                (bits lint:u8 8 green)
+                                (bits lint:u8 8 red))
+                              color))
+                      ((eq @header.bpp 32)
+                       (field (bitfield
+                                (bits lint:u8 8 blue)
+                                (bits lint:u8 8 green)
+                                (bits lint:u8 8 red)
+                                (bits lint:u8 8 alpha))
+                              color))
+                      abort))
+              (reader
+                RAW
+                (data tga_pixel
+                      (mul @header.with @header.height))
+                (target tga_pixel)
+                pixels)))
+            ((eq @header.image_type 3)
+             (; GRAY
+              (define
+                tga_pixel
+                (cond ((eq @header.bpp 8) (field lint:u8 gray))
+                      ((eq @header.bpp 16) (field lint:u16 gray))
+                      abort))
+              (reader
+                RAW
+                (data tga_pixel
+                      (mul @header.with @header.height))
+                (target tga_pixel)
+                pixels)))
+            ((eq @header.image_type 9)
+             (; RLE color index
+              (if (eq colormap_type 1)
+                  ((dynread
+                     (array tga_colormap_entry
+                            @header.colormap_length)
+                     colormap))
+                  abort)
+              (define
+                tga_pixel
+                (cond ((eq @header.bpp 8) (field lint:u8 index))
+                      ((eq @header.bpp 16) (field lint:u16 index))
+                      abort))
+              (reader_wrapper
+                tga_pixel
+                (reader
+                  "RLE"
+                  tga_rle
+                  (data lint:u8
+                        (mul @header.with
+                             @header.height
+                             (div @header.bpp 8)))
+                  reader)
+                pixels)))
+            ((eq @header.image_type 10)
+             (; RLE RGB24
+              (define
+                tga_pixel
+                (cond ((eq @header.bpp 24)
+                       (field (bitfield
+                                (bits lint:u8 8 blue)
+                                (bits lint:u8 8 green)
+                                (bits lint:u8 8 red))
+                              color))
+                      ((eq @header.bpp 32)
+                       (field (bitfield
+                                (bits lint:u8 8 blue)
+                                (bits lint:u8 8 green)
+                                (bits lint:u8 8 red)
+                                (bits lint:u8 8 alpha))
+                              color))
+                      abort))
+              (reader_wrapper
+                tga_pixel
+                (reader
+                  "RLE"
+                  tga_rle
+                  (data lint:u8
+                        (mul @header.with
+                             @header.height
+                             (div @header.bpp 8)))
+                  reader)
+                pixels)))
+            ((eq @header.image_type 11)
+             (; RLE GRAY
+              (if (eq colormap_type 1)
+                  ((dynread
+                     (array tga_colormap_entry
+                            @header.colormap_length)
+                     colormap))
+                  abort)
+              (define
+                tga_pixel
+                (cond ((eq @header.bpp 8) (field lint:u8 gray))
+                      ((eq @header.bpp 16) (field lint:u16 gray))
+                      abort))
+              (reader_wrapper
+                tga_pixel
+                (reader
+                  "RLE"
+                  tga_rle
+                  (data lint:u8
+                        (mul @header.with
+                             @header.height
+                             (div @header.bpp 8)))
+                  reader)
+                pixels)))
+            abort))
+
