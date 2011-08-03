@@ -1,6 +1,5 @@
 #include "gc-private.h"
-
-#include "tests/gc-tests.c"
+#include "gc-tests.c"
 
 #include <stdarg.h>
 

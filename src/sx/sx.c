@@ -1,5 +1,4 @@
 #include "sx.h"
-#include "trie.h"
 
 static
 size_t sx_init(gc_global_t * g, gc_hdr_t * o)

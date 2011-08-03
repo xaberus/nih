@@ -5,6 +5,7 @@ project(libnih)
 
 include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}/../butcher/
+	${libnih_SOURCE_DIR}/src/
 	/usr/include/sexpr
 )
 
@@ -46,17 +47,17 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--sort-section=n
 include_directories(${libnih_SOURCE_DIR})
 
 add_library(nih SHARED
-  #blobtree.c
-  memory.c
-  sr.c
-  trie.c
-  pathman.c
-  #lua/init.c
-  gc.c
-  gc-stack.c
-
-  number.c
-  sx.c
+#${libnih_SOURCE_DIR}/src/sr/sr.c
+${libnih_SOURCE_DIR}/src/gc/gc.c
+${libnih_SOURCE_DIR}/src/gc/gc-stack.c
+${libnih_SOURCE_DIR}/src/number/number.c
+#${libnih_SOURCE_DIR}/src/blobtree/blobtree.c
+${libnih_SOURCE_DIR}/src/sx/sx.c
+#${libnih_SOURCE_DIR}/src/lua/table-lua.c
+${libnih_SOURCE_DIR}/src/lua/init.c
+${libnih_SOURCE_DIR}/src/trie/pathman.c
+${libnih_SOURCE_DIR}/src/trie/trie.c
+${libnih_SOURCE_DIR}/src/common/memory.c
 )
 
 #target_link_libraries(nih sexp m lua)

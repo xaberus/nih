@@ -627,4 +627,4 @@ struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char 
 
 }*/
 
-#include "tests/pathman-tests.c"
+#include "pathman-tests.c"

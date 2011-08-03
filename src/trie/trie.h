@@ -1,12 +1,9 @@
 #ifndef _TRIE_H
 #define _TRIE_H
 
-#include "gc.h"
-
-#include "err.h"
-#include <stdint.h>
-
-#include "memory.h"
+#include "gc/gc.h"
+#include "common/err.h"
+#include "common/memory.h"
 
 typedef struct {
   uint8_t      c;

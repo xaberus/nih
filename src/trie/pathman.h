@@ -4,7 +4,6 @@
 #include "err.h"
 #include <stdint.h>
 
-#include "memory.h"
 #include "trie.h"
 
 struct pnode {

@@ -1,6 +1,6 @@
 #include "trie.h"
 #include "trie-private.h"
-#include "tests/trie-tests.c"
+#include "trie-tests.c"
 
 #include <string.h>
 #include <stdlib.h>

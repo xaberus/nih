@@ -1,5 +1,5 @@
 
-#include "rational.h"
+#include "sr.h"
 
 
 #define ERR_I_OVER err_construct(ERR_MAJ_OVERFLOW, ERR_MIN_IN_OVERFLOW, 0)

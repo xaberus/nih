@@ -1,5 +1,5 @@
 #include "gc-stack.h"
-#include "tests/gc-stack-tests.c"
+#include "gc-stack-tests.c"
 
 #include <assert.h>
 

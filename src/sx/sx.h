@@ -1,7 +1,7 @@
-#include "gc.h"
-#include "gc-stack.h"
-#include "utf8.h"
-#include "field.h"
+#include "gc/gc.h"
+#include "gc/gc-stack.h"
+#include "common/utf8.h"
+#include "number/number.h"
 
 enum sx_kind {
   SX_NONE  = 0x00,

@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
-#include <memory.h>
 #include <assert.h>
+#include "common/memory.h"
 
 #define GC_FLAG_WHITE0 0x01
 #define GC_FLAG_WHITE1 0x02

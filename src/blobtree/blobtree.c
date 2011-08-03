@@ -1,7 +1,7 @@
-#include "blobtree.h"
 #include <string.h>
 
-#include <sexp.h>
+#include "blobtree.h"
+#include "sx/sx.h"
 
 #define MIN(a, b) (((a)<(b)) ? (a) : (b))
 #define MAX_BLOB_SIZE 0x10000000
@@ -395,6 +395,6 @@ blob_t * blob_realloc(blob_t * ctx, blob_t * blob, size_t size, blob_t * null_ct
 }
 
 
-#include "tests/blobtree-tests.c"
+#include "blobtree-tests.c"
 
 // vim: filetype=c:expandtab:shiftwidth=2:tabstop=4:softtabstop=2:encoding=utf-8:textwidth=100
