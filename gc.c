@@ -4,62 +4,6 @@
 
 #include <stdarg.h>
 
-typedef __typeof__(((gc_global_t *) NULL)->strings) gc_strings_t;
-typedef __typeof__(((gc_global_t *) NULL)->strings.buckets) gc_buckets_t;
-typedef __typeof__(*((gc_global_t *) NULL)->strings.buckets.data) gc_bucket_t;
-typedef __typeof__(((gc_global_t *) NULL)->objects) gc_ostore_t;
-typedef __typeof__(((gc_global_t *) NULL)->headers) gc_hstore_t;
-
-#if 0
-inline static
-void __attribute__((format(printf, 2, 3))) log(unsigned N, const char * fmt, ...)
-{
-  va_list ap;
-
-  va_start(ap, fmt);
-  switch (N) {
-    case 0:
-      // vfprintf(stderr, fmt, ap);
-      break;
-    case 1:
-      // vfprintf(stderr, fmt, ap);
-      break;
-    case 2:
-      // vfprintf(stderr, fmt, ap);
-      break;
-    case 3:
-      // vfprintf(stderr, fmt, ap);
-      break;
-    case 4:
-      // vfprintf(stderr, fmt, ap);
-      break;
-    case 5:
-      // vfprintf(stderr, fmt, ap);
-      break;
-    case 6:
-      // vfprintf(stderr, fmt, ap);
-      break;
-    default:
-      break;
-  }
-  va_end(ap);
-}
-#else
-  #define log(...)
-#endif
-
-#define log_obj(_N, _x, _y) \
-  log(_N, "# %s(g = %p [%s%s], obj = %p [%s%s%s][%u])\n", \
-    __FUNCTION__, \
-    (void *) (_x), \
-    (_x)->white & GC_FLAG_WHITE0 ? "w0" : "", \
-    (_x)->white & GC_FLAG_WHITE1 ? "w1" : "", \
-    (void *) _y, \
-    GC_HDR(_y)->flag & GC_FLAG_WHITE0 ? "w0" : "", \
-    GC_HDR(_y)->flag & GC_FLAG_WHITE1 ? "w1" : "", \
-    GC_HDR(_y)->flag & GC_FLAG_BLACK ? "b" : "", \
-    obj_size(_y))
-
 void gc_mem_free(gc_global_t * g, size_t size, void * p)
 {
   log(0, "# %s(%p [%zu])\n", __FUNCTION__, p, size);
@@ -127,33 +71,6 @@ void strings_prepare(gc_global_t * g, gc_strings_t * ss)
 }
 
 static
-void strings_resize(gc_global_t * g, gc_strings_t * ss, uint32_t newmask)
-{
-  log(0, "# %s(%08x->%08x)\n", __FUNCTION__, ss->mask, newmask);
-  gc_buckets_t * buckets = &ss->buckets;
-
-  gc_vector_process(g, buckets, newmask + 1);
-
-  for (size_t i = 0; i < buckets->dsize; i++) {
-    gc_bucket_t * b = &buckets->data[i];
-    gc_str_t    * p = b->head, * n;
-    while (p) {
-      n = (gc_str_t *) p->gch.next;
-      assert((p->hash & newmask) < buckets->psize);
-      gch_prepend(GC_HDRP(&buckets->proc[p->hash & newmask].head), GC_HDR(p));
-      p = n;
-    }
-  }
-  gc_vector_swap(g, buckets);
-
-  for (uint32_t k = 0; k < buckets->dsize; k++) {
-    gc_bucket_t * n = &buckets->data[k];
-    n->sweep = &n->head;
-  }
-  ss->mask = newmask;
-}
-
-static
 void strings_reset(gc_global_t * g, gc_strings_t * ss)
 {
   log(0, "# %s()\n", __FUNCTION__);
@@ -186,14 +103,7 @@ void gc_init(gc_global_t * g, mem_allocator_t alloc)
   gc_vector_init(g, &g->roots, 0);
 }
 
-inline static
-uint32_t other_white(gc_global_t * g)
-{
-  return g->white ^ GC_FLAG_WHITES;
-}
-
 #define is_other(o, ow)  ((GC_HDR(o)->flag ^ GC_FLAG_WHITES) & (ow & GC_FLAG_WHITES))
-#define is_dead(o, ow)   ((GC_HDR(o)->flag & ow) & GC_FLAG_WHITES)
 #define is_fixed(o)      (GC_HDR(o)->flag & GC_FLAG_FIXED)
 #define make_white(o, w) (GC_HDR(o)->flag = (GC_HDR(o)->flag & ~GC_FLAG_COLORS) | (w))
 #define obj_size(o)      ((GC_HDR(o)->flag & 0xffffff00) >> 8)
@@ -621,96 +531,6 @@ size_t gc_collect(gc_global_t * g, bool full)
   return counter + 1;
 }
 
-#define rot(x, k) \
-  (((x) << (k)) | ((x) >> (32 - (k))))
-
-#define mix(a, b, c) \
-  { \
-    a -= c;  a ^= rot(c, 4);  c += b; \
-    b -= a;  b ^= rot(a, 6);  a += c; \
-    c -= b;  c ^= rot(b, 8);  b += a; \
-    a -= c;  a ^= rot(c, 16);  c += b; \
-    b -= a;  b ^= rot(a, 19);  a += c; \
-    c -= b;  c ^= rot(b, 4);  b += a; \
-  }
-
-#define final(a, b, c) \
-  { \
-    c ^= b; c -= rot(b, 14); \
-    a ^= c; a -= rot(c, 11); \
-    b ^= a; b -= rot(a, 25); \
-    c ^= b; c -= rot(b, 16); \
-    a ^= c; a -= rot(c, 4); \
-    b ^= a; b -= rot(a, 14); \
-    c ^= b; c -= rot(b, 24); \
-  }
-
-uint32_t hash(const void * key, size_t length, uint32_t initval)
-{
-  uint32_t a, b, c;
-
-  a = b = c = 0xdeadbeef + ((uint32_t) length) + initval;
-
-  {
-    const uint32_t * k = (const uint32_t *) key;
-
-    while (length > 12) {
-      a += k[0];
-      b += k[1];
-      c += k[2];
-      mix(a, b, c);
-      length -= 12;
-      k += 3;
-    }
-    if (length > 0) {
-      uint32_t buff[3] = {0};
-      memcpy(buff, k, length);
-      a += buff[0];
-      b += buff[1];
-      c += buff[2];
-      mix(a, b, c);
-      final(a, b, c);
-    }
-  }
-
-  return c;
-}
-
-static
-void intern_obj(gc_global_t * g, gc_obj_t * o, uint32_t size)
-{
-  log(0, "# %s(%p [%u])\n", __FUNCTION__, (void *) o, size);
-  GC_HDR(o)->flag = (g->white & GC_FLAG_WHITES) | (size << 8);
-  gch_prepend(GC_HDRP(&g->objects.head), GC_HDR(o));
-  g->total++;
-}
-
-static
-void intern_hdr(gc_global_t * g, gc_hdr_t * o, uint32_t size)
-{
-  log(0, "# %s(%p [%u])\n", __FUNCTION__, (void *) o, size);
-  GC_HDR(o)->flag = (g->white & GC_FLAG_WHITES) | (size << 8);
-  gch_prepend(GC_HDRP(&g->headers.head), GC_HDR(o));
-  g->total++;
-}
-
-static
-void intern_str(gc_global_t * g, gc_str_t * s, uint32_t size)
-{
-  log(0, "# %s(%p [%u])\n", __FUNCTION__, (void *) s, size);
-  GC_HDR(s)->flag = (g->white & GC_FLAG_WHITES) | (size << 8);
-  gch_prepend(GC_HDRP(&g->strings.buckets.data[s->hash & g->strings.mask].head), GC_HDR(s));
-  if (g->strings.count++ > g->strings.mask) {
-    uint32_t newmask = (g->strings.mask << 1) | 1;
-    if (g->state != GC_STATE_SWEEP_STRING && newmask < 0xffffff - 1) {
-      strings_resize(g, &g->strings, newmask);
-    }
-  }
-}
-
-#define flip_white(x) (GC_HDR(x)->flag ^= GC_FLAG_WHITES)
-
-static
 gc_vtable_t gc_str_vtable = {
   .name = "testobj_t",
   .flag = GC_VT_FLAG_STR,
@@ -719,7 +539,7 @@ gc_vtable_t gc_str_vtable = {
 gc_str_t * gc_new_str(gc_global_t * g, uint32_t len, const char str[len])
 {
   log(0, "# %s(%.*s)\n", __FUNCTION__, len, str);
-  uint32_t   h = hash(str, len, 17);
+  uint32_t   h = gc_hash(str, len, 17);
 
   assert((h & g->strings.mask) < g->strings.buckets.dsize);
 

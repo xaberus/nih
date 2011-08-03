@@ -19,3 +19,5 @@ gc_hdr_t * gc_stack_top(gc_stack_t * s);
 gc_hdr_t * gc_stack_pop(gc_stack_t * s);
 size_t     gc_stack_size(gc_stack_t * s);
 
+gc_str_t * gc_stack_strcat(gc_global_t * g, gc_stack_t * s);
+

@@ -34,6 +34,8 @@ typedef struct gc_obj {
   struct gc_obj * list;
 } gc_obj_t;
 
+#define GC_OBJ(_o)  ((gc_obj_t *) (_o))
+
 typedef struct gc_str {
   gc_hdr_t gch;
   uint32_t hash;

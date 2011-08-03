@@ -131,3 +131,62 @@ size_t gc_stack_size(gc_stack_t * s)
   }
   return 0;
 }
+
+gc_str_t * gc_stack_strcat(gc_global_t * g, gc_stack_t * s)
+{
+  if (gc_stack_size(s)) {
+    gc_hdr_t ** c;
+    gc_str_t  * a, * b;
+    uint32_t len = 0, sz;
+    char * p;
+
+    for (c = s->d; c <= s->dp; c++) {
+      if ((*c)->vtable == &gc_str_vtable) {
+        a = (gc_str_t *) *c;
+        len += gc_str_len(a);
+      }
+    }
+
+    if (len) {
+      // fprintf(stderr, "dd SCAT\n");
+
+      sz = len + sizeof(gc_str_t) + 1;
+
+      b = gc_mem_new(g, sz); p = b->data;
+
+      for (c = s->d; c <= s->dp; c++) {
+        if ((*c)->vtable == &gc_str_vtable) {
+          a = (gc_str_t *) *c;
+          // fprintf(stderr, "-- %s\n", a->data);
+          memcpy(p, a->data, gc_str_len(a)); p += gc_str_len(a);
+        }
+      }
+
+      uint32_t h = gc_hash(b->data, len, 17);
+
+      gc_str_t * t = g->strings.buckets.data[h & g->strings.mask].head;
+
+      while (t) {
+        if (len == gc_str_len(t)) {
+          if (memcmp(b->data, t->data, len) == 0) {
+            if (is_dead(t, other_white(g))) {
+              flip_white(t);
+            }
+            gc_mem_free(g, sz, b);
+            return t;
+          }
+        }
+        t = (gc_str_t *) GC_HDR(t)->next;
+      }
+
+      GC_HDR(b)->vtable = &gc_str_vtable;
+      GC_HDR(b)->next = NULL;
+      b->hash = h;
+      b->data[len] = '\0';
+      intern_str(g, b, sz);
+      return b;
+    }
+  }
+
+  return gc_new_str(g, 0, "");
+}
