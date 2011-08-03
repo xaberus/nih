@@ -417,7 +417,7 @@ gc_str_t * number_gethex(gc_global_t * g, number_t * n)
 {
   uint32_t * d = n->data;
   uint32_t   len = 2;
-  uint32_t   s = abs(n->s);
+  uint32_t   s = iabs(n->s);
   char     * buf, * p;
 
   if (n->s <= 0) {
@@ -499,7 +499,7 @@ uint32_t intern_lbz(uint32_t msl)
 
 gc_str_t * number_getdec(gc_global_t * g, number_t * n)
 {
-  uint32_t s = abs(n->s);
+  uint32_t s = iabs(n->s);
 
   if (s == 0) {
     return gc_new_str(g, 1, "0");
@@ -652,8 +652,8 @@ number_t * number_add(gc_global_t * g, number_t * a, number_t * b)
 
   number_t * n;
 
-  as = a->s; au = abs(as);
-  bs = b->s; bu = abs(bs);
+  as = a->s; au = iabs(as);
+  bs = b->s; bu = iabs(bs);
 
   if (au < bu) {
     swap(as, bs);
@@ -699,8 +699,8 @@ number_t * number_sub(gc_global_t * g, number_t * a, number_t * b)
 
   number_t * n;
 
-  as = a->s;  au = abs(as);
-  bs = -b->s; bu = abs(bs);
+  as = a->s;  au = iabs(as);
+  bs = -b->s; bu = iabs(bs);
 
   if (au < bu) {
     swap(as, bs);
