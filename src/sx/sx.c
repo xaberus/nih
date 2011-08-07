@@ -3,6 +3,7 @@
 static
 size_t sx_init(gc_global_t * g, gc_hdr_t * o)
 {
+  (void) g;
   sx_t * x = (sx_t *) o;
 
   x->kind = SX_NONE;
@@ -81,7 +82,6 @@ inline static
 int isatomlist(sx_t * x)
 {
   assert(x->kind & SX_LIST);
-  sx_t * s = x->lst;
   uint32_t c = 0, l = 0;
   for (sx_t * s = x->lst; s; s = s->next) {
     if (!(s->kind & SX_ATOM)) {
@@ -171,6 +171,7 @@ uint32_t sx_writer(gc_global_t * g, gc_stack_t * st, sx_t * x, wrec_t * wr)
       assert(0);
       break;
   }
+  return 0;
 }
 
 gc_str_t * sx_dump(gc_global_t * g, sx_t * x)
@@ -658,7 +659,8 @@ trans:
   return 0;
 }
 
-sx_t * sxb_read(gc_global_t * g, sxb_t * b, size_t len, const char str[len])
+inline static
+sx_t * sxb_read_len(gc_global_t * g, sxb_t * b, uint32_t len, const char str[len])
 {
   b->b = str;
   b->bp = str;
@@ -674,6 +676,10 @@ sx_t * sxb_read(gc_global_t * g, sxb_t * b, size_t len, const char str[len])
   return NULL;
 }
 
+sx_t * sxb_read(gc_global_t * g, sxb_t * b, gc_str_t * s)
+{
+  return sxb_read_len(g, b, gc_str_len(s), s->data);
+}
 #ifdef TEST
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢*/
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢▢▢▢▢▢▢▢▢▢▢*/
@@ -690,9 +696,9 @@ sx_t * sxb_read(gc_global_t * g, sxb_t * b, size_t len, const char str[len])
 
 #include <stdlib.h>
 
-BT_SUITE_DEF(nsx, "new sx");
+BT_SUITE_DEF(sx, "new sx");
 
-BT_SUITE_SETUP_DEF(nsx, objectref)
+BT_SUITE_SETUP_DEF(sx, objectref)
 {
   gc_global_t * g = malloc(sizeof(gc_global_t));
   bt_assert_ptr_not_equal(g, NULL);
@@ -708,7 +714,7 @@ BT_SUITE_SETUP_DEF(nsx, objectref)
   return BT_RESULT_OK;
 }
 
-BT_SUITE_TEARDOWN_DEF(nsx, objectref)
+BT_SUITE_TEARDOWN_DEF(sx, objectref)
 {
   gc_global_t * g = *objectref;
   gc_clear(g);
@@ -716,14 +722,14 @@ BT_SUITE_TEARDOWN_DEF(nsx, objectref)
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(nsx, plain, object, "simple tests")
+BT_TEST_DEF(sx, plain, object, "simple tests")
 {
   gc_global_t * g = object;
   sx_t * s;
 
   sxb_t * b = sxb_new(g);
 
-#define sxb_reads(_g, _b, _cstr) sxb_read((_g), (_b), strlen(_cstr), _cstr)
+#define sxb_reads(_g, _b, _cstr) sxb_read((_g), (_b), gc_new_str(g, strlen(_cstr), _cstr))
 
   /* hello7 1world!7 */
   /*s = sxb_reads(g, b, "('\\150\\145\\154\\154\\1577\\40 1\\167\\157\\162\\154\\144\\41 7')");
@@ -734,13 +740,17 @@ BT_TEST_DEF(nsx, plain, object, "simple tests")
   FILE * fp;
   uint32_t l;
 
-  fp = fopen("tests/sx-parser-tests.txt", "rb"); bt_assert_ptr_not_equal(fp, NULL);
+  if (!(fp = fopen(BROOT "/src/sx/sx-tests.txt", "rb"))) {
+    bt_log("could not open test file for reading!\n");
+    return BT_RESULT_IGNORE;
+  }
+
   while ((l = fread(buf, 1, 512, fp))) {
     for (char * p = buf, * pe = p + l; p < pe; p++) {
-      s = sxb_read(g, b, 1, p);
+      s = sxb_read_len(g, b, 1, p);
       if (s) {
         gc_str_t * p = sx_dump(g, s);
-        fprintf(stderr, "%s\n", p->data);
+        bt_log("%s\n", p->data);
       }
     }
   }

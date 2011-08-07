@@ -10,7 +10,7 @@ enum sx_kind {
   SX_PLAIN = 0x04 | SX_ATOM,
   SX_SQ    = 0x08 | SX_ATOM,
   SX_DQ    = 0x10 | SX_ATOM,
-  SX_NUM   = 0x20 | SX_ATOM,
+  SX_NUM   = 0x20,
 };
 
 typedef struct sx sx_t;
@@ -18,7 +18,7 @@ struct sx {
   gc_hdr_t gco;
   uint16_t kind;
   sx_t   * next;
-  union {
+  __extension__ union {
     sx_t     * lst;
     gc_str_t * str;
     number_t * num;
@@ -76,4 +76,17 @@ typedef struct {
 } sxb_t;
 
 sxb_t  * sxb_new(gc_global_t * g);
-sx_t   * sxb_read(gc_global_t * g, sxb_t * b, size_t len, const char str[len]);
+sx_t   * sxb_read(gc_global_t * g, sxb_t * b, gc_str_t * str);
+
+inline static
+uint32_t sx_lnklen(sx_t * x)
+{
+  uint32_t len = 0;
+  while (x) {
+    len++;
+    x = x->next;
+  }
+  return len;
+}
+
+gc_str_t * sx_dump(gc_global_t * g, sx_t * x);
