@@ -105,7 +105,6 @@ void gc_init(gc_global_t * g, mem_allocator_t alloc)
 #define is_other(o, ow)  ((GC_HDR(o)->flag ^ GC_FLAG_WHITES) & (ow & GC_FLAG_WHITES))
 #define is_fixed(o)      (GC_HDR(o)->flag & GC_FLAG_FIXED)
 #define make_white(o, w) (GC_HDR(o)->flag = (GC_HDR(o)->flag & ~GC_FLAG_COLORS) | (w))
-#define obj_size(o)      ((GC_HDR(o)->flag & 0xffffff00) >> 8)
 
 static
 size_t sweep_objects(gc_global_t * g, gc_ostore_t * list, size_t limit)
@@ -133,7 +132,7 @@ size_t sweep_objects(gc_global_t * g, gc_ostore_t * list, size_t limit)
         counter += GC_HDR(o)->vtable->gc_clear(g, (gc_hdr_t *) o);
       }
 
-      gc_mem_free(g, obj_size(o), o); counter++;
+      gc_mem_free(g, GC_HDR(o)->size, o); counter++;
 
       g->total--;
     }
@@ -168,7 +167,7 @@ size_t sweep_headers(gc_global_t * g, gc_hstore_t * list, size_t limit)
         counter += o->vtable->gc_clear(g, o);
       }
 
-      gc_mem_free(g, obj_size(o), o); counter++;
+      gc_mem_free(g, GC_HDR(o)->size, o); counter++;
 
       g->total--;
     }
@@ -200,7 +199,7 @@ size_t sweep_strings(gc_global_t * g, gc_strings_t * strings, size_t limit)
       } else {
         assert(is_dead(o, ow) || ow == GC_FLAG_SFIXED);
         gch_unlink(GC_HDRP(&b->head), GC_HDRP(p), GC_HDR(o));
-        gc_mem_free(g, obj_size(o), o); counter++; strings->count--;
+        gc_mem_free(g, GC_HDR(o)->size, o); counter++; strings->count--;
       }
       limit--;
     }

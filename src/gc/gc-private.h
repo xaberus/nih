@@ -361,7 +361,8 @@ inline static
 void intern_obj(gc_global_t * g, gc_obj_t * o, uint32_t size)
 {
   log(0, "# %s(%p [%u])\n", __FUNCTION__, (void *) o, size);
-  GC_HDR(o)->flag = (g->white & GC_FLAG_WHITES) | (size << 8);
+  GC_HDR(o)->flag = (g->white & GC_FLAG_WHITES);
+  GC_HDR(o)->size = size;
   gch_prepend(GC_HDRP(&g->objects.head), GC_HDR(o));
   g->total++;
 }
@@ -370,7 +371,8 @@ inline static
 void intern_hdr(gc_global_t * g, gc_hdr_t * o, uint32_t size)
 {
   log(0, "# %s(%p [%u])\n", __FUNCTION__, (void *) o, size);
-  GC_HDR(o)->flag = (g->white & GC_FLAG_WHITES) | (size << 8);
+  GC_HDR(o)->flag = (g->white & GC_FLAG_WHITES);
+  GC_HDR(o)->size = size;
   gch_prepend(GC_HDRP(&g->headers.head), GC_HDR(o));
   g->total++;
 }
@@ -406,7 +408,8 @@ inline static
 void intern_str(gc_global_t * g, gc_str_t * s, uint32_t size)
 {
   log(0, "# %s(%p [%u])\n", __FUNCTION__, (void *) s, size);
-  GC_HDR(s)->flag = (g->white & GC_FLAG_WHITES) | (size << 8);
+  GC_HDR(s)->flag = (g->white & GC_FLAG_WHITES);
+  GC_HDR(s)->size = size;
   gch_prepend(GC_HDRP(&g->strings.buckets.data[s->hash & g->strings.mask].head), GC_HDR(s));
   if (g->strings.count++ > g->strings.mask) {
     uint32_t newmask = (g->strings.mask << 1) | 1;

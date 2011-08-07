@@ -20,14 +20,14 @@ typedef struct gc_vtable gc_vtable_t;
 
 typedef struct gc_hdr {
   gc_vtable_t   * vtable;
-  uint32_t        flag;
+  uint16_t        flag;
+  uint32_t        size;
   struct gc_hdr * next;
 } gc_hdr_t;
 
 #define GC_HDR(_o)  ((gc_hdr_t *) (_o))
 #define GC_HDRP(_p) ((gc_hdr_t **) (_p))
 #define GC_SIZE_MAX ((1 << 24) - 1)
-#define gc_hdr_size(s) ((uint32_t) (((GC_HDR(s)->flag & 0xffffff00) >> 8) - sizeof(gc_hdr_t)))
 
 typedef struct gc_obj {
   gc_hdr_t        gch;
@@ -42,7 +42,7 @@ typedef struct gc_str {
   char     data[];
 } gc_str_t;
 
-#define gc_str_len(s) ((uint32_t) (((GC_HDR(s)->flag & 0xffffff00) >> 8) - sizeof(gc_str_t) - 1))
+#define gc_str_len(s) ((uint32_t) (GC_HDR(s)->size - sizeof(gc_str_t) - 1))
 
 typedef enum gc_state {
   GC_STATE_PAUSE = 0,

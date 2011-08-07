@@ -134,8 +134,10 @@ BT_TEST_DEF(gc, str, object, "string tests")
     FILE * fp;
     char   buf[512];
 
-    if (!(fp = fopen("tests/trie-tests.txt", "r")))
+    if (!(fp = fopen(BROOT "/src/trie/trie-tests.txt", "r"))) {
+      bt_log("could not open test file for reading!\n");
       return BT_RESULT_IGNORE;
+    }
 
     while (fgets(buf, 512, fp)) {
       bt_assert_ptr_not_equal(gc_new_str(g, strlen(buf), buf), NULL);
