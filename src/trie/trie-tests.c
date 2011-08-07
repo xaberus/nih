@@ -41,9 +41,10 @@ BT_SUITE_SETUP_DEF(trie, objectref)
   gc_init(test->g, a);
 
   n = 0;
-  fp = fopen("tests/trie-tests.txt", "r");
-  if (!fp)
+  if (!(fp = fopen(BROOT "/src/trie/trie-tests.txt", "r"))) {
+    bt_log("could not open test file for reading!\n");
     return BT_RESULT_IGNORE;
+  }
 
   while (fgets(buf, 512, fp)) {
     n++;

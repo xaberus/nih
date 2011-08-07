@@ -44,9 +44,10 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
   gc_init(test->g, a);
 
   n = 0;
-  fp = fopen("tests/pathman-tests.txt", "r");
-  if (!fp)
+  if (!(fp = fopen(BROOT "/src/trie/pathman-tests.txt", "r"))) {
+    bt_log("could not open test file for reading!\n");
     return BT_RESULT_IGNORE;
+  }
 
   while (fgets(buf, 512, fp)) {
     n++;
