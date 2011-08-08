@@ -737,6 +737,90 @@ number_t * number_sub(gc_global_t * g, number_t * a, number_t * b)
   return n;
 }
 
+inline static
+uint32_t intern_shl(uint32_t ru, uint32_t rd[ru], uint32_t au, uint32_t ad[au], uint32_t s)
+{
+  uint64_t r = 0;
+  uint32_t b = s % 32;
+  uint32_t t = s / 32;
+
+  for (uint32_t k = 0; k < t; k++) {
+    *(rd++) = 0;
+  }
+  for (uint32_t k = 0; k < au; k++) {
+    r = r | ((uint64_t) *(ad++) << b);
+    *(rd++) = (uint32_t) r; r >>= 32;
+  }
+  if (r) {
+    *(rd++) = (uint32_t) r; r >>= 32;
+  }
+  return (uint32_t) r;
+}
+
+inline static
+void intern_shr(uint32_t ru, uint32_t rd[ru], uint32_t au, uint32_t ad[au], uint32_t s)
+{
+  uint64_t r;
+  uint32_t b = s % 32, m = 32 - b;
+  uint32_t t = s / 32;
+
+  au -= t; ad += t;
+
+  r = ((uint64_t) *(ad++)) >> b;
+
+  for (uint32_t k = 1; k < au; k++) {
+    r = r | ((uint64_t) *(ad++) << m);
+    *(rd++) = (uint32_t) r; r >>= 32;
+  }
+  if (r) {
+    *(rd++) = (uint32_t) r;
+  }
+}
+
+
+number_t * number_shl(gc_global_t * g, number_t * a, uint32_t s)
+{
+  uint32_t au = iabs(a->s);
+
+  if (au == 0) {
+    return a;
+  }
+
+  uint64_t bits = ALIGN32((uint64_t) au * 32 - intern_lbz(a->data[au - 1]) + s);
+  uint32_t ru = bits >> 5;
+  number_t * r = number_new(g, bits);
+
+  intern_shl(ru, r->data, au, a->data, s);
+
+  r->s = (a->s < 0) ? -ru : ru;
+
+  return r;
+}
+
+number_t * number_shr(gc_global_t * g, number_t * a, uint32_t s)
+{
+  uint32_t au = iabs(a->s);
+
+  if (au == 0) {
+    return a;
+  }
+
+  uint64_t bits = (uint64_t) au * 32 - intern_lbz(a->data[au - 1]);
+  if (bits <= s) {
+    number_new(g, 0);
+  }
+  bits = ALIGN32(bits - s);
+  uint32_t ru = bits >> 5;
+
+  number_t * r = number_new(g, bits);
+
+  intern_shr(ru, r->data, au, a->data, s);
+
+  r->s = (a->s < 0) ? -ru : ru;
+
+  return r;
+}
+
 #ifdef TEST
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢*/
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢╭────────╮▢▢▢▢▢▢▢▢▢▢▢▢▢*/
@@ -916,6 +1000,34 @@ BT_TEST_DEF(number, plain, object, "simple tests")
       "0xffffffff",
       "0xffffffffffffffff");
 
+# define testbop(_N, _OP, _A, _B, _C) \
+  do { \
+    number_t * c, * a; \
+    gc_str_t * s; \
+    bt_assert_ptr_not_equal((a = number_new(g, (_N))), NULL); \
+    bt_assert_ptr_not_equal((a = number_setstrc(g, a, strlen(_A), (_A))), NULL); \
+    bt_assert_ptr_not_equal((s = number_gethex(g, a)), NULL); \
+    bt_assert_str_equal(s->data, (_A)); \
+    bt_assert_ptr_not_equal((c = _OP(g, a, (_B))), NULL); \
+    bt_assert_ptr_not_equal((s = number_gethex(g, c)), NULL); \
+    bt_assert_str_equal(s->data, (_C)); \
+    /*bt_log("number: %s = %s(%s, %s) == %s, OK\n", s->data, #_OP, (_A), (_B), (_C));*/ \
+    bt_log("%s: %s == %s, OK\n", # _OP, s->data, (_C)); \
+    gc_collect(g, 1); \
+  } while (0)
+
+  testbop(128, number_shl, "0x123456", 32, "0x12345600000000");
+  testbop(128, number_shl, "0xffffff", 16, "0xffffff0000");
+  testbop(128, number_shl, "0x123456", 16, "0x1234560000");
+  testbop(128, number_shl, "0x1", 64, "0x10000000000000000");
+
+  testbop(128, number_shr, "0x10000000000000000", 64, "0x1");
+  testbop(128, number_shr, "0xabcdef", 4, "0xabcde");
+  testbop(128, number_shr, "0x123456789abcdef", 4, "0x123456789abcde");
+  testbop(128, number_shr, "0x123456789abcdef", 3, "0x2468acf13579bd");
+
+  testbop(128, number_shr, "0x1", 2, "0x0");
+  testbop(128, number_shr, "0x1", 1, "0x0");
 
   /*bt_assert_ptr_not_equal((n = number_sub(g, a, b)), NULL);
   bt_assert_ptr_not_equal((s = number_gethex(g, n)), NULL);
