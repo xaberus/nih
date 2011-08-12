@@ -191,7 +191,7 @@ size_t sweep_strings(gc_global_t * g, gc_strings_t * strings, size_t limit)
   while (run++ < max) {
     gc_bucket_t * b = &buckets->data[strings->sweep];
     p = b->sweep ? b->sweep : &b->head;
-    while ((o = *p) && limit-- > 0) {
+    while ((o = *p) && limit > 0) {
       if (is_other(o, ow)) {
         assert(!is_dead(o, ow) || (is_fixed(o)));
         make_white(o, g->white & GC_FLAG_WHITES);
