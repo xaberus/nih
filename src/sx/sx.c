@@ -493,6 +493,7 @@ trans:
         L("### STRING: ['%c']\n", c);
         if (!u_iswhite(c)) {
           if (c == ')')    {  TA(SXBS_ATOM_END); }
+          if (c == '(')    {  TA(SXBS_ATOM_END); }
           if (c == '"')    {  TA(SXBS_ATOM_END); }
           if (c == '\'')   {  TA(SXBS_ATOM_END); }
           ag_append(g, &b->ag, b->u.l, (char *) b->u.r);
