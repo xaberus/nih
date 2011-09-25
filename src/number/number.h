@@ -1,7 +1,7 @@
 #ifndef _NUMBER_H
 #define _NUMBER_H
 
-#include "gc.h"
+#include "gc/gc.h"
 
 typedef struct {
   gc_hdr_t gch;
