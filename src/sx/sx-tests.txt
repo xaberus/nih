@@ -1,3 +1,6 @@
+(a (b ("u" (g) (i)) ("e" (g) (i)) ("m" (o) (i))))
+(a (c("sel"(e(u 16) ("FOO" 1) ("BAR" 1) ("BAZ" 1) ("MAN" 1)))("bfl"(b(u 16) ("ela"(u 3)) ("elb"(u 5)) ("elc"(u 2)) ("eld"(u 6))))("bar"(o (u 1) 100)))100)
+
 ; plain
 foo
 ()
