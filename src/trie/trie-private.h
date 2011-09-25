@@ -41,12 +41,12 @@ struct tnode_iter  tnode_iter(tbank_t * bank, uint32_t idx)
   linked_list_safe_foreach(tbank_t, __iter, __init)
 
 inline static
-tbank_t * tnode_bank_alloc(gc_global_t * g, uint32_t start, uint32_t end)
+tbank_t * tnode_bank_alloc(const mem_allocator_t * a, uint32_t start, uint32_t end)
 {
   uint32_t            size = (end - start);
   tbank_t * bank;
 
-  bank = gc_mem_new(g, sizeof(tbank_t) + sizeof(tnode_t) * size);
+  bank = mem_alloc(a, sizeof(tbank_t) + sizeof(tnode_t) * size);
 
   if (bank) {
     memset(bank, 0, sizeof(tbank_t) + sizeof(tnode_t) * size);
@@ -121,7 +121,7 @@ struct tnode_tuple tnode_iter_get(struct tnode_iter * iter, uint32_t index)
   return tnode_tuple(NULL, 0);
 }
 
-static inline
+inline static
 err_t _trie_stride_alloc(trie_t * trie, uint16_t rest, struct tnode_tuple stride[rest])
 {
   struct tnode_tuple new;

@@ -14,12 +14,13 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <string.h>
 
 BT_SUITE_DEF(trie, "trie tests");
 
 struct trie_test {
   trie_t      trie[1];
-  gc_global_t g[1];
+  mem_allocator_t a[1];
   size_t      num;
   char      * flag;
   char     ** strv;
@@ -34,11 +35,8 @@ BT_SUITE_SETUP_DEF(trie, objectref)
 
   bt_assert_ptr_not_equal(test, NULL);
 
-  mem_allocator_t a;
-  a.realloc = plain_realloc;
-  a.ud = NULL;
-
-  gc_init(test->g, a);
+  test->a->realloc = plain_realloc;
+  test->a->ud = NULL;
 
   n = 0;
   if (!(fp = fopen(BROOT "/src/trie/trie-tests.txt", "r"))) {
@@ -69,7 +67,7 @@ BT_SUITE_SETUP_DEF(trie, objectref)
 
   fclose(fp);
 
-  bt_assert_ptr_not_equal(trie_init(test->g, test->trie, 4096), NULL);
+  bt_assert_ptr_not_equal(trie_init(test->a, test->trie, 4096), NULL);
 
   *objectref = test;
 
@@ -376,8 +374,6 @@ BT_SUITE_TEARDOWN_DEF(trie, objectref)
 
   free(test->strv);
   free(test->flag);
-
-  gc_clear(test->g);
 
   free(test);
 

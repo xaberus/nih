@@ -1,6 +1,4 @@
 #include "trie.h"
-#include "trie-private.h"
-#include "trie-tests.c"
 
 #include <string.h>
 #include <stdlib.h>
@@ -8,23 +6,25 @@
 #include <assert.h>
 #include <malloc.h>
 
+#include "trie-private.h"
+#include "trie-tests.c"
 
 #include <time.h>
 
-trie_t * trie_init(gc_global_t * g, trie_t * trie, uint32_t basize)
+trie_t * trie_init(const mem_allocator_t * a, trie_t * trie, uint32_t basize)
 {
   if (!trie)
     return NULL;
 
   memset(trie, 0, sizeof(trie_t));
 
-  trie->nodes = tnode_bank_alloc(g, 0, basize);
+  trie->nodes = tnode_bank_alloc(a, 0, basize);
   if (!trie->nodes)
     return NULL;
 
   trie->basize = basize;
   trie->abank = trie->nodes;
-  trie->g = g;
+  trie->a = a;
 
   return trie;
 }
@@ -35,8 +35,7 @@ void trie_clear(trie_t * trie)
     return;
 
   tnode_bank_safe_foreach(bank, trie->nodes) {
-    uint32_t size = bank->end - bank->start;
-    gc_mem_free(trie->g, sizeof(tbank_t) + sizeof(tnode_t) * size, bank);
+    mem_free(trie->a, bank);
   }
 
   memset(trie, 0, sizeof(trie_t));
@@ -69,7 +68,7 @@ struct tnode_tuple trie_mknode(trie_t * trie)
       uint32_t start = trie->abank->end;
       uint32_t end = start + trie->basize;
 
-      bank = tnode_bank_alloc(trie->g, start, end);
+      bank = tnode_bank_alloc(trie->a, start, end);
       assert(bank);
 
       /* link bank in */
@@ -454,7 +453,6 @@ void tuple_print(struct tnode_tuple tu)
 trie_iter_t * trie_iter_init(trie_t * trie, trie_iter_t * iter)
 {
   if (trie && iter) {
-    iter->g = trie->g;
     iter->len = iter->alen = 0;
     iter->word = NULL;
     iter->spos = 0;
@@ -485,9 +483,10 @@ int trie_iter_next(trie_iter_t * iter)
           oslen = iter->aslen;
           iter->aslen = ALIGN16(iter->slen);
 
-          tmp = gc_mem_realloc(iter->g,
+          tmp = mem_realloc(iter->trie->a,
+              iter->stride,
               sizeof(struct tnode_tuple) * oslen,
-              sizeof(struct tnode_tuple) * iter->aslen, iter->stride);
+              sizeof(struct tnode_tuple) * iter->aslen);
           iter->stride = tmp;
         }
 
@@ -506,7 +505,7 @@ int trie_iter_next(trie_iter_t * iter)
             uint8_t * tmp;
 
             iter->alen = ALIGN16(iter->len);
-            tmp = gc_mem_realloc(iter->g, olen, iter->alen, iter->word);
+            tmp = mem_realloc(iter->trie->a, iter->word, olen, iter->alen);
             iter->word = tmp;
           }
           for (int32_t k = 0, j = 0; k < iter->slen; k++) {
@@ -555,8 +554,10 @@ int trie_iter_next(trie_iter_t * iter)
 void trie_iter_clear(trie_iter_t * iter)
 {
   if (iter) {
-    gc_mem_free(iter->g, iter->aslen, iter->stride);
-    gc_mem_free(iter->g, iter->alen, iter->word);
+    if (iter->stride)
+      mem_free(iter->trie->a, iter->stride);
+    if (iter->word)
+      mem_free(iter->trie->a, iter->word);
     memset(iter, 0, sizeof(iter));
   }
 }

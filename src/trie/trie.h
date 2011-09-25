@@ -1,7 +1,6 @@
 #ifndef _TRIE_H
 #define _TRIE_H
 
-#include "gc/gc.h"
 #include "common/err.h"
 #include "common/memory.h"
 
@@ -44,7 +43,7 @@ struct tnode_tuple {
 };
 
 typedef struct {
-  gc_global_t * g;
+  const mem_allocator_t * a;
   tbank_t * nodes;
   tbank_t * abank;  /* allocation bank */
   uint32_t  basize; /* bank allocation size */
@@ -53,7 +52,7 @@ typedef struct {
 } trie_t;
 
 
-trie_t * trie_init(gc_global_t * g, trie_t * trie, uint32_t basize);
+trie_t * trie_init(const mem_allocator_t * a, trie_t * trie, uint32_t basize);
 void     trie_clear(trie_t * trie);
 
 err_t    trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t data, bool rep);
@@ -61,7 +60,6 @@ err_t    trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len]);
 err_t    trie_find(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t * data);
 
 typedef struct {
-  gc_global_t        * g;
   trie_t             * trie;
   uint16_t             len;
   uint16_t             alen;
