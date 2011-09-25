@@ -15,7 +15,7 @@ enum sx_kind {
 
 typedef struct sx sx_t;
 struct sx {
-  gc_hdr_t gco;
+  gc_obj_t gco;
   uint16_t kind;
   sx_t   * next;
   __extension__ union {
