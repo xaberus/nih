@@ -9,7 +9,6 @@
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢*/
 
 #include <bt.h>
-#include "gc-private.h"
 
 typedef struct testobj {
   gc_obj_t         gco;
@@ -99,7 +98,7 @@ gc_vtable_t testobj_vtable = {
 
 #define TESTOBJ(_o) \
   (testobj_t *) \
-    (_o ? ((*((TYPEOF(testobj_vtable) **) _o) == &testobj_vtable) ? _o : (NULL)) \
+    (_o ? ((*((__typeof(testobj_vtable) **) _o) == &testobj_vtable) ? _o : (NULL)) \
        : (NULL))
 
 BT_SUITE_DEF(gc_stack, "tests garbage collected stack (gc:vector, gc:barrier, gc:str, etc.)");

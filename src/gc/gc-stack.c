@@ -1,7 +1,7 @@
 #include "gc-stack.h"
 #include "gc-stack-tests.c"
-
-#include <assert.h>
+#include "gc-private.h"
+#include "common/hash.h"
 
 #define ALIGN16(_size) (((_size) + 15L) & ~15L)
 
@@ -162,7 +162,7 @@ gc_str_t * gc_stack_strcat(gc_global_t * g, gc_stack_t * s)
         }
       }
 
-      uint32_t h = gc_hash(b->data, len, 17);
+      uint32_t h = hash(b->data, len, 17);
 
       gc_str_t * t = g->strings.buckets.data[h & g->strings.mask].head;
 

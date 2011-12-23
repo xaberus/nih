@@ -1,5 +1,6 @@
 #include "gc-private.h"
 #include "gc-tests.c"
+#include "common/hash.h"
 
 #include <stdarg.h>
 
@@ -537,7 +538,7 @@ gc_vtable_t gc_str_vtable = {
 gc_str_t * gc_new_str(gc_global_t * g, uint32_t len, const char str[len])
 {
   log(0, "# %s(%.*s)\n", __FUNCTION__, len, str);
-  uint32_t   h = gc_hash(str, len, 17);
+  uint32_t   h = hash(str, len, 17);
 
   assert((h & g->strings.mask) < g->strings.buckets.dsize);
 
