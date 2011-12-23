@@ -19,22 +19,14 @@ typedef struct {
   };
 } tnode_t;
 
-#define INDEX2IDX(__index) (__index - 1)
-#define IDX2INDEX(__idx)   (__idx + 1)
+#define INDEX2IDX(__index) ((__index) - 1)
+#define IDX2INDEX(__idx)   ((__idx) + 1)
 
 typedef struct tbank tbank_t;
 struct tbank {
-  uint32_t  start;
-  uint32_t  end;
-  uint32_t  length;
-  tbank_t * prev;
-  tbank_t * next;
-  tnode_t   nodes[];
-};
-
-struct tnode_iter {
-  tbank_t  * bank;
-  uint32_t   idx;
+  uint32_t addr;
+  uint32_t used;
+  tnode_t  nodes[];
 };
 
 struct tnode_tuple {
@@ -44,15 +36,25 @@ struct tnode_tuple {
 
 typedef struct {
   const mem_allocator_t * a;
-  tbank_t * nodes;
+
+  uint16_t  addrbits;
+  uint32_t  addrmask;
+  uint16_t  nodebits;
+  uint32_t  nodemask;
+
+  tbank_t ** nodes;
+  uint32_t  banks;
+  uint32_t  banksize; /* bank allocation size */
+
   tbank_t * abank;  /* allocation bank */
-  uint32_t  basize; /* bank allocation size */
+
+
   uint32_t  root;   /* root key */
   uint32_t  freelist;
 } trie_t;
 
 
-trie_t * trie_init(const mem_allocator_t * a, trie_t * trie, uint32_t basize);
+trie_t * trie_init(const mem_allocator_t * a, trie_t * trie, uint8_t nodebits);
 void     trie_clear(trie_t * trie);
 
 err_t    trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t data, bool rep);
@@ -68,7 +70,6 @@ typedef struct {
   uint16_t             slen;
   uint16_t             aslen;
   struct tnode_tuple * stride;
-  struct tnode_iter    iter;
   struct tnode_tuple   tuple;
   unsigned             fsm; /* stop = 0, child = 1, next = 2 */
   uintptr_t            data;

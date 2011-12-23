@@ -27,98 +27,71 @@ struct tnode_tuple tnode_tuple(tnode_t * node, uint32_t index)
 }
 
 inline static
-struct tnode_iter  tnode_iter(tbank_t * bank, uint32_t idx)
+uint32_t tnode_bank_size(uint16_t addrbits)
 {
-  struct tnode_iter ret = {
-    .bank = bank,
-    .idx = idx,
-  };
-
-  return ret;
+  return (1 << (32 - addrbits)); /* 2^(32 - 12) */
 }
 
-#define tnode_bank_safe_foreach(__iter, __init) \
-  linked_list_safe_foreach(tbank_t, __iter, __init)
-
 inline static
-tbank_t * tnode_bank_alloc(const mem_allocator_t * a, uint32_t start, uint32_t end)
+tbank_t * tnode_bank_alloc(const mem_allocator_t * a, uint32_t size, uint32_t addr)
 {
-  uint32_t            size = (end - start);
   tbank_t * bank;
 
   bank = mem_alloc(a, sizeof(tbank_t) + sizeof(tnode_t) * size);
 
   if (bank) {
     memset(bank, 0, sizeof(tbank_t) + sizeof(tnode_t) * size);
-
-    bank->start = start;
-    bank->end = end;
+    bank->used = 0;
+    bank->addr = addr;
   }
 
   return bank;
 }
 
 inline static
-struct tnode_tuple tnode_bank_mknode(tbank_t * bank)
+struct tnode_tuple tnode_bank_mknode(tbank_t * bank, uint32_t size, uint16_t nodebits)
 {
   if (!bank)
     return tnode_tuple(NULL, 0);
 
-  uint32_t next = bank->start + bank->length;
+  uint32_t next = bank->used;
 
-  if (next < bank->end) {
-    tnode_t * node = &bank->nodes[bank->length];
-
+  if (next < size) {
+    tnode_t * node = &bank->nodes[next];
     memset(node, 0, sizeof(tnode_t));
-
-    bank->length++;
-
-    return tnode_tuple(node, IDX2INDEX(next));
+    bank->used++;
+    return tnode_tuple(node, IDX2INDEX(next | (bank->addr << nodebits)));
   }
 
   return tnode_tuple(NULL, 0);
 }
 
 inline static
-tbank_t * tnode_iter_get_bank(struct tnode_iter * iter)
-{
-  tbank_t * bank = iter->bank;
-  uint32_t            idx = iter->idx;
-
-  /* rewind */
-  while (bank && (idx < bank->start || idx >= bank->end)) {
-    /* note: the direction of the list is inversed! */
-    if (idx < bank->start)
-      bank = bank->next;
-    else if (idx >= bank->end)
-      bank = bank->prev;
-  }
-
-  if (bank)
-    return (iter->bank = bank);
-
-  return NULL;
-}
-
-inline static
-struct tnode_tuple tnode_iter_get(struct tnode_iter * iter, uint32_t index)
+struct tnode_tuple tnode_get(trie_t * trie, uint32_t index)
 {
   tbank_t * bank;
-  tnode_t      * node;
+  tnode_t * node;
 
-  if (!index || !iter)
-    return tnode_tuple(NULL, 0);
+  index = INDEX2IDX(index);
 
-  iter->idx = INDEX2IDX(index);
+  uint32_t  addr = (index & trie->addrmask) >> trie->nodebits;
+  uint32_t  idx  = (index & trie->nodemask);
 
-  if ((bank = tnode_iter_get_bank(iter))) {
-    /* get */
-    node = &bank->nodes[iter->idx - bank->start];
-    if (node->isused)
-      return tnode_tuple(node, index);
+  if (addr < trie->banks && idx < trie->banksize) {
+    bank = trie->nodes[addr];
+    node = &bank->nodes[idx];
+    if (node->isused) {
+      return (struct tnode_tuple) {
+        .node = node,
+        .index = IDX2INDEX(index),
+      };
+    }
   }
 
-  return tnode_tuple(NULL, 0);
+  return (struct tnode_tuple){
+    .node = NULL,
+    .index = 0,
+  };
 }
 
 inline static
@@ -506,7 +479,6 @@ uint32_t trie_calc_stride_length(struct trie_eppoit * epo, uint32_t len)
 inline static
 struct trie_eppoit _trie_insert_decide(trie_t * trie,
     struct tnode_tuple tuple,
-    struct tnode_iter * iter,
     uint16_t len,
     const uint8_t word[len],
     bool rep)
@@ -552,7 +524,7 @@ struct trie_eppoit _trie_insert_decide(trie_t * trie,
           }
         }
       }
-      tmp = tnode_iter_get(iter, tuple.node->child);
+      tmp = tnode_get(trie, tuple.node->child);
       if (tmp.index) {
         prev = tnode_tuple(NULL, 0);
         parent = tuple;
@@ -579,7 +551,7 @@ struct trie_eppoit _trie_insert_decide(trie_t * trie,
       if (tuple.node->next) {
         /* advance one child */
         prev = tuple;
-        tuple = tnode_iter_get(iter, tuple.node->next);
+        tuple = tnode_get(trie, tuple.node->next);
       } else {
         /* we reached the last child, action: append child */
         prev = tuple;

@@ -16,6 +16,8 @@
 #include <fcntl.h>
 #include <string.h>
 
+//#include <google/profiler.h>
+
 BT_SUITE_DEF(trie, "trie tests");
 
 struct trie_test {
@@ -67,7 +69,14 @@ BT_SUITE_SETUP_DEF(trie, objectref)
 
   fclose(fp);
 
-  bt_assert_ptr_not_equal(trie_init(test->a, test->trie, 4096), NULL);
+  bt_assert_ptr_equal(trie_init(test->a, test->trie, 18), NULL);
+  bt_assert_ptr_equal(trie_init(test->a, test->trie, 17), NULL);
+  bt_assert_ptr_equal(trie_init(test->a, test->trie, 0), NULL);
+
+  bt_assert_ptr_not_equal(trie_init(test->a, test->trie, 8), NULL);
+
+  bt_log("[trie:init] bank size is %u (masks are 0x%x 0x%x)\n",
+    test->trie->banksize, test->trie->addrmask, test->trie->nodemask);
 
   *objectref = test;
 
@@ -81,10 +90,9 @@ BT_TEST_DEF(trie, str, object, "str mode")
   err_t              err;
   struct trie_eppoit eppoit;
   struct tnode_tuple tuple;
-  struct tnode_iter  iter[1] = {tnode_iter(trie->nodes, 0)};
 
 #define test(_str, _res) \
-  eppoit = _trie_insert_decide(trie, tuple, iter, strlen(_str), (const uint8_t *) (_str), 1); \
+  eppoit = _trie_insert_decide(trie, tuple, strlen(_str), (const uint8_t *) (_str), 1); \
   bt_chkerr(eppoit.err); \
   if (eppoit.act == TRIE_INSERT_SPLIT_0_SET) \
     bt_log("'%s' -> ACT: %u, ~ {%.*s}\n", _str, eppoit.act, \
@@ -114,7 +122,7 @@ BT_TEST_DEF(trie, str, object, "str mode")
 
   err = trie_insert(trie, 9, (const uint8_t *) "foobarses", 0, 0);
   bt_chkerr(err);
-  tuple = tnode_iter_get(iter, trie->root);
+  tuple = tnode_get(trie, trie->root);
   bt_assert(!tuple.node->isdata);
 
   /*
@@ -147,7 +155,7 @@ BT_TEST_DEF(trie, str, object, "str mode")
 
   err = trie_insert(trie, 9, (const uint8_t *) "foobarses", 0, 0);
   bt_chkerr(err);
-  tuple = tnode_iter_get(iter, trie->root);
+  tuple = tnode_get(trie, trie->root);
   bt_assert(!tuple.node->isdata);
 
   /*
@@ -225,9 +233,11 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
       bt_chkerr(err);
     }
   }
+  bt_log("[trie] %u strings inserted\n", (unsigned) num);
 
   // trie_print(trie, 4);
 
+  /* make sure all strings were properly inserted */
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
     if (str) {
@@ -243,6 +253,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
 
   srand(1);
 
+  /* randomly delete strings and check that only the desired were removed */
   for (size_t i = 0; i < num; i++) {
     char * str = NULL;
 
@@ -289,6 +300,8 @@ BT_TEST_DEF(trie, insert_delete_insert, object, "insert delete insert")
   char            ** strv = test->strv;
   char             * flag = test->flag;
 
+  // ProfilerStart("cpuprof");
+
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
     if (str) {
@@ -296,6 +309,7 @@ BT_TEST_DEF(trie, insert_delete_insert, object, "insert delete insert")
       bt_chkerr(err);
     }
   }
+  bt_log("[trie] %u strings inserted\n", (unsigned) num);
 
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];
@@ -357,6 +371,19 @@ BT_TEST_DEF(trie, insert_delete_insert, object, "insert delete insert")
     }
   }
 
+  /* ensure, that we reached every piece of data */
+  for (iter = trie_iter_init(trie, iterstor); iter && trie_iter_next(iter);) {
+    test->flag[iter->data]++;
+    // printf("'%.*s' -> %zu\n", (int) iter->len, (const char *) iter->word, iter->data); fflush(stdout);
+  }
+  for (size_t j = 0; j < num; j++) {
+    bt_assert(test->flag[j] == 1);
+    test->flag[j] = 0;
+  }
+
+  trie_iter_clear(iter);
+
+  // ProfilerStop();
   // trie_print(trie, 4);
 
   return BT_RESULT_OK;

@@ -11,19 +11,32 @@
 
 #include <time.h>
 
-trie_t * trie_init(const mem_allocator_t * a, trie_t * trie, uint32_t basize)
+trie_t * trie_init(const mem_allocator_t * a, trie_t * trie, uint8_t nodebits)
 {
   if (!trie)
     return NULL;
 
+  if (nodebits == 0 || nodebits > 16)
+    return NULL;
+
   memset(trie, 0, sizeof(trie_t));
 
-  trie->nodes = tnode_bank_alloc(a, 0, basize);
+  trie->nodebits = nodebits;
+  trie->addrbits = 32 - nodebits;
+  trie->addrmask = (0xffffffff << trie->nodebits);
+  trie->nodemask = (0xffffffff >> (32 - trie->nodebits));
+  trie->banksize = tnode_bank_size(trie->addrbits);
+
+  trie->nodes = mem_alloc(a, sizeof(tbank_t *));
   if (!trie->nodes)
     return NULL;
 
-  trie->basize = basize;
-  trie->abank = trie->nodes;
+  trie->nodes[0] = tnode_bank_alloc(a, trie->banksize, 0);
+  if (!trie->nodes[0])
+    return NULL;
+  trie->banks = 1;
+
+  trie->abank = trie->nodes[0];
   trie->a = a;
 
   return trie;
@@ -34,58 +47,68 @@ void trie_clear(trie_t * trie)
   if (!trie)
     return;
 
-  tnode_bank_safe_foreach(bank, trie->nodes) {
-    mem_free(trie->a, bank);
+  for (uint32_t n = 0; n < trie->banks; n++) {
+    mem_free(trie->a, trie->nodes[n]);
   }
+  mem_free(trie->a, trie->nodes);
 
   memset(trie, 0, sizeof(trie_t));
 }
 
 struct tnode_tuple trie_mknode(trie_t * trie)
 {
-  tbank_t * bank;
+  uint32_t  banksize = trie->banksize;
+  uint16_t  nodebits = trie->nodebits;
+  uint16_t  banks = trie->banks;
+
+  tbank_t * bank = trie->abank;
 
   if (trie->freelist) { /* reuse nodes from freelist */
-    struct tnode_iter   iter = tnode_iter(trie->nodes, INDEX2IDX(trie->freelist));
-    tbank_t * bank;
-    tnode_t      * node;
+    uint32_t  index = INDEX2IDX(trie->freelist);
+    uint32_t  addr = (index & trie->addrmask) >> nodebits;
+    uint32_t  idx  = (index & trie->nodemask);
+    tnode_t * node = NULL;
 
-    if ((bank = tnode_iter_get_bank(&iter))) {
-      /* get */
-      node = &bank->nodes[iter.idx - bank->start];
+    if (addr < banks && idx < banksize) {
+      bank = trie->nodes[addr];
+      node = &bank->nodes[idx];
       if (!node->isused) {
         trie->freelist = node->next;
         memset(node, 0, sizeof(tnode_t));
-        return tnode_tuple(node, IDX2INDEX(iter.idx));
+        return tnode_tuple(node, IDX2INDEX(index));
       }
     }
   } else {
-    struct tnode_tuple tuple;
+    struct tnode_tuple tuple = tnode_bank_mknode(bank, banksize, nodebits);
 
-    tuple = tnode_bank_mknode(trie->abank);
+    if (!tuple.index && bank) {
+      {
+        tbank_t ** tmp = mem_realloc(
+          trie->a,
+          trie->nodes,
+          sizeof(tbank_t) * banks,
+          sizeof(tbank_t) * (banks + 1)
+        );
+        if (!tmp)
+          return tnode_tuple(NULL, 0);
+        trie->nodes = tmp;
+      }
 
-    if (!tuple.index && trie->abank) {
-      uint32_t start = trie->abank->end;
-      uint32_t end = start + trie->basize;
+      bank = tnode_bank_alloc(trie->a, banksize, banks);
+      if (!bank)
+        return tnode_tuple(NULL, 0);
 
-      bank = tnode_bank_alloc(trie->a, start, end);
-      assert(bank);
-
-      /* link bank in */
-
-      tuple = tnode_bank_mknode(bank);
-      assert(tuple.index);
-
-      /* link bank in */
-      if (trie->nodes)
-        trie->nodes->prev = bank;
-      bank->next = trie->nodes;
-      trie->nodes = bank;
+      trie->nodes[banks++] = bank;
       trie->abank = bank;
+      trie->banks = banks;
 
-      return tuple;
-    } else
-      return tuple;
+      tuple = tnode_bank_mknode(bank, banksize, nodebits);
+    }
+
+    if (!tuple.index)
+      return tnode_tuple(NULL, 0);
+
+    return tuple;
   }
 
   return tnode_tuple(NULL, 0);
@@ -93,19 +116,16 @@ struct tnode_tuple trie_mknode(trie_t * trie)
 
 void trie_remnode(trie_t * trie, uint32_t index)
 {
-  struct tnode_tuple tuple;
-  struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
-
-  tuple = tnode_iter_get(&iter, index);
+  struct tnode_tuple tuple = tnode_get(trie, index);
 
   tuple.node->next = trie->freelist;
   tuple.node->isused = 0;
   trie->freelist = tuple.index;
 }
 
-void trie_print_r(trie_t * trie, struct tnode_iter * iter, uint32_t index, int fd)
+void trie_print_r(trie_t * trie, uint32_t index, int fd)
 {
-  struct tnode_tuple tuple = tnode_iter_get(iter, index);
+  struct tnode_tuple tuple = tnode_get(trie, index);
   uint32_t           last;
 
 
@@ -135,12 +155,12 @@ void trie_print_r(trie_t * trie, struct tnode_iter * iter, uint32_t index, int f
     dprintf(fd, ">]\n");
 
     if (tuple.node->child) {
-      trie_print_r(trie, iter, tuple.node->child, fd);
+      trie_print_r(trie, tuple.node->child, fd);
       dprintf(fd, " \"node%u\":f3 -> \"node%u\":f0 [color=red];\n", tuple.index, tuple.node->child);
     }
 
     last = tuple.index;
-    tuple = tnode_iter_get(iter, tuple.node->next);
+    tuple = tnode_get(trie, tuple.node->next);
 #if 1
     if (tuple.index)
       dprintf(fd, " \"node%u\":f2 -> \"node%u\" [color=blue, minlen=0];\n", last, tuple.index);
@@ -151,18 +171,16 @@ void trie_print_r(trie_t * trie, struct tnode_iter * iter, uint32_t index, int f
 
 #if 0
   dprintf(fd, " { rank=same ");
-  tuple = tnode_iter_get(iter, index);
+  tuple = tnode_get(trie, index);
   while (tuple.index) {
     dprintf(fd, " \"node%u\" ", tuple.index);
-    tuple = tnode_iter_get(iter, tuple.node->next);
+    tuple = tnode_get(trie, tuple.node->next);
   }
   dprintf(fd, " }\n");
 #endif
 }
 void trie_print(trie_t * trie, int fd)
 {
-  struct tnode_iter iter = tnode_iter(trie->nodes, 0);
-
   dprintf(fd, "digraph trie {\n");
   dprintf(fd, " graph [rankdir = TD]\n");
   dprintf(fd, " node [fontsize = 12, fontname = \"monospace\"]\n");
@@ -175,7 +193,7 @@ void trie_print(trie_t * trie, int fd)
       "<tr><td port=\"f0\" bgcolor=\"gray\">%u</td></tr>"
       "</table>>]\n", trie->root);
   if (trie->root) {
-    trie_print_r(trie, &iter, trie->root, fd);
+    trie_print_r(trie, trie->root, fd);
     dprintf(fd, " \"trie\":f0 -> \"node%u\":f0;\n", trie->root);
   }
 
@@ -185,8 +203,6 @@ void trie_print(trie_t * trie, int fd)
 err_t trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t data, bool rep)
 {
   uint32_t           rest;
-
-  struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
 
   struct trie_eppoit eppoit = {
     .err = 0,
@@ -206,9 +222,9 @@ err_t trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t
     return ERR_IN_INVALID;
 
   if (trie->root) {
-    eppoit.tuple = tnode_iter_get(&iter, trie->root);
+    eppoit.tuple = tnode_get(trie, trie->root);
 
-    eppoit = _trie_insert_decide(trie, eppoit.tuple, &iter, len, word, rep);
+    eppoit = _trie_insert_decide(trie, eppoit.tuple, len, word, rep);
     if (eppoit.err)
       return eppoit.err;
   }
@@ -278,7 +294,6 @@ err_t trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len])
   uint8_t            c;
   uint8_t            nlen;
   struct tnode_tuple tuple;
-  struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
   struct {
     struct tnode_tuple tuple;
     struct tnode_tuple prev;
@@ -288,7 +303,7 @@ err_t trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len])
   memset(&stack, 0, sizeof(stack[0]) * len);
 
   if (trie->root) {
-    tuple = tnode_iter_get(&iter, trie->root);
+    tuple = tnode_get(trie, trie->root);
     for (i = 0, c = word[i], out = 0; tuple.index && i < len; c = word[i]) {
 
       if (c == tuple.node->c) {
@@ -317,11 +332,11 @@ err_t trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len])
             break;
           i = m;
         }
-        tuple = tnode_iter_get(&iter, tuple.node->child);
+        tuple = tnode_get(trie, tuple.node->child);
       } else {
         if (tuple.node->next) {
           stack[rlen].prev = tuple;
-          tuple = tnode_iter_get(&iter, tuple.node->next);
+          tuple = tnode_get(trie, tuple.node->next);
         } else {
           return ERR_NOT_FOUND;
         }
@@ -370,17 +385,15 @@ err_t trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len])
   return 0;
 }
 
-
 struct tnode_tuple trie_find_i(trie_t * trie, uint16_t len, const uint8_t word[len])
 {
   uint32_t           i = 0;
   uint8_t            c;
   uint8_t            nlen;
   struct tnode_tuple tuple;
-  struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
 
   if (trie->root) {
-    tuple = tnode_iter_get(&iter, trie->root);
+    tuple = tnode_get(trie, trie->root);
     for (i = 0, c = word[i]; tuple.index && i < len; c = word[i]) {
       if (c == tuple.node->c) {
         i++;
@@ -402,10 +415,10 @@ struct tnode_tuple trie_find_i(trie_t * trie, uint16_t len, const uint8_t word[l
             break;
           i = m;
         }
-        tuple = tnode_iter_get(&iter, tuple.node->child);
+        tuple = tnode_get(trie, tuple.node->child);
       } else {
         if (tuple.node->next) {
-          tuple = tnode_iter_get(&iter, tuple.node->next);
+          tuple = tnode_get(trie, tuple.node->next);
         } else {
           break;
         }
@@ -458,8 +471,7 @@ trie_iter_t * trie_iter_init(trie_t * trie, trie_iter_t * iter)
     iter->spos = 0;
     iter->slen = iter->aslen = 0;
     iter->stride = NULL;
-    iter->iter = tnode_iter(trie->nodes, 0);
-    iter->tuple = tnode_iter_get(&iter->iter, trie->root);
+    iter->tuple = tnode_get(trie, trie->root);
     iter->trie = trie;
 
     iter->fsm = 1;
@@ -531,7 +543,7 @@ int trie_iter_next(trie_iter_t * iter)
 
       if (iter->fsm == 1) {
         if (iter->tuple.node->child) {
-          iter->tuple = tnode_iter_get(&iter->iter, iter->tuple.node->child); iter->spos++;
+          iter->tuple = tnode_get(iter->trie, iter->tuple.node->child); iter->spos++;
           continue;
         } else {
           iter->fsm = 2;
@@ -543,7 +555,7 @@ int trie_iter_next(trie_iter_t * iter)
         for (; iter->spos >= 0 && !iter->stride[iter->spos].node->next; iter->spos--);
         if (iter->spos < 0)
           return 0;
-        iter->tuple = tnode_iter_get(&iter->iter, iter->stride[iter->spos].node->next); iter->fsm = 1;
+        iter->tuple = tnode_get(iter->trie, iter->stride[iter->spos].node->next); iter->fsm = 1;
       }
     }
     return 0;
@@ -561,4 +573,3 @@ void trie_iter_clear(trie_iter_t * iter)
     memset(iter, 0, sizeof(iter));
   }
 }
-
