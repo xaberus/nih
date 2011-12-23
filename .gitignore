@@ -14,3 +14,5 @@ sx-parser-sq-machine.c
 sx-parser-dq-machine.c
 sx-parser-plain-machine.c
 u/*
+build
+butcher

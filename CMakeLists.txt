@@ -30,6 +30,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-inline")
 
 #add_definitions(-DLUA)
 add_definitions(-DTEST)
+add_definitions(-DBROOT="${CMAKE_CURRENT_SOURCE_DIR}")
 
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fpic")
 #set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
@@ -47,23 +48,28 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--sort-section=n
 include_directories(${libnih_SOURCE_DIR})
 
 add_library(nih SHARED
-#${libnih_SOURCE_DIR}/src/sr/sr.c
-${libnih_SOURCE_DIR}/src/gc/gc.c
-${libnih_SOURCE_DIR}/src/gc/gc-stack.c
-${libnih_SOURCE_DIR}/src/number/number.c
-#${libnih_SOURCE_DIR}/src/blobtree/blobtree.c
-${libnih_SOURCE_DIR}/src/sx/sx.c
-#${libnih_SOURCE_DIR}/src/lua/table-lua.c
-${libnih_SOURCE_DIR}/src/lua/init.c
-${libnih_SOURCE_DIR}/src/trie/pathman.c
-${libnih_SOURCE_DIR}/src/trie/trie.c
-${libnih_SOURCE_DIR}/src/common/memory.c
+  #${libnih_SOURCE_DIR}/src/sr/sr.c
+  ${libnih_SOURCE_DIR}/src/gc/gc.c
+  ${libnih_SOURCE_DIR}/src/gc/gc-stack.c
+  ${libnih_SOURCE_DIR}/src/number/number.c
+  #${libnih_SOURCE_DIR}/src/blobtree/blobtree.c
+  ${libnih_SOURCE_DIR}/src/sx/sx.c
+  #${libnih_SOURCE_DIR}/src/lua/table-lua.c
+  ${libnih_SOURCE_DIR}/src/lua/init.c
+  ${libnih_SOURCE_DIR}/src/trie/pathman.c
+  ${libnih_SOURCE_DIR}/src/trie/trie.c
+  ${libnih_SOURCE_DIR}/src/common/memory.c
+  ${libnih_SOURCE_DIR}/field.c
+  ${libnih_SOURCE_DIR}/reader.c
 )
 
 #target_link_libraries(nih sexp m lua)
+#target_link_libraries(nih m profiler)
 target_link_libraries(nih m)
 
+add_subdirectory(butcher)
+
 add_custom_target(chop
-  ${CMAKE_CURRENT_SOURCE_DIR}/../butcher/butcher libnih.so $(BFLAGS)
+  $<TARGET_FILE:butcher> $<TARGET_FILE:nih> $(BFLAGS)
   DEPENDS nih
 )
