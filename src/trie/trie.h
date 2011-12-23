@@ -36,6 +36,7 @@ struct tnode_tuple {
 };
 
 typedef struct {
+  /* downcast: allocator goes first! */
   const mem_allocator_t * a;
 
   uint16_t  addrbits;

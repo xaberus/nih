@@ -47,12 +47,16 @@ void trie_clear(trie_t * trie)
   if (!trie)
     return;
 
+  trie->root = 0;
+  trie->freelist = 0;
+
   for (uint32_t n = 0; n < trie->banks; n++) {
     mem_free(trie->a, trie->nodes[n]);
   }
   mem_free(trie->a, trie->nodes);
-
-  memset(trie, 0, sizeof(trie_t));
+  trie->nodes = NULL;
+  trie->banks = 0;
+  trie->abank = NULL;
 }
 
 struct tnode_tuple trie_mknode(trie_t * trie)
@@ -86,8 +90,8 @@ struct tnode_tuple trie_mknode(trie_t * trie)
         tbank_t ** tmp = mem_realloc(
           trie->a,
           trie->nodes,
-          sizeof(tbank_t) * banks,
-          sizeof(tbank_t) * (banks + 1)
+          sizeof(tbank_t *) * banks,
+          sizeof(tbank_t *) * (banks + 1)
         );
         if (!tmp)
           return tnode_tuple(NULL, 0);
@@ -104,9 +108,6 @@ struct tnode_tuple trie_mknode(trie_t * trie)
 
       tuple = tnode_bank_mknode(bank, banksize, nodebits);
     }
-
-    if (!tuple.index)
-      return tnode_tuple(NULL, 0);
 
     return tuple;
   }
