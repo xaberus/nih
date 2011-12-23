@@ -8,36 +8,63 @@ void pathman_clear(pathman_t * pman)
 {
   if (pman) {
     {
-      struct pdir_bank * p = pman->dirs, * n = p ? p->next : NULL;
-      for (; p; p = n, n = p ? p->next : NULL) {
-        uint32_t size = p->end - p->start;
-        gc_mem_free(pman->trie->g, PDIR_BANK_SIZEOF(size), p);
+      pman->dfreelist = 0;
+      for (uint32_t n = 0; n < pman->dbanks; n++) {
+        mem_free(pman->trie->a, pman->dirs[n]);
       }
+      mem_free(pman->trie->a, pman->dirs);
       pman->dirs = NULL;
+      pman->dbanks = 0;
+      pman->dabank = NULL;
     }
 
     {
-      struct pfile_bank * p = pman->files, * n = p ? p->next : NULL;
-      for (; p; p = n, n = p ? p->next : NULL) {
-        uint32_t size = p->end - p->start;
-        gc_mem_free(pman->trie->g, PFILE_BANK_SIZEOF(size), p);
+      pman->ffreelist = 0;
+      for (uint32_t n = 0; n < pman->fbanks; n++) {
+        mem_free(pman->trie->a, pman->files[n]);
       }
+      mem_free(pman->trie->a, pman->files);
       pman->files = NULL;
+      pman->fbanks = 0;
+      pman->fabank = NULL;
     }
 
     trie_clear(pman->trie);
   }
 }
 
-pathman_t * pathman_init(gc_global_t * g, pathman_t * pman)
+pathman_t * pathman_init(const mem_allocator_t * a, pathman_t * pman)
 {
-  pman->dirs = pdir_bank_alloc(g, 0, PDIR_BANK_SIZE);
+  if (!trie_init(a, pman->trie, 10))
+    return NULL;
+
+  /* pre-initialize here, clear() would fail otherwise */
+  pman->dbanks = 0;
+  pman->dirs = NULL;
+  pman->fbanks = 0;
+  pman->files = NULL;
+
+  pman->dirs = mem_alloc(a, sizeof(struct pdir_bank *));
+  if (!pman->dirs)
+    goto alloc_failed;
+
+  pman->files = mem_alloc(a, sizeof(struct pfile_bank *));
+  if (!pman->files)
+    goto alloc_failed;
+
+  pman->dirs[0] = pdir_bank_alloc(a, 0);
+  if (!pman->dirs[0])
+    goto alloc_failed;
+  pman->dbanks = 1;
   pman->dfreelist = 0;
-  pman->dabank = pman->dirs;
-  pman->files = pfile_bank_alloc(g, 0, PFILE_BANK_SIZE);
+  pman->dabank = pman->dirs[0];
+
+  pman->files[0] = pfile_bank_alloc(a, 0);
+  if (!pman->files[0])
+    goto alloc_failed;
+  pman->fbanks = 1;
   pman->ffreelist = 0;
-  pman->fabank = pman->files;
-  trie_init(g, pman->trie, 2048);
+  pman->fabank = pman->files[0];
 
   {
     struct pdir_tuple root;
@@ -45,17 +72,18 @@ pathman_t * pathman_init(gc_global_t * g, pathman_t * pman)
     root = pathman_mkdir(pman);
     if (!root.index)
       goto alloc_failed;
+
     root.node->isused = 1;
-    struct pnode      node = {
+    struct pnode node = {
       .isdir = 1,
       .isfile = 0,
       .mode = 0,
       .data = root.index,
     };
-    union paccess     acc = {
+    union paccess acc = {
       node,
     };
-    err_t             err;
+    err_t err;
 
     if ((err = trie_insert(pman->trie, 1, (uint8_t *) "/", acc.composite, 0)))
       goto alloc_failed;
@@ -70,49 +98,53 @@ alloc_failed:
 
 struct pdir_tuple pathman_mkdir(pathman_t * pman)
 {
-  struct pdir_bank * bank;
+  struct pdir_bank * bank = pman->dabank;
+  uint16_t  banks = pman->dbanks;
 
   if (pman->dfreelist) { /* reuse nodes from freelist */
-    struct pdir_iter   iter = pdir_iter(pman->dirs, INDEX2IDX(pman->dfreelist));
-    struct pdir_bank * bank;
-    struct pdir      * node;
+    struct pdir * node;
+    uint32_t index = INDEX2IDX(pman->dfreelist);
+    uint32_t addr = (index & PDIR_ADDRMASK) >> PDIR_NODEBITS;
+    uint32_t idx  = (index & PDIR_NODEMASK);
 
-    if ((bank = pdir_iter_get_bank(&iter))) {
-      /* get */
-      node = &bank->nodes[iter.idx - bank->start];
+    if (addr < banks && idx < PDIR_BANKSIZE) {
+      bank = pman->dirs[addr];
+      node = &bank->nodes[idx];
       if (!node->isused) {
         pman->dfreelist = node->next;
-        memset(node, 0, sizeof(struct pdir));
-        return pdir_tuple(node, IDX2INDEX(iter.idx));
+        return (struct pdir_tuple) {
+          .node = node,
+          .index = IDX2INDEX(index),
+        };
       }
     }
   } else {
-    struct pdir_tuple tuple = {NULL, 0};
+    struct pdir_tuple tuple = pdir_bank_mknode(bank);
 
-    tuple = pdir_bank_mknode(pman->dabank);
+    if (!tuple.index && bank) {
+      {
+        struct pdir_bank ** tmp = mem_realloc(
+          pman->trie->a,
+          pman->dirs,
+          sizeof(struct pdir_bank *) * banks,
+          sizeof(struct pdir_bank *) * (banks + 1)
+        );
+        if (!tmp)
+          return pdir_tuple(NULL, 0);
+        pman->dirs = tmp;
+      }
 
-    if (!tuple.index && pman->dabank) {
-      uint32_t start = pman->dabank->end;
-      uint32_t end = start + PDIR_BANK_SIZE;
+      bank = pdir_bank_alloc(pman->trie->a, banks);
+      if (!bank)
+        return pdir_tuple(NULL, 0);
 
-      bank = pdir_bank_alloc(pman->trie->g, start, end);
-      assert(bank);
-
-      /* link bank in */
+      pman->dirs[banks++] = bank;
+      pman->dabank = bank;
+      pman->dbanks = banks;
 
       tuple = pdir_bank_mknode(bank);
-      assert(tuple.index);
-
-      /* link bank in */
-      if (pman->dirs)
-        pman->dirs->prev = bank;
-      bank->next = pman->dirs;
-      pman->dirs = bank;
-      pman->dabank = bank;
-
-      return tuple;
-    } else
-      return tuple;
+    }
+    return tuple;
   }
 
   return pdir_tuple(NULL, 0);
@@ -120,49 +152,53 @@ struct pdir_tuple pathman_mkdir(pathman_t * pman)
 
 struct pfile_tuple pathman_mkfile(pathman_t * pman)
 {
-  struct pfile_bank * bank;
+  struct pfile_bank * bank = pman->fabank;
+  uint16_t  banks = pman->fbanks;
 
   if (pman->ffreelist) { /* reuse nodes from freelist */
-    struct pfile_iter   iter = pfile_iter(pman->files, INDEX2IDX(pman->ffreelist));
-    struct pfile_bank * bank;
-    struct pfile      * node;
+    struct pfile * node;
+    uint32_t index = INDEX2IDX(pman->ffreelist);
+    uint32_t  addr = (index & PFILE_ADDRMASK) >> PFILE_NODEBITS;
+    uint32_t  idx  = (index & PFILE_NODEMASK);
 
-    if ((bank = pfile_iter_get_bank(&iter))) {
-      /* get */
-      node = &bank->nodes[iter.idx - bank->start];
+    if (addr < banks && idx < PFILE_BANKSIZE) {
+      bank = pman->files[addr];
+      node = &bank->nodes[idx];
       if (!node->isused) {
         pman->ffreelist = node->next;
-        memset(node, 0, sizeof(struct pfile));
-        return pfile_tuple(node, IDX2INDEX(iter.idx));
+        return (struct pfile_tuple) {
+          .node = node,
+          .index = IDX2INDEX(index),
+        };
       }
     }
   } else {
-    struct pfile_tuple tuple = {NULL, 0};
+    struct pfile_tuple tuple = pfile_bank_mknode(bank);
 
-    tuple = pfile_bank_mknode(pman->fabank);
+    if (!tuple.index && bank) {
+      {
+        struct pfile_bank ** tmp = mem_realloc(
+          pman->trie->a,
+          pman->files,
+          sizeof(struct pfile_bank *) * banks,
+          sizeof(struct pfile_bank *) * (banks + 1)
+        );
+        if (!tmp)
+          return pfile_tuple(NULL, 0);
+        pman->files = tmp;
+      }
 
-    if (!tuple.index && pman->dabank) {
-      uint32_t start = pman->dabank->end;
-      uint32_t end = start + PFILE_BANK_SIZE;
+      bank = pfile_bank_alloc(pman->trie->a, banks);
+      if (!bank)
+        return pfile_tuple(NULL, 0);
 
-      bank = pfile_bank_alloc(pman->trie->g, start, end);
-      assert(bank);
-
-      /* link bank in */
+      pman->files[banks++] = bank;
+      pman->fabank = bank;
+      pman->fbanks = banks;
 
       tuple = pfile_bank_mknode(bank);
-      assert(tuple.index);
-
-      /* link bank in */
-      if (pman->files)
-        pman->files->prev = bank;
-      bank->next = pman->files;
-      pman->files = bank;
-      pman->fabank = bank;
-
-      return tuple;
-    } else
-      return tuple;
+    }
+    return tuple;
   }
 
   return pfile_tuple(NULL, 0);
@@ -170,10 +206,7 @@ struct pfile_tuple pathman_mkfile(pathman_t * pman)
 
 void pathman_remdir(pathman_t * pman, uint32_t index)
 {
-  struct pdir_tuple tuple;
-  struct pdir_iter  iter = pdir_iter(pman->dirs, 0);
-
-  tuple = pdir_iter_get(&iter, index);
+  struct pdir_tuple tuple = pdir_get(pman, index);
 
   tuple.node->next = pman->dfreelist;
   tuple.node->isused = 0;
@@ -182,10 +215,7 @@ void pathman_remdir(pathman_t * pman, uint32_t index)
 
 void pathman_remfile(pathman_t * pman, uint32_t index)
 {
-  struct pfile_tuple tuple;
-  struct pfile_iter  iter = pfile_iter(pman->files, 0);
-
-  tuple = pfile_iter_get(&iter, index);
+  struct pfile_tuple tuple = pfile_get(pman, index);
 
   tuple.node->next = pman->ffreelist;
   tuple.node->isused = 0;
@@ -247,13 +277,11 @@ struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode
         if (!pnode.isdir)
           return plookup(ERR_CORRUPTION, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
 
-        struct pdir_iter iter[1] = {pdir_iter(pman->dirs, 0)};
-        parent = pdir_iter_get(iter, pnode.data);
+        parent = pdir_get(pman, pnode.data);
 
       }
 
       uint32_t           rest;
-      struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
 
       struct trie_eppoit eppoit = {
         .err = 0,
@@ -264,7 +292,7 @@ struct plookup pathman_add_dir(pathman_t * pman, const char * path, uint8_t mode
         .tuple = {NULL, 0},
       };
 
-      eppoit = _trie_insert_decide(trie, tuple, &iter, alen, word, 0);
+      eppoit = _trie_insert_decide(trie, tuple, alen, word, 0);
       if (eppoit.err)
         return plookup(eppoit.err, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
 
@@ -361,8 +389,7 @@ int pathman_print_ff(uint16_t len, const uint8_t word[len], uint64_t data, pathm
   int           fd = 4;
 
   if (node.isdir) {
-    struct pdir_iter  iter[1] = {pdir_iter(pman->dirs, 0)};
-    struct pdir_tuple dir = pdir_iter_get(iter, node.data);
+    struct pdir_tuple dir = pdir_get(pman, node.data);
 
     /*dprintf(2, "FF: dir %.*s @ %u\n", len, word, node.data);
     dprintf(2, "AF: %d\n", pman->dirs->nodes[1].isused);*/
@@ -419,8 +446,7 @@ int pathman_print_ff(uint16_t len, const uint8_t word[len], uint64_t data, pathm
     }
 
   } else if (node.isfile) {
-    struct pfile_iter  iter[1] = {pfile_iter(pman->files, 0)};
-    struct pfile_tuple file = pfile_iter_get(iter, node.data);
+    struct pfile_tuple file = pfile_get(pman, node.data);
 
     /*dprintf(2, "FF: file %.*s @ %u\n", len, word, node.data);
     dprintf(2, "AF: %d\n", pman->files->nodes[1].isused);*/
@@ -519,7 +545,6 @@ struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char 
       if (!tuple.index)
         return plookup(ERR_IN_INVALID, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
 
-      struct tnode_iter  iter = tnode_iter(trie->nodes, 0);
       struct trie_eppoit eppoit = {
         .err = 0,
         .parent = {NULL, 0},
@@ -534,7 +559,7 @@ struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char 
       memcpy(word + 1, name, len);
       word[0] = '/';
 
-      eppoit = _trie_insert_decide(trie, tuple, &iter, alen, word, 0);
+      eppoit = _trie_insert_decide(trie, tuple, alen, word, 0);
       if (eppoit.err)
         return plookup(eppoit.err, pstate(tnode_tuple(NULL, 0)), NULL, NULL);
 
@@ -620,11 +645,30 @@ struct plookup pathman_add_file(pathman_t * pman, struct pdir * dir, const char 
   }
 }
 
-/*struct plookup pathman_lookup(pathman_t * pman, const char * path)
+struct plookup pathman_lookup(pathman_t * pman, const char * path)
 {
+  struct tnode_tuple tuple = trie_find_i(pman->trie, strlen(path), (const uint8_t *) path);
+  if (tuple.index) {
+    union paccess acc;
+    acc.composite = tuple.node->data;
 
+    if (acc.node.isfile) {
+      return (struct plookup){
+        .err = 0,
+        .state = pstate(tuple),
+        .dir = NULL,
+        .file = pfile_get(pman, acc.node.data).node,
+      };
+    } else if (acc.node.isdir) {
+      return (struct plookup){
+        .err = 0,
+        .state = pstate(tuple),
+        .dir = pdir_get(pman, acc.node.data).node,
+        .file = NULL,
+      };
+    }
+  }
+  return (struct plookup){ERR_NOT_FOUND, pstate(tuple), NULL, NULL};
 }
-
-}*/
 
 #include "pathman-tests.c"
