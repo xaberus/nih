@@ -23,8 +23,8 @@ trie_t * trie_init(const mem_allocator_t * a, trie_t * trie, uint8_t nodebits)
 
   trie->nodebits = nodebits;
   trie->addrbits = 32 - nodebits;
-  trie->addrmask = (0xffffffff << trie->nodebits);
-  trie->nodemask = (0xffffffff >> (32 - trie->nodebits));
+  trie->addrmask = 0xffffffff << trie->nodebits;
+  trie->nodemask = 0xffffffff >> trie->addrbits;
   trie->banksize = tnode_bank_size(trie->addrbits);
 
   trie->nodes = mem_alloc(a, sizeof(tbank_t *));

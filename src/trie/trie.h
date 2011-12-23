@@ -6,13 +6,13 @@
 
 typedef struct {
   uint8_t      c;
-  unsigned int iskey : 1;
-  unsigned int isdata : 1;
-  unsigned int isused : 1;
-  unsigned int strlen : 4;
-  unsigned int _reserved : 1;
-  unsigned     next : 24;
-  unsigned     child : 24;
+  unsigned iskey : 1;
+  unsigned isdata : 1;
+  unsigned isused : 1;
+  unsigned strlen : 4;
+  unsigned _reserved : 1;
+  unsigned next : 24;
+  unsigned child : 24;
   __extension__ union {
     uint8_t  str[8];
     uint64_t data;
@@ -29,6 +29,7 @@ struct tbank {
   tnode_t  nodes[];
 };
 
+/* invariant: index == 0 implies node == NULL */
 struct tnode_tuple {
   tnode_t  * node;
   uint32_t   index;
@@ -48,12 +49,12 @@ typedef struct {
 
   tbank_t * abank;  /* allocation bank */
 
-
   uint32_t  root;   /* root key */
   uint32_t  freelist;
 } trie_t;
 
 
+/* (1 << nodebits) is the size of a bank in the trie, thus 0 < nodebits <= 16 */
 trie_t * trie_init(const mem_allocator_t * a, trie_t * trie, uint8_t nodebits);
 void     trie_clear(trie_t * trie);
 
