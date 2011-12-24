@@ -1,9 +1,9 @@
 #include "trie/trie-private.h"
 
-#define PDIR_ADDRBITS (32-8)
+#define PDIR_ADDRBITS (32-PDIR_NODEBITS)
 #define PDIR_ADDRMASK (0xffffffff << PDIR_NODEBITS)
 #define PDIR_NODEMASK (0xffffffff << PDIR_ADDRBITS)
-#define PFILE_ADDRBITS (32-8)
+#define PFILE_ADDRBITS (32-PFILE_NODEBITS)
 #define PFILE_ADDRMASK (0xffffffff << PFILE_NODEBITS)
 #define PFILE_NODEMASK (0xffffffff << PFILE_ADDRBITS)
 
