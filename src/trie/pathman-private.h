@@ -135,7 +135,7 @@ struct pdir_tuple pdir_get(pathman_t * pman, uint32_t index)
   uint32_t  addr = (index & PDIR_ADDRMASK) >> PDIR_NODEBITS;
   uint32_t  idx  = (index & PDIR_NODEMASK);
 
-  if (addr < pman->dbanks && idx < PDIR_BANKSIZE) {
+  if (addr < pman->dbanks) {
     bank = pman->dirs[addr];
     node = &bank->nodes[idx];
     if (node->isused) {
@@ -163,7 +163,7 @@ struct pfile_tuple pfile_get(pathman_t * pman, uint32_t index)
   uint32_t  addr = (index & PFILE_ADDRMASK) >> PFILE_NODEBITS;
   uint32_t  idx  = (index & PFILE_NODEMASK);
 
-  if (addr < pman->fbanks && idx < PFILE_BANKSIZE) {
+  if (addr < pman->fbanks) {
     bank = pman->files[addr];
     node = &bank->nodes[idx];
     if (node->isused) {

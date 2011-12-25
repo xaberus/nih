@@ -77,7 +77,7 @@ struct tnode_tuple tnode_get(trie_t * trie, uint32_t index)
   uint32_t  addr = (index & trie->addrmask) >> trie->nodebits;
   uint32_t  idx  = (index & trie->nodemask);
 
-  if (addr < trie->banks && idx < trie->banksize) {
+  if (addr < trie->banks) {
     bank = trie->nodes[addr];
     node = &bank->nodes[idx];
     if (node->isused) {
