@@ -51,7 +51,6 @@ typedef enum gc_state {
   GC_STATE_SWEEP_STRING,
   GC_STATE_SWEEP,
   GC_STATE_SWEEP_HEADER,
-  GC_STATE_FINALIZE,
 } gc_state_t;
 
 typedef struct {
@@ -81,9 +80,6 @@ typedef struct {
     gc_obj_t * head;
   } grey0, grey1;
   struct {
-    gc_obj_t * loop;
-  } final;
-  struct {
     gc_obj_t ** data;
     size_t      dsize;
     size_t      count;
@@ -105,7 +101,6 @@ struct gc_vtable {
   size_t       (* gc_clear)(gc_global_t * g, gc_hdr_t * o);
   /* gc_obj_t */
   size_t       (* gc_propagate)(gc_global_t * g, gc_obj_t * o);
-  size_t       (* gc_finalize)(gc_global_t * g, gc_obj_t * o);
 };
 
 extern gc_vtable_t gc_blob_vtable;

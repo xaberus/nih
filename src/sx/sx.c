@@ -36,7 +36,6 @@ gc_vtable_t sx_vtable = {
   .name = "sx_t",
   .flag = GC_VT_FLAG_OBJ,
   .gc_init = sx_init,
-  .gc_finalize = NULL,
   .gc_clear = NULL,
   .gc_propagate = sx_propagate,
 };
@@ -265,7 +264,6 @@ gc_vtable_t sxb_vtable = {
   .name = "sxb_t",
   .flag = GC_VT_FLAG_OBJ,
   .gc_init = sxb_init,
-  .gc_finalize = NULL,
   .gc_clear = sxb_clear,
   .gc_propagate = sxb_propagate,
 };

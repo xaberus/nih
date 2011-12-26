@@ -50,17 +50,6 @@ size_t testobj_clear(gc_global_t * g, gc_hdr_t * o)
 }
 
 static
-size_t testobj_finalize(gc_global_t * g, gc_obj_t * o)
-{
-  (void) g;
-  // bt_log("[testobj:%p] finalize\n", o);
-  testobj_t * t = (testobj_t *) o;
-  for (unsigned k = 0; k < t->count; k++)
-    t->arr[k]->flag++;
-  return 1;
-}
-
-static
 size_t testobj_propagate(gc_global_t * g, gc_obj_t * o)
 {
   (void) g;
@@ -79,7 +68,6 @@ gc_vtable_t testobj_vtable = {
   .name = "testobj_t",
   .flag = GC_VT_FLAG_OBJ,
   .gc_init = testobj_init,
-  .gc_finalize = testobj_finalize,
   .gc_clear = testobj_clear,
   .gc_propagate = testobj_propagate,
 };
@@ -282,12 +270,11 @@ gc_vtable_t testobj_genvtable = {
   .name = "testobj_t",
   .flag = GC_VT_FLAG_OBJ,
   .gc_init = testobj_init,
-  .gc_finalize = testobj_finalize,
   .gc_clear = testobj_clear,
   .gc_propagate = testobj_genpropagate,
 };
 
-BT_TEST_DEF(gc, general, object, "tests genralized behaviour")
+BT_TEST_DEF(gc, general, object, "tests generalized behaviour")
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;

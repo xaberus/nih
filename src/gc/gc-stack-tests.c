@@ -58,16 +58,6 @@ size_t testobj_clear(gc_global_t * g, gc_hdr_t * o)
   return 0;
 }
 
-/*size_t testobj_finalize(gc_global_t * g, void * o)
-{
-  (void) g;
-  // bt_log("[testobj:%p] finalize\n", o);
-  testobj_t * t = o;
-  for (unsigned k = 0; k < t->count; k++)
-    t->arr[k]->flag++;
-  return 1;
-}*/
-
 static
 size_t testobj_propagate(gc_global_t * g, gc_obj_t * o)
 {
@@ -91,7 +81,6 @@ gc_vtable_t testobj_vtable = {
   .name = "testobj_t",
   .flag = GC_VT_FLAG_OBJ,
   .gc_init = testobj_init,
-  .gc_finalize = /*testobj_finalize*/ NULL,
   .gc_clear = testobj_clear,
   .gc_propagate = testobj_propagate,
 };

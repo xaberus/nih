@@ -51,7 +51,6 @@ gc_vtable_t gc_stack_vtable = {
   .name = "gc_stack_t",
   .flag = GC_VT_FLAG_OBJ,
   .gc_init = gc_stack_init,
-  .gc_finalize = NULL,
   .gc_clear = gc_stack_clear,
   .gc_propagate = gc_stack_propagate,
 };
