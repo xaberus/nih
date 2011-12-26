@@ -96,7 +96,6 @@ void gc_init(gc_global_t * g, mema_t alloc)
   strings_init(g, &g->strings);
   gc_head_reset(&g->objects);
   gc_head_reset(&g->headers);
-  gc_loop_reset(&g->final);
   gc_list_reset(&g->grey0);
   gc_list_reset(&g->grey1);
 
@@ -238,7 +237,6 @@ void gc_free_all(gc_global_t * g)
   strings_reset(g, &g->strings);
   gc_head_reset(&g->objects);
   gc_head_reset(&g->headers);
-  gc_loop_reset(&g->final);
   gc_list_reset(&g->grey0);
   gc_list_reset(&g->grey1);
 
@@ -311,53 +309,6 @@ size_t propagate(gc_global_t * g, bool all)
   return counter + 1;
 }
 
-#define is_final(o)  (GC_HDR(o)->flag & GC_FLAG_FINAL)
-#define set_final(o) (GC_HDR(o)->flag |= GC_FLAG_FINAL)
-
-static
-size_t separate(gc_global_t * g, bool all)
-{
-  log(0, "# %s(%s)\n", __FUNCTION__, all ? "all" : "");
-  size_t      counter = 0;
-  gc_obj_t  * o;
-  gc_obj_t ** p = &g->objects.head;
-
-  while ((o = *p)) {
-    if (!(is_white(o) || all) || is_final(o)) {
-      p = (gc_obj_t **) &GC_HDR(o)->next;
-    } else if (!GC_HDR(o)->vtable->gc_finalize) {
-      p = (gc_obj_t **) &GC_HDR(o)->next;
-    } else {
-      set_final(o);
-      gch_unlink(GC_HDRP(&g->objects.head), GC_HDRP(p), GC_HDR(o));
-      gclp_insert(&g->final.loop, o);
-      counter += 2 + 1;
-    }
-  }
-
-  return counter + 1;
-}
-
-static
-size_t mark_final(gc_global_t * g)
-{
-  log(0, "# %s()\n", __FUNCTION__);
-  size_t     counter = 0;
-  gc_obj_t * clist = g->final.loop;
-  gc_obj_t * o = clist;
-
-  if (o) {
-    do {
-      o = (gc_obj_t *) GC_HDR(o)->next;
-      make_white(o, g->white);
-      gc_mark_obj(g, o);
-      counter += 2;
-    } while (o != clist);
-  }
-
-  return counter + 1;
-}
-
 static
 size_t atomic(gc_global_t * g)
 {
@@ -370,8 +321,6 @@ size_t atomic(gc_global_t * g)
   gc_list_reset(&g->grey1);
   counter += propagate(g, 1);
 
-  counter += separate(g, 0);
-  counter += mark_final(g);
   counter += propagate(g, 1);
 
   g->white = other_white(g);
@@ -390,20 +339,6 @@ void shrink(gc_global_t * g)
     if (g->state != GC_STATE_SWEEP_STRING || newmask < 0xffffff - 1)
       strings_resize(g, &g->strings, newmask);
   }
-}
-
-static
-size_t finalize(gc_global_t * g)
-{
-  log(0, "# %s()\n", __FUNCTION__);
-  gc_obj_t * o = gclp_pop(&g->final.loop);
-
-  if (o) {
-    gch_prepend(GC_HDRP(&g->objects.head), GC_HDR(o));
-    return GC_HDR(o)->vtable->gc_finalize(g, o);
-  }
-
-  return 0;
 }
 
 static
@@ -461,21 +396,8 @@ size_t step(gc_global_t * g)
           g->total > 4 ? g->total >> 2 : g->total);
       if (*g->headers.sweep == 0) {
         shrink(g);
-        if (g->final.loop) {
-          g->state = GC_STATE_FINALIZE;
-        } else {
-          g->state = GC_STATE_PAUSE;
-        }
+        g->state = GC_STATE_PAUSE;
       }
-      break;
-    }
-    case GC_STATE_FINALIZE: {
-      log(5, "# %s(%s)\n", __FUNCTION__, "FINALIZE");
-      if (g->final.loop) {
-        counter += finalize(g);
-        break;
-      }
-      g->state = GC_STATE_PAUSE;
       break;
     }
   }
@@ -506,7 +428,7 @@ size_t gc_collect(gc_global_t * g, bool full)
       counter += step(g);
     }
 
-    assert(g->state == GC_STATE_FINALIZE || g->state == GC_STATE_PAUSE);
+    assert(g->state == GC_STATE_PAUSE);
 
     g->state = GC_STATE_PAUSE;
     do {
@@ -531,7 +453,7 @@ size_t gc_collect(gc_global_t * g, bool full)
 }
 
 gc_vtable_t gc_str_vtable = {
-  .name = "testobj_t",
+  .name = "gc_str_t",
   .flag = GC_VT_FLAG_STR,
 };
 
@@ -618,7 +540,7 @@ void * gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size)
 void gc_barrier_oo(gc_global_t * g, gc_obj_t * o, gc_obj_t * v)
 {
   assert(is_black(o) && is_white(v) && !is_dead(v, other_white(g)) && !is_dead(o, other_white(g)));
-  assert(g->state != GC_STATE_FINALIZE && g->state != GC_STATE_PAUSE);
+  assert(g->state != GC_STATE_PAUSE);
   if (g->state == GC_STATE_PROPAGATE || g->state == GC_STATE_ATOMIC) {
     gc_mark_obj(g, v);
   } else {
@@ -629,7 +551,7 @@ void gc_barrier_oo(gc_global_t * g, gc_obj_t * o, gc_obj_t * v)
 void gc_barrier_oh(gc_global_t * g, gc_obj_t * o, gc_hdr_t * h)
 {
   assert(is_black(o) && is_white(h) && !is_dead(h, other_white(g)) && !is_dead(o, other_white(g)));
-  assert(g->state != GC_STATE_FINALIZE && g->state != GC_STATE_PAUSE);
+  assert(g->state != GC_STATE_PAUSE);
   if (g->state == GC_STATE_PROPAGATE || g->state == GC_STATE_ATOMIC) {
     gc_mark(g, h);
   } else {
@@ -642,7 +564,7 @@ void gc_barrier_back_o(gc_global_t * g, gc_obj_t * o)
 {
   log_obj(1, g, o);
   assert(is_black(o) && !is_dead(o, other_white(g)));
-  assert(g->state != GC_STATE_FINALIZE && g->state != GC_STATE_PAUSE);
+  assert(g->state != GC_STATE_PAUSE);
   black2gray(o);
   gcl_prepend(&g->grey1.head, o);
 }
