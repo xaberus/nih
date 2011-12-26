@@ -20,7 +20,7 @@ BT_SUITE_DEF(pathman, "pathman tests");
 
 struct pathman_test {
   pathman_t   pman[1];
-  mem_allocator_t a[1];
+  mema_t a[1];
   size_t      num;
   char      * flag;
   char     ** strv;

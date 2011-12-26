@@ -15,7 +15,7 @@ BT_SUITE_DEF(gc, "garbage collection tests");
 
 struct gc_test {
   gc_global_t     g[1];
-  mem_allocator_t a[1];
+  mema_t a[1];
 };
 
 typedef struct testobj {

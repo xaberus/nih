@@ -841,7 +841,7 @@ BT_SUITE_DEF(number, "number (big int) tests");
 BT_SUITE_SETUP_DEF(number, objectref)
 {
   gc_global_t   * g = malloc(sizeof(gc_global_t));
-  mem_allocator_t a = {
+  mema_t a = {
     .realloc = plain_realloc,
     .ud = NULL
   };

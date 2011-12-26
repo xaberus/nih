@@ -33,7 +33,7 @@ void pathman_clear(pathman_t * pman)
   }
 }
 
-pathman_t * pathman_init(const mem_allocator_t * a, pathman_t * pman)
+pathman_t * pathman_init(const mema_t * a, pathman_t * pman)
 {
   if (!trie_init(a, pman->trie, 10))
     return NULL;

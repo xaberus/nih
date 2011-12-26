@@ -60,7 +60,7 @@ struct plookup plookup(err_t err, struct pstate state, struct pdir * dir, struct
 }
 
 inline static
-struct pdir_bank * pdir_bank_alloc(const mem_allocator_t * a, uint32_t addr)
+struct pdir_bank * pdir_bank_alloc(const mema_t * a, uint32_t addr)
 {
   struct pdir_bank * bank = mem_alloc(a, PDIR_BANK_SIZEOF);
 
@@ -74,7 +74,7 @@ struct pdir_bank * pdir_bank_alloc(const mem_allocator_t * a, uint32_t addr)
 }
 
 inline static
-struct pfile_bank * pfile_bank_alloc(const mem_allocator_t * a, uint32_t addr)
+struct pfile_bank * pfile_bank_alloc(const mema_t * a, uint32_t addr)
 {
   struct pfile_bank * bank = mem_alloc(a, PFILE_BANK_SIZEOF);
 

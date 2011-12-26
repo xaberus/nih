@@ -94,7 +94,7 @@ typedef struct {
   uint32_t        white;
   size_t          total;
   size_t          thres;
-  mem_allocator_t alloc;
+  mema_t alloc;
 } gc_global_t;
 
 struct gc_vtable {
@@ -116,7 +116,7 @@ enum gc_vt_flags {
   GC_VT_FLAG_STR = 0x04 | GC_VT_FLAG_HDR,
 };
 
-void       gc_init(gc_global_t * g, mem_allocator_t alloc);
+void       gc_init(gc_global_t * g, mema_t alloc);
 void       gc_clear(gc_global_t * g);
 
 size_t     gc_collect(gc_global_t * g, bool full);

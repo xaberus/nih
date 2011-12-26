@@ -22,7 +22,7 @@ BT_SUITE_DEF(trie, "trie tests");
 
 struct trie_test {
   trie_t      trie[1];
-  mem_allocator_t a[1];
+  mema_t a[1];
   size_t      num;
   char      * flag;
   char     ** strv;

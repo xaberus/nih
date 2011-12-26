@@ -106,7 +106,7 @@ BT_SUITE_DEF(gc_stack, "tests garbage collected stack (gc:vector, gc:barrier, gc
 BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 {
   gc_global_t     g[1];
-  mem_allocator_t a;
+  mema_t a;
   gc_stack_t    * st;
 
   a.realloc = plain_realloc;

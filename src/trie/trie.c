@@ -11,7 +11,7 @@
 
 #include <time.h>
 
-trie_t * trie_init(const mem_allocator_t * a, trie_t * trie, uint8_t nodebits)
+trie_t * trie_init(const mema_t * a, trie_t * trie, uint8_t nodebits)
 {
   if (!trie)
     return NULL;

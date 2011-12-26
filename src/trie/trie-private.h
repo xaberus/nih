@@ -33,7 +33,7 @@ uint32_t tnode_bank_size(uint16_t addrbits)
 }
 
 inline static
-tbank_t * tnode_bank_alloc(const mem_allocator_t * a, uint32_t size, uint32_t addr)
+tbank_t * tnode_bank_alloc(const mema_t * a, uint32_t size, uint32_t addr)
 {
   tbank_t * bank;
 

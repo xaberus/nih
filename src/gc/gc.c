@@ -83,7 +83,7 @@ void strings_reset(gc_global_t * g, gc_strings_t * ss)
   }
 }
 
-void gc_init(gc_global_t * g, mem_allocator_t alloc)
+void gc_init(gc_global_t * g, mema_t alloc)
 {
   log(6, "# %s()\n", __FUNCTION__);
   g->alloc = alloc;

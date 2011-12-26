@@ -483,7 +483,7 @@ trans:
         if (c == '"' || c == '\'') {
           b->sg.ss = c;
           b->at = (c == '"') ? SX_DQ : SX_SQ;
-          b->sg.s = 0; 
+          b->sg.s = 0;
           TC(SXBS_ESTRING);
         }
         b->at = SX_PLAIN;
@@ -704,7 +704,7 @@ BT_SUITE_SETUP_DEF(sx, objectref)
   gc_global_t * g = malloc(sizeof(gc_global_t));
   bt_assert_ptr_not_equal(g, NULL);
 
-  mem_allocator_t a;
+  mema_t a;
   a.realloc = plain_realloc;
   a.ud = NULL;
 
