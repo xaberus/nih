@@ -131,7 +131,7 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
   }
 
   char buf[1024], * s;
-  uint16_t dl, fl;
+  uint16_t dl = 0, fl = 0;
 
   for (unsigned k = 0; k < test->num; k++) {
     if (test->flag[k] == 1) {
