@@ -96,7 +96,7 @@ struct gc_vtable {
   uint32_t     flag;
   const char * name;
   /* gc_hdr_t */
-  size_t       (* gc_init)(gc_global_t * g, gc_hdr_t * o);
+  size_t       (* gc_init)(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap);
   size_t       (* gc_clear)(gc_global_t * g, gc_hdr_t * o);
   /* gc_obj_t */
   size_t       (* gc_propagate)(gc_global_t * g, gc_obj_t * o);
@@ -117,7 +117,7 @@ size_t     gc_collect(gc_global_t * g, bool full);
 
 gc_str_t * gc_new_str(gc_global_t * g, uint32_t len, const char str[len]);
 gc_str_t * gc_new_strf(gc_global_t * g, const char * fmt, ...);
-void *     gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size);
+void *     gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size, int argc, ...);
 
 void       gc_add_root(gc_global_t * g, gc_obj_t * o);
 void       gc_del_root(gc_global_t * g, gc_obj_t * o);

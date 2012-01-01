@@ -8,9 +8,11 @@
 #define GC_STACK_MIN 16
 
 static
-size_t gc_stack_init(gc_global_t * g, gc_hdr_t * o)
+size_t gc_stack_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
   gc_stack_t * s = (gc_stack_t *) o;
+  (void) argc;
+  (void) ap;
 
   s->d = gc_mem_new(g, sizeof(gc_hdr_t *) * GC_STACK_MIN);
   s->de = s->d + GC_STACK_MIN;

@@ -1,10 +1,12 @@
 #include "sx.h"
 
 static
-size_t sx_init(gc_global_t * g, gc_hdr_t * o)
+size_t sx_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
-  (void) g;
   sx_t * x = (sx_t *) o;
+  (void) g;
+  (void) argc;
+  (void) ap;
 
   x->kind = SX_NONE;
   x->next = NULL;
@@ -175,7 +177,7 @@ uint32_t sx_writer(gc_global_t * g, gc_stack_t * st, sx_t * x, wrec_t * wr)
 
 gc_str_t * sx_dump(gc_global_t * g, sx_t * x)
 {
-  gc_stack_t * st = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t));
+  gc_stack_t * st = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t), 0);
   wrec_t       wr = {0};
 
   sx_writer(g, st, x, &wr);
@@ -215,9 +217,12 @@ void ag_append(gc_global_t * g, ag_t * a, size_t len, const char str[len])
 }
 
 static
-size_t sxb_init(gc_global_t * g, gc_hdr_t * o)
+size_t sxb_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
   sxb_t * b = (sxb_t *) o;
+  (void) g;
+  (void) argc;
+  (void) ap;
 
   b->s = SXBS_START;
   b->e = SXBE_SUCCESS;
@@ -232,7 +237,7 @@ size_t sxb_init(gc_global_t * g, gc_hdr_t * o)
 
   b->last = b->root = NULL;
   b->cue = NULL;
-  b->stack = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t));
+  b->stack = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t), 0);
 
   return 0;
 }
@@ -272,13 +277,13 @@ gc_vtable_t sxb_vtable = {
 
 sxb_t * sxb_new(gc_global_t * g)
 {
-  return gc_new(g, &sxb_vtable, sizeof(sxb_t));
+  return gc_new(g, &sxb_vtable, sizeof(sxb_t), 0);
 }
 
 inline static
 sx_t * new_list(gc_global_t * g)
 {
-  sx_t * x = gc_new(g, &sx_vtable, sizeof(sx_t));
+  sx_t * x = gc_new(g, &sx_vtable, sizeof(sx_t), 0);
   x->kind = SX_LIST;
   x->lst = NULL;
   return x;
@@ -288,7 +293,7 @@ sx_t * new_list(gc_global_t * g)
 inline static
 sx_t * new_atom(gc_global_t * g, sxb_t * b)
 {
-  sx_t * x = gc_new(g, &sx_vtable, sizeof(sx_t));
+  sx_t * x = gc_new(g, &sx_vtable, sizeof(sx_t), 0);
   if (b->at == SX_PLAIN) {
     number_t * n = number_setstrc(g, NULL, b->ag.sp - b->ag.s, b->ag.s);
     if (n) {

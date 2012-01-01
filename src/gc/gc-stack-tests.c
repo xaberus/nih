@@ -19,9 +19,11 @@ typedef struct testobj {
 } testobj_t;
 
 static
-size_t testobj_init(gc_global_t * g, gc_hdr_t * o)
+size_t testobj_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
   (void) g;
+  (void) argc;
+  (void) ap;
   // bt_log("[testobj:%p] init\n", o);
   testobj_t * t = (testobj_t *) o;
 
@@ -103,7 +105,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 
   gc_init(g, a);
 
-  st = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t));
+  st = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t), 0);
   bt_assert_ptr_not_equal(st, NULL);
   gc_add_root(g, &st->gco);
 
@@ -112,7 +114,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
   unsigned run = 0;
 
   for (unsigned k = 0; k < 10; k++) {
-    testobj_t * tk = gc_new(g, &testobj_vtable, sizeof(testobj_t));
+    testobj_t * tk = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
 
     for (unsigned l = 0; l < 2; l++) {
       snprintf(buf, 9, "run %u", run++);
@@ -121,7 +123,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
     }
 
     for (unsigned j = 0; j < 10; j++) {
-      testobj_t * tj = gc_new(g, &testobj_vtable, sizeof(testobj_t));
+      testobj_t * tj = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
       tk->objv[tk->ocount++] = tj;
 
       for (unsigned l = 0; l < 2; l++) {
@@ -131,7 +133,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
       }
 
       for (unsigned m = 0; m < 10; m++) {
-        testobj_t * tm = gc_new(g, &testobj_vtable, sizeof(testobj_t));
+        testobj_t * tm = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
         tj->objv[tj->ocount++] = tm;
 
         for (unsigned l = 0; l < 2; l++) {
@@ -180,13 +182,13 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 
   gc_stack_set(g, st, 0); bt_assert_ptr_equal(gc_stack_top(st), NULL);
   bt_assert_int_equal(gc_stack_size(st), 0);
-  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t)));
+  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t), 0));
   bt_assert_int_equal(gc_stack_size(st), 1);
-  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t)));
+  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t), 0));
   bt_assert_int_equal(gc_stack_size(st), 2);
-  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t)));
-  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t)));
-  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t)));
+  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t), 0));
+  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t), 0));
+  gc_stack_push(g, st, gc_new(g, &testobj_vtable, sizeof(testobj_t), 0));
   bt_assert_int_equal(gc_stack_size(st), 5);
   gc_stack_pop(st);
   bt_assert_int_equal(gc_stack_size(st), 4);
@@ -202,12 +204,12 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
   bt_assert_int_equal(gc_stack_size(st), 0);
 
   testobj_t * tst[6] = {
-    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
-    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
-    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
-    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
-    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
-    gc_new(g, &testobj_vtable, sizeof(testobj_t)),
+    gc_new(g, &testobj_vtable, sizeof(testobj_t), 0),
+    gc_new(g, &testobj_vtable, sizeof(testobj_t), 0),
+    gc_new(g, &testobj_vtable, sizeof(testobj_t), 0),
+    gc_new(g, &testobj_vtable, sizeof(testobj_t), 0),
+    gc_new(g, &testobj_vtable, sizeof(testobj_t), 0),
+    gc_new(g, &testobj_vtable, sizeof(testobj_t), 0),
   };
 
   gc_stack_push(g, st, tst[0]);

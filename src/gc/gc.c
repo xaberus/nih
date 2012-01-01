@@ -321,8 +321,6 @@ size_t atomic(gc_global_t * g)
   gc_list_reset(&g->grey1);
   counter += propagate(g, 1);
 
-  counter += propagate(g, 1);
-
   g->white = other_white(g);
   gc_head_prepare(&g->objects);
   gc_head_prepare(&g->headers);
@@ -503,7 +501,7 @@ gc_str_t * gc_new_strf(gc_global_t * g, const char * fmt, ...)
   return gc_new_str(g, strlen(tmp), tmp);
 }
 
-void * gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size)
+void * gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size, int argc, ...)
 {
   assert(vtable);
   assert(vtable->flag);
@@ -516,7 +514,10 @@ void * gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size)
   log(5, "# %s(<%p> [%u]) -> %p\n", __FUNCTION__, (void *) vtable, size, (void *) o);
 
   if (vtable->gc_init) {
-    vtable->gc_init(g, o);
+    va_list ap;
+    va_start(ap, argc);
+    vtable->gc_init(g, o, argc, ap);
+    va_end(ap);
   }
 
   if ((vtable->flag & GC_VT_FLAG_OBJ) == GC_VT_FLAG_OBJ) {

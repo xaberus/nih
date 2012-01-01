@@ -18,7 +18,7 @@ number_t * number_new(gc_global_t * g, uint64_t bits)
     return NULL;
   }
 
-  number_t * n = gc_new(g, &number_vtable, sizeof(number_t) + 4 * b);
+  number_t * n = gc_new(g, &number_vtable, sizeof(number_t) + 4 * b, 0);
   n->s = 0;
 
   return n;
@@ -411,7 +411,7 @@ uint32_t iabs(int32_t i)
 }
 
 #define alloc_buffer(_size) \
-  (void *) (((gc_hdr_t *) gc_new(g, &gc_blob_vtable, sizeof(gc_hdr_t) + (_size))) + 1)
+  (void *) (((gc_hdr_t *) gc_new(g, &gc_blob_vtable, sizeof(gc_hdr_t) + (_size), 0)) + 1)
 
 gc_str_t * number_gethex(gc_global_t * g, number_t * n)
 {
