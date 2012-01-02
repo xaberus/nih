@@ -22,9 +22,10 @@
 BT_SUITE_DEF(spman, "storage engine page manager tests");
 
 struct spman_test {
-  spman_t  pm[1];
-  int      fd;
-  uint32_t num;
+  gc_global_t g[1];
+  spman_t     pm[1];
+  int         fd;
+  uint32_t    num;
 };
 
 BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
@@ -32,6 +33,8 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
   struct spman_test * test = malloc(sizeof(struct spman_test));
 
   bt_assert_ptr_not_equal(test, NULL);
+
+  gc_init(test->g, (mema_t) {plain_realloc, NULL});
 
   char path[] = BROOT "/src/store/spman-tests.txt";
   test->fd = open(path, O_CREAT| O_RDWR, S_IRWXU);
@@ -68,7 +71,7 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
     }
   }
 
-  bt_assert_ptr_not_equal(spman_init(test->pm, test->fd, 0, test->num), NULL);
+  bt_assert_ptr_not_equal(spman_init(test->g, test->pm, test->fd, 0, test->num), NULL);
 
   bt_log("[spman] initial store size is %u pages\n", test->pm->cnt);
 
@@ -79,15 +82,15 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
   bt_log("[spman] page load\n");
   for (uint32_t n = 0; n < test->num; n++) {
     for (uint16_t i = (rand() % 16) + 5; i > 0; i--) {
-      spman_load(pm, n);
+      spman_load(test->g, pm, n);
     }
   }
 
   bt_log("[spman] page identity\n");
   {
-    spmap_t * m1 = spman_load(pm, test->num / 2);
+    spmap_t * m1 = spman_load(test->g, pm, test->num / 2);
     spage_t * p1 = m1->page;
-    spmap_t * m2 = spman_load(pm, test->num / 2);
+    spmap_t * m2 = spman_load(test->g, pm, test->num / 2);
     spage_t * p2 = m2->page;
     bt_assert_ptr_equal(m1, m2);
     bt_assert_ptr_equal(p1, p2);
@@ -95,7 +98,7 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 
   bt_log("[spman] page 2x overallocation\n");
   for (uint32_t k = 0; k < STORE_PAGESIZE * test->num * 2; k++) {
-    sdrec_t r = spman_add(pm, STORE_DATASIZE / STORE_PAGESIZE, 0);
+    sdrec_t r = spman_add(test->g, pm, STORE_DATASIZE / STORE_PAGESIZE, 0);
     bt_assert_int_not_equal(r.id, SRID_NIL);
     bt_assert(r.size >= STORE_DATASIZE / STORE_PAGESIZE);
     bt_assert_ptr_not_equal(r.slot, NULL);
@@ -108,7 +111,7 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 #endif
   bt_log("[spman] burst!\n");
   for (uint32_t k = 0; k < STORE_PAGESIZE * test->num * 2; k++) {
-    sdrec_t r = spman_get(pm, k);
+    sdrec_t r = spman_get(test->g, pm, k);
     bt_assert_int_not_equal(r.id, SRID_NIL);
   }
 #ifdef TESTPROF
@@ -117,7 +120,9 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 
   bt_log("[spman] final store size is %u pages\n", test->pm->cnt);
 
-  spman_clear(test->pm);
+  spman_clear(test->g, test->pm);
+
+  gc_clear(test->g);
 
   close(test->fd);
   free(test);

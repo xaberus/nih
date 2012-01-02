@@ -9,7 +9,7 @@
 
 #include "store-tests.c"
 
-#define VERBOSEDEBUG 0
+#define VERBOSEDEBUG 1
 
 uint32_t hash32(uint32_t M)
 {
@@ -24,47 +24,47 @@ uint32_t hash32(uint32_t M)
 
 #define ALIGN16(_size) (((_size) + 15L) & ~15L)
 
-spman_t * spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt)
+spman_t * spman_init(gc_global_t * g, spman_t * pm, int fd, off_t offset, uint32_t cnt)
 {
   if (!pm || fd == -1)
     return NULL;
 
+  (void) g;
+
   pm->fd = fd;
   pm->offset = offset;
-
-  memset(pm->buf, 0, sizeof(spmap_t) * STORE_LIVEPAGES);
-  memset(pm->map, 0, sizeof(spmap_t *) * STORE_LIVEPAGES);
-
-  pm->bufusage = 0;
   pm->cnt = cnt;
-
   pm->anum = 0;
+  pm->maps = 0;
+  memset(pm->map, 0, sizeof(spmap_t *) * STORE_LIVEPAGES);
 
   return pm;
 }
 
-int spman_clear(spman_t * pm)
+int spman_clear(gc_global_t * g, spman_t * pm)
 {
   int fd = pm->fd;
 
-  for (uint32_t k = 0; k < pm->bufusage; k++) {
-    munmap(pm->buf[k].page, sizeof(spage_t));
+  for (uint32_t k = 0; k < STORE_LIVEPAGES; k++) {
+    spmap_t * m = pm->map[k], * n;
+    while (m) {
+      n = m->next;
+      spman_unref(g, pm, m);
+      m = n;
+    }
   }
-  memset(pm->buf, 0, sizeof(spmap_t) * STORE_LIVEPAGES);
+
   memset(pm->map, 0, sizeof(spmap_t *) * STORE_LIVEPAGES);
+  pm->maps = 0;
   pm->fd = -1;
   pm->offset = -1;
-  pm->bufusage = 0;
   pm->cnt = 0;
 
   return fd;
 }
 
-spmap_t * spman_load(spman_t * pm, uint32_t pnum)
+spmap_t * spman_load(gc_global_t * g, spman_t * pm, uint32_t pnum)
 {
-  spmap_t * m;
-  spage_t * b;
-
   if (pnum >= pm->cnt)
     return NULL;
 
@@ -80,47 +80,50 @@ spmap_t * spman_load(spman_t * pm, uint32_t pnum)
     }
   }
 
-  size_t off = pm->offset + sizeof(spage_t) * pnum;
-
-  b = mmap(NULL, sizeof(spage_t), PROT_READ | PROT_WRITE, MAP_SHARED, pm->fd, off);
-  if (b == MAP_FAILED)
-    return NULL;
-
-  if (pm->bufusage < STORE_LIVEPAGES) {
-    m = &pm->buf[pm->bufusage++];
-  } else {
+  if (pm->maps >= STORE_LIVEPAGES) {
     uint32_t minc = 0, min = 0;
     for (uint32_t k = 0; k < STORE_LIVEPAGES; k++) {
-      if (min) {
-        minc = minc > pm->buf[k].cnt ? pm->buf[k].cnt : minc;
-      } else {
-        min = 1;
-        minc = pm->buf[k].cnt;
+      spmap_t * n = pm->map[k];
+      while (n) {
+        if (min) {
+          minc = minc > n->cnt ? n->cnt : minc;
+        } else {
+          min = 1;
+          minc = n->cnt;
+        }
+        n = n->next;
       }
     }
+    spmap_t * del = NULL;
     for (uint32_t k = 0; k < STORE_LIVEPAGES; k++) {
-      m = &pm->buf[k];
-      if (m->cnt == minc) {
+      spmap_t ** p = &pm->map[k], * n = *p;
+      while (n) {
+        if (n->cnt == minc) {
+          *p = n->next;
+          del = n;
+          break;
+        }
+        p = &n->next;
+        n = *p;
+      }
+      if (del) {
         break;
       }
     }
-    uint32_t hash = hash32(m->pnum) & STORE_LIVEMASK;
-    if (pm->map[hash]->next) {
-      spmap_t ** r = &pm->map[hash], * c = *r;
-      while (c != m) {
-        r = &c->next;
-        c = *r;
-      }
-      *r = c->next;
-    } else {
-      pm->map[hash] = NULL;
+    if (del) {
+      spman_unref(g, pm, del);
     }
-    // fprintf(stderr, "---      %4u at %p (map:%3u, cnt:%3u)\n", m->pnum, (void *) m->page, hash, m->cnt);
-    munmap(m->page, sizeof(spage_t));
   }
 
+  size_t off = pm->offset + sizeof(spage_t) * pnum;
+  spage_t * b = mmap(NULL, sizeof(spage_t), PROT_READ | PROT_WRITE, MAP_SHARED, pm->fd, off);
+  if (b == MAP_FAILED)
+    return NULL;
+
+  spmap_t * m = gc_mem_new(g, sizeof(spmap_t));
   m->pnum = pnum;
   m->cnt = 0;
+  m->ref = 0;
   m->page = b;
 
   uint32_t hash = hash32(pnum) & STORE_LIVEMASK;
@@ -133,18 +136,36 @@ spmap_t * spman_load(spman_t * pm, uint32_t pnum)
     pm->map[hash] = m;
   }
 
-  // fprintf(stderr, ">>> page %4u at %p (map:%3u)\n", pnum, (void *) b, hash);
+  pm->maps++;
 
-  return m;
+  return spman_ref(g, pm, m);;
 }
 
-sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
+spmap_t * spman_ref(gc_global_t * g, spman_t * pm, spmap_t * m)
+{
+  (void) g;
+  (void) pm;
+  m->ref++;
+  return m;
+}
+void spman_unref(gc_global_t * g, spman_t * pm, spmap_t * m)
+{
+  if (m->ref > 1) {
+    m->ref--;
+  } else {
+    munmap(m->page, sizeof(spage_t));
+    gc_mem_free(g, sizeof(spmap_t), m);
+    pm->maps--;
+  }
+}
+
+sdrec_t   spman_add(gc_global_t * g, spman_t * pm, uint16_t size, uint16_t usage)
 {
   spmap_t * m;
 
   uint32_t  sz = ALIGN16(size);
 
-  while ((m = spman_load(pm, pm->anum))) {
+  while ((m = spman_load(g, pm, pm->anum))) {
     spage_t * p = m->page;
     uint16_t  offset = 0;
     for (uint16_t k = 0; k < STORE_PAGESIZE; k++) {
@@ -157,6 +178,7 @@ sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
           .size = p->info[k].size,
           .flag = p->info[k].flag,
           .slot = &p->data[p->info[k].offset],
+          .map = m,
         };
       }
       offset = p->info[k].offset + p->info[k].size;
@@ -169,7 +191,7 @@ sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
   if (!ftruncate(pm->fd, pm->offset + (pm->cnt + 1) * sizeof(spage_t))) {
     pm->cnt++;
     // fprintf(stderr, "resizing store to %u (anum is %u)\n", pm->cnt, pm->anum);
-    if ((m = spman_load(pm, pm->anum))) {
+    if ((m = spman_load(g, pm, pm->anum))) {
       spage_t * p = m->page;
       memset(p->info, 0, sizeof(sslot_t) * STORE_PAGESIZE);
       memset(p->data, 0, STORE_DATASIZE);
@@ -179,7 +201,9 @@ sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
       return (sdrec_t) {
         .id = (m->pnum << STORE_SLOTBITS) | 0,
         .size = p->info[0].size,
+        .flag = p->info[0].flag,
         .slot = &p->data[0],
+        .map = m,
       };
     }
   }
@@ -187,11 +211,13 @@ sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
   return (sdrec_t) {
     .id = SRID_NIL,
     .size = 0,
+    .flag = 0,
     .slot = NULL,
+    .map = NULL,
   };
 }
 
-sdrec_t spman_get(spman_t * pm, srid_t id)
+sdrec_t spman_get(gc_global_t * g, spman_t * pm, srid_t id)
 {
   uint32_t  pnum = (id & STORE_PAGEMASK) >> STORE_SLOTBITS;
   uint32_t  snum = (id & STORE_SLOTMASK);
@@ -206,7 +232,7 @@ sdrec_t spman_get(spman_t * pm, srid_t id)
   }
 
   if (!m) {
-    m = spman_load(pm, pnum);
+    m = spman_load(g, pm, pnum);
   }
 
   if (m) {
@@ -217,6 +243,7 @@ sdrec_t spman_get(spman_t * pm, srid_t id)
         .size = p->info[snum].size,
         .flag = p->info[snum].flag,
         .slot = &p->data[p->info[snum].offset],
+        .map = m,
       };
     }
   }
@@ -226,6 +253,7 @@ sdrec_t spman_get(spman_t * pm, srid_t id)
     .size = 0,
     .flag = 0,
     .slot = NULL,
+    .map = NULL,
     };
 }
 
@@ -317,7 +345,7 @@ gc_vtable_t sclass_vtable = {
 
 sclass_t * store_get_class(store_t * s, srid_t id)
 {
-  sdrec_t r = spman_get(&s->pm, id);
+  sdrec_t r = spman_get(&s->g, &s->pm, id);
   if (r.id == SRID_NIL) {
     return NULL;
   }
@@ -349,6 +377,8 @@ uint16_t sclass_mem_size(sclass_t * c)
         sz += sizeof(gc_str_t *); break;
       case SKIND_OBJECT:
         sz += sizeof(smrec_t *); break;
+      case SKIND_CLASS:
+        sz += sizeof(sclass_t *); break;
     }
   }
   return sz;
@@ -374,6 +404,10 @@ size_t sclass_walk_propagate(store_t * s, sclass_t * c, void * p)
       case SKIND_OBJECT:
         gc_mark(&s->g, *((gc_hdr_t **) p)); k++;
         p = (uint8_t *) p + sizeof(smrec_t *);
+        break;
+      case SKIND_CLASS:
+        gc_mark(&s->g, *((gc_hdr_t **) p)); k++;
+        p = (uint8_t *) p + sizeof(sclass_t *);
         break;
     }
   }
@@ -483,6 +517,21 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         dp += sizeof(void *);
         break;
       }
+      case SKIND_CLASS: {
+        *((sclass_t **) dp) = store_get_class(s, *((srid_t *) sp));
+#if VERBOSEDEBUG
+        if (*((void **) dp)) {
+          fprintf(stderr, "    element of <%p:%u> (class) <[1;33m%p[0;m::[1;35m%u[0;m>\n",
+            (void *) r, r->id, *((void **) dp), (*((sclass_t **) dp))->id);
+        } else {
+          fprintf(stderr, "    element of <%p:%u> (class) <[1;33m%p[0;m:[1;31m(nil)[0;m>\n",
+            (void *) r, r->id, *((void **) dp));
+        }
+#endif
+        sp += sizeof(srid_t);
+        dp += sizeof(void *);
+        break;
+      }
     }
   }
 
@@ -536,7 +585,7 @@ gc_vtable_t smrec_vtable = {
 
 smrec_t * store_get_object(store_t * s, srid_t id)
 {
-  sdrec_t r = spman_get(&s->pm, id);
+  sdrec_t r = spman_get(&s->g, &s->pm, id);
   if (r.id == SRID_NIL) {
     return NULL;
   }
@@ -545,7 +594,10 @@ smrec_t * store_get_object(store_t * s, srid_t id)
     if (srid_find(&s->i2r, r.id, (void **) &rec)) {
       sclass_t * c = store_get_class(s, *((srid_t *) r.slot));
       if (c) {
+        /* pin the page (map) so it does not vanish in the heat of the moment */
+        spman_ref(&s->g, &s->pm, r.map);
         rec = gc_new(&s->g, &smrec_vtable, sizeof(smrec_t), 3, c, id, r.slot + sizeof(srid_t));
+        spman_unref(&s->g, &s->pm, r.map);
       }
     }
   }
@@ -599,7 +651,7 @@ store_t * store_init(store_t * s, mema_t a, const char path[])
     return NULL;
   }
 
-  if (!spman_init(&s->pm, fd, 4096, s->hdr->cnt)) {
+  if (!spman_init(&s->g, &s->pm, fd, 4096, s->hdr->cnt)) {
     munmap(s->hdr, 4096);
     close(fd);
     return NULL;
@@ -628,14 +680,14 @@ void store_clear(store_t * s)
   s->hdr->cnt = s->pm.cnt;
   munmap(s->hdr, 4096);
 
-  int fd = spman_clear(&s->pm);
+  int fd = spman_clear(&s->g, &s->pm);
 
   close(fd);
 }
 
 sclass_t * store_add_class(store_t * s, uint16_t cnt, skind_t kindv[cnt])
 {
-  sdrec_t r = spman_add(&s->pm, sizeof(uint16_t) + cnt * sizeof(srid_t), SSLOT_USAGE_CLASS);
+  sdrec_t r = spman_add(&s->g, &s->pm, sizeof(uint16_t) + cnt * sizeof(srid_t), SSLOT_USAGE_CLASS);
   if (r.id == SRID_NIL) {
     return NULL;
   }
@@ -697,6 +749,10 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
         va_arg(ap, smrec_t *);
         sz += sizeof(srid_t); break;
         break;
+      case SKIND_CLASS:
+        va_arg(ap, sclass_t *);
+        sz += sizeof(srid_t); break;
+        break;
     }
   }
   va_end(ap);
@@ -705,7 +761,7 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
     gc_error(&s->g, "store: attempted to create an object lager than a data page!");
   }
 
-  sdrec_t r = spman_add(&s->pm, (uint16_t) sz, SSLOT_USAGE_OBJECT);
+  sdrec_t r = spman_add(&s->g, &s->pm, (uint16_t) sz, SSLOT_USAGE_OBJECT);
   if (r.id == SRID_NIL) {
     return NULL;
   }
@@ -779,6 +835,22 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
           *((srid_t *) p) = SRID_NIL;
 #if VERBOSEDEBUG
           fprintf(stderr, "--- element (object) (nil)\n");
+#endif
+        }
+        p += sizeof(srid_t);
+        break;
+      }
+      case SKIND_CLASS: {
+        sclass_t * t = va_arg(ap, sclass_t *);
+        if (t) {
+          *((srid_t *) p) = t->id;
+#if VERBOSEDEBUG
+          fprintf(stderr, "--- element (class) %u\n", *((srid_t *) p));
+#endif
+        } else {
+          *((srid_t *) p) = SRID_NIL;
+#if VERBOSEDEBUG
+          fprintf(stderr, "--- element (class) (nil)\n");
 #endif
         }
         p += sizeof(srid_t);
