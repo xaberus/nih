@@ -22,18 +22,19 @@ typedef uint32_t srid_t;
 /* memory page alignment! */
 #define STORE_DATASIZE (1 << STORE_DATABITS)
 
-/* slot management flags, a slot is empty <=> (flag & FLAGMASK == 0) */
-#define SSLOT_FLAG_DATA 0x0001
-#define SSLOT_FLAG_MOVD 0x0002
-#define SSLOT_FLAGMASK  0x00ff
 #define STORE_LIVEPAGES 16
 #define STORE_LIVEMASK  0xf
 
+/* slot management flags, a slot is empty <=> (flag & FLAGMASK == 0) */
+#define SSLOT_FLAG_DATA 0x0001
+#define SSLOT_FLAG_MOVD 0x0002
+#define SSLOT_FLAGMASK  0x000f
+
 /* slot usage */
 #define SSLOT_USAGE_NONE   0x0000
-#define SSLOT_USAGE_CLASS  0x0100
-#define SSLOT_USAGE_OBJECT 0x0200
-#define SSLOT_USAGEMASK    0xff00
+#define SSLOT_USAGE_CLASS  0x0010
+#define SSLOT_USAGE_OBJECT 0x0020
+#define SSLOT_USAGEMASK    0xfff0
 
 typedef struct sslot {
   uint16_t flag;
