@@ -1,16 +1,18 @@
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.8.6)
+
+#set(CMAKE_C_COMPILER clang)
+#set(CMAKE_C_COMPILER ccc-analyzer)
+
+add_subdirectory(butcher)
+
 project(libnih)
 
 #set(CMAKE_VERBOSE_MAKEFILE true)
 
 include_directories(
-	${CMAKE_CURRENT_SOURCE_DIR}/../butcher/
-	${libnih_SOURCE_DIR}/src/
-	/usr/include/sexpr
+  ${libnih_SOURCE_DIR}/butcher/
+  ${libnih_SOURCE_DIR}/src/
 )
-
-#set(CMAKE_C_COMPILER clang)
-#set(CMAKE_C_COMPILER ccc-analyzer)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
@@ -28,14 +30,14 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-inline")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fcatch-undefined-behavior")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ftrapv")
 
-#add_definitions(-DLUA)
 add_definitions(-DTEST)
+#add_definitions(-DTESTPROF="cpuprof")
+
 add_definitions(-DBROOT="${CMAKE_CURRENT_SOURCE_DIR}")
 
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fpic")
-#set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--warn-unresolved-symbols")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--sort-section=name")
 #set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -v")
 
 #RAGEL_TARGET(sx-parser-sq-machine sx-parser-sq-machine.rl
@@ -48,28 +50,20 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--sort-section=n
 include_directories(${libnih_SOURCE_DIR})
 
 add_library(nih SHARED
-  #${libnih_SOURCE_DIR}/src/sr/sr.c
   ${libnih_SOURCE_DIR}/src/gc/gc.c
   ${libnih_SOURCE_DIR}/src/gc/gc-stack.c
   ${libnih_SOURCE_DIR}/src/number/number.c
-  #${libnih_SOURCE_DIR}/src/blobtree/blobtree.c
   ${libnih_SOURCE_DIR}/src/sx/sx.c
-  #${libnih_SOURCE_DIR}/src/lua/table-lua.c
-  ${libnih_SOURCE_DIR}/src/lua/init.c
   ${libnih_SOURCE_DIR}/src/trie/pathman.c
   ${libnih_SOURCE_DIR}/src/trie/trie.c
   ${libnih_SOURCE_DIR}/src/common/memory.c
-  ${libnih_SOURCE_DIR}/field.c
-  ${libnih_SOURCE_DIR}/reader.c
+  ${libnih_SOURCE_DIR}/src/store/store.c
 )
 
-#target_link_libraries(nih sexp m lua)
 #target_link_libraries(nih m profiler)
 target_link_libraries(nih m)
 
-add_subdirectory(butcher)
-
 add_custom_target(chop
-  $<TARGET_FILE:butcher> $<TARGET_FILE:nih> $(BFLAGS)
-  DEPENDS nih
+  $<TARGET_FILE:butcher> $<TARGET_FILE:nih> --bexec $<TARGET_FILE:bexec> $(BFLAGS)
+  DEPENDS nih butcher bexec
 )
