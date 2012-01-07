@@ -42,7 +42,7 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 
   test->num = 16;
 
-  off_t size = sizeof(spage_t) * test->num;
+  off_t size = STORE_DATASIZE * test->num;
 
   if (ftruncate(test->fd, size)) {
     bt_log("could not resize '%s'\n", path);
@@ -51,20 +51,20 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 
   unsigned long ps = sysconf(_SC_PAGE_SIZE);
 
-  bt_log("[spman] sizeof(spage_t) is %lu, memory page size is %lu\n", (long unsigned) sizeof(spage_t), ps);
-  size_t check = sizeof(spage_t) % (1 << 12);
+  bt_log("[spman] STORE_DATACHUNK is %lu, memory page size is %lu\n", (long unsigned) STORE_DATACHUNK, ps);
+  size_t check = STORE_DATACHUNK % (1 << 12);
   bt_assert(check == 0);
 
   /* format */
   {
     for (uint32_t n = 0; n < test->num; n++) {
-      size_t off = sizeof(spage_t) * n;
-      spage_t * p = mmap(NULL, sizeof(spage_t), PROT_READ  | PROT_WRITE, MAP_SHARED, test->fd, off);
+      size_t off = STORE_DATASIZE * n;
+      uint16_t * p = mmap(NULL, STORE_DATASIZE, PROT_READ  | PROT_WRITE, MAP_SHARED, test->fd, off);
       // bt_log("format page %u (mapped at %p)\n", n, (void *) p);
       bt_assert_ptr_not_equal(p, MAP_FAILED);
-      memset(p->info, 0, sizeof(sslot_t) * STORE_PAGESIZE);
-      memset(p->data, 0, STORE_DATASIZE);
-      munmap(p, sizeof(spage_t));
+      memset(p, 0, STORE_DATASIZE);
+      *p = STORE_DATASIZE / STORE_DATACHUNK;
+      munmap(p, STORE_DATASIZE);
     }
   }
 
@@ -84,34 +84,49 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
   bt_log("[spman] page identity\n");
   {
     spmap_t * m1 = spman_load(pm, test->num / 2);
-    spage_t * p1 = m1->page;
+    void * p1 = m1->page;
     spmap_t * m2 = spman_load(pm, test->num / 2);
-    spage_t * p2 = m2->page;
+    void * p2 = m2->page;
     bt_assert_ptr_equal(m1, m2);
     bt_assert_ptr_equal(p1, p2);
   }
 
-  bt_log("[spman] page 2x overallocation\n");
-  for (uint32_t k = 0; k < STORE_PAGESIZE * test->num * 2; k++) {
-    sdrec_t r = spman_add(pm, 1024, 0);
+#define chunk 60
+#define sgmo (STORE_SLOTSMAX * test->num)
+
+  srid_t * vel = malloc(sizeof(srid_t) * sgmo);
+
+  bt_log("[spman] allocate %u chunks %u bytes each\n", sgmo, chunk);
+  for (uint32_t k = 0; k < sgmo; k++) {
+    sdrec_t r = spman_add(pm, chunk, 0);
     bt_assert_int_not_equal(r.id, SRID_NIL);
-    bt_assert(r.size >= 1024);
+    bt_assert(r.size >= chunk);
     bt_assert_ptr_not_equal(r.slot, NULL);
-    // bt_log("add id: %u, size:%u\n", r.id, r.size);
-    memset(r.slot, k % 265, 1024);
+    /*bt_log("add id: %u %u, size:%u\n",
+      (r.id & STORE_PAGEMASK) >> STORE_SLOTBITS,
+      r.id & STORE_SLOTMASK, r.size);*/
+    memset(r.slot, k % 26 + 'a', r.size);
+    vel[k] = r.id;
   }
 
 #ifdef TESTPROF
   ProfilerStart(TESTPROF);
 #endif
   bt_log("[spman] burst!\n");
-  for (uint32_t k = 0; k < STORE_PAGESIZE * test->num * 2; k++) {
-    sdrec_t r = spman_get(pm, k);
-    bt_assert_int_not_equal(r.id, SRID_NIL);
+  for (uint32_t k = 0; k < sgmo; k++) {
+    srid_t id = vel[k];
+    /*bt_log("get id: %u %u\n",
+      (id & STORE_PAGEMASK) >> STORE_SLOTBITS,
+      id & STORE_SLOTMASK);*/
+    sdrec_t r = spman_get(pm, id);
+    r.map->inuse = rand() % 1000;
+    bt_assert_int_equal(r.id, id);
   }
 #ifdef TESTPROF
   ProfilerStop();
 #endif
+
+  free(vel);
 
   bt_log("[spman] final store size is %u pages\n", test->pm->cnt);
 

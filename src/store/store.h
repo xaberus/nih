@@ -11,22 +11,32 @@
 typedef uint32_t srid_t;
 #define SRID_NIL ~((srid_t) 0)
 
+/* namespace partition in small pages */
 #define STORE_SLOTBITS 12
-#define STORE_DATABITS 16
-#define STORE_PAGEBITS (sizeof(srid_t)*8 - STORE_SLOTBITS)
-#define STORE_PAGEMASK (~((srid_t) 0) << STORE_SLOTBITS)
-#define STORE_SLOTMASK (~((srid_t) 0) >> STORE_PAGEBITS)
-#define STORE_PAGESIZE (1 << STORE_SLOTBITS)
+#define STORE_PAGEBITS (sizeof(srid_t) * 8 - STORE_SLOTBITS)
 
-/* memory page alignment! */
+/* data size must fit into uint16_t */
+#define STORE_DATABITS 16
 #define STORE_DATASIZE (1 << STORE_DATABITS)
 
+/* page size must be multiple of this */
+#define STORE_DATACHUNK 4096
+
+#define STORE_PAGEMASK (~((srid_t) 0) << STORE_SLOTBITS)
+#define STORE_SLOTMASK (~((srid_t) 0) >> STORE_PAGEBITS)
+
+/* maximal slots per page */
+#define STORE_SLOTSMAX (1 << STORE_SLOTBITS)
+
+/* maximal amount of pges to keep alive */
 #define STORE_LIVEPAGES 16
 #define STORE_LIVEMASK  0xf
 
 /* slot management flags, a slot is empty <=> (flag & FLAGMASK == 0) */
-#define SSLOT_FLAG_DATA 0x0001
-#define SSLOT_FLAG_MOVD 0x0002
+#define SSLOT_FLAG_FLST 0x0001 /* first free slot */
+#define SSLOT_FLAG_FREE 0x0002 /* free slot */
+#define SSLOT_FLAG_DATA 0x0004 /* slot stores data */
+#define SSLOT_FLAG_MOVD 0x0008 /* slot was moved */
 #define SSLOT_FLAGMASK  0x000f
 
 /* slot usage */
@@ -36,43 +46,51 @@ typedef uint32_t srid_t;
 #define SSLOT_USAGEMASK    0xfff0
 
 typedef struct sslot {
-  uint16_t flag;
-  uint16_t size;
-  uint16_t offset;
+  uint16_t flag;   /* metadata and usage flags */
+  uint16_t size;   /* size of slot in bytes */
+  void   * slot;   /* pointer to slot contents */
 } sslot_t;
 
-/* page layout: [u16:count] (u16:flag u16:size u8:data[size]):[count] */
-
-typedef struct spage {
-  sslot_t  info[STORE_PAGESIZE];
-  uint8_t  data[STORE_DATASIZE];
-} spage_t;
+/* PAGE LAYOUT:
+ *
+ * u16@pn u16@count
+ * (
+ *   u16@flag u16@size
+ *     u8[ALIGN16(size)]@data
+ * )[count]
+ */
 
 typedef struct spmap spmap_t;
 struct spmap {
-  uint32_t   pnum;
-  uint32_t   inuse;
-  uint32_t   ref;
-  spage_t  * page;
-  spmap_t ** rev;
-  spmap_t *  next;
+  uint32_t   pnum;    /* page number */
+  uint32_t   inuse;   /* number of live objects from this page */
+  uint32_t   ref;     /* references count */
+  spmap_t ** rev;     /* pointer to pointer to this spmap */
+  spmap_t *  next;    /* pointer to next spmap in hashmap */
+  sslot_t    index[STORE_SLOTSMAX]; /* array with slot information */
+  uint16_t   scount;  /* pointer to number of used slots in this page/index */
+  uint32_t   psize;   /* 4096 * page@pn -- i.e size of page in bytes */
+  void     * page;    /* page data with inlined slots an metadata */
+  off_t      poff;    /* page offset in store */
+  uint16_t   sfree;   /* 1 if there are free slots < scount */
+  uint16_t   sfhdr;   /* first free slot if sfree == 1 */
 };
 
 typedef struct sdrec {
-  srid_t    id;
-  uint16_t  size;
-  uint16_t  flag;
-  uint8_t * slot;
-  spmap_t * map;
+  srid_t    id;   /* record id */
+  uint16_t  size; /* record size */
+  uint16_t  flag; /* record flags */
+  uint8_t * slot; /* pointer to record data */
+  spmap_t * map;  /* pointer to page map */
 } sdrec_t;
 
 typedef struct spman {
-  spmap_t * map[STORE_LIVEPAGES];
-  uint16_t  maps;
-  int       fd;
-  off_t     offset;
-  uint32_t  cnt;
-  uint32_t  anum;
+  spmap_t * map[STORE_LIVEPAGES]; /* hashmap of live pages */
+  uint16_t  maps;    /* number of live pages */
+  int       fd;      /* store file descriptor */
+  off_t     offset;  /* start of page manager chunk start in store */
+  uint32_t  cnt;     /* number of pages in store */
+  uint32_t  anum;    /* page to start seeking for free slots */
 } spman_t;
 
 spman_t * spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt);
@@ -99,19 +117,19 @@ typedef enum skind {
 
 typedef struct sclass {
   gc_hdr_t gch;
-  srid_t   id;
-  uint16_t cnt;
+  srid_t   id;     /* class record id */
+  uint16_t cnt;    /* number of fields */
   skind_t  kind[];
 } sclass_t;
 
 typedef struct smrec smrec_t;
 struct smrec {
   gc_obj_t   gco;
-  sclass_t * sc;
-  srid_t     id;
-  void     * ptr;
-  smrec_t  * limb;
-  uint16_t   sz;
+  sclass_t * sc;    /* pointer unpacked class this data implements */
+  srid_t     id;    /* data record id */
+  void     * ptr;   /* pointer to unpacked data */
+  smrec_t  * limb;  /* pointer to next data record in chain */
+  uint16_t   sz;    /* size of unpacked data */
 };
 
 typedef struct sfile {
@@ -120,15 +138,11 @@ typedef struct sfile {
 } sfile_t;
 
 typedef struct store {
-  /* gc must go first for upcasts to work */
-  gc_global_t  g;
-
-  spman_t      pm;
-  gc_stack_t * limbs;
-
-  trie_t       i2r;
-
-  sfile_t    * hdr;
+  gc_global_t  g;      /* gc must go first for upcasts to work! */
+  spman_t      pm;     /* page manager */
+  gc_stack_t * limbs;  /* allocated array of limbs */
+  trie_t       i2r;    /* map of ids to corresponding unpacked representation */
+  sfile_t    * hdr;    /* mapped header of store */
 } store_t;
 
 

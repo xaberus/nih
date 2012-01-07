@@ -9,6 +9,9 @@
 
 #include "store-tests.c"
 
+#define SRID_TO_PAGE(_srid) (((_srid) & STORE_PAGEMASK) >> STORE_SLOTBITS)
+#define SRID_TO_SLOT(_srid) ((_srid) & STORE_SLOTMASK)
+
 #define VERBOSEDEBUG 0
 
 uint32_t hash32(uint32_t M)
@@ -22,7 +25,7 @@ uint32_t hash32(uint32_t M)
   return M;
 }
 
-#define ALIGN16(_size) (((_size) + 15L) & ~15L)
+#define ALIGN2(_size) (((_size) + 1L) & ~1L)
 
 spman_t * spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt)
 {
@@ -61,12 +64,99 @@ int spman_clear(spman_t * pm)
   return fd;
 }
 
+#define SPAGE_HDRWORDS 2
+#define SPAGE_HDRSIZE (sizeof(uint16_t) * SPAGE_HDRWORDS)
+#define SPAGE_HDR_PN(_p) (*((uint16_t *) (_p)))
+#define SPAGE_HDR_SCOUNT(_p) (*((uint16_t *) (_p) + 1))
+#define SPAGE_HDR_DATA(_p) ((void *)(((uint16_t *) (_p) + SPAGE_HDRWORDS)))
+
+#define SSLOT_HDRWORDS 2
+#define SSLOT_HDRSIZE (sizeof(uint16_t) * SSLOT_HDRWORDS)
+#define SSLOT_HDR_FLAG(_p) (*((uint16_t *) (_p)))
+#define SSLOT_HDR_SIZE(_p) (*((uint16_t *) (_p) + 1))
+#define SSLOT_HDR_SLOT(_p) ((void *)(((uint16_t *) (_p) + SSLOT_HDRWORDS)))
+#define SSLOT_HDR_NEXT(_p, _size) ((uint8_t *) SSLOT_HDR_SLOT(_p) + ALIGN2(_size))
+
+static
+void spmap_gen_index(spmap_t * m)
+{
+  memset(m->index, 0, sizeof(m->index));
+  void * p = SPAGE_HDR_DATA(m->page);
+  for (uint32_t sid = 0; sid < m->scount; sid++) {
+    uint16_t sflag = SSLOT_HDR_FLAG(p);
+    uint16_t ssize = SSLOT_HDR_SIZE(p);
+    void * slot = SSLOT_HDR_SLOT(p);
+    // fprintf(stderr, "IDX %08u|%04u|%04u|%04u|%p\n", p - m->page, sid, sflag, ALIGN2(ssize), slot);
+    if (sid < STORE_SLOTSMAX) {
+      sslot_t * s = &m->index[sid];
+      s->flag = sflag;
+      s->size = ssize;
+      s->slot = slot;
+      if (sflag & SSLOT_FLAG_FLST) {
+        m->sfree = 1;
+        m->sfhdr = sid;
+      }
+    }
+    p = SSLOT_HDR_NEXT(p, ssize);
+  }
+}
+
+static
+sdrec_t spmap_alloc(spmap_t * m, uint16_t ssize, uint16_t usage)
+{
+  if (m->sfree) {
+
+  }
+
+  if (m->scount < STORE_SLOTSMAX) {
+    uint16_t sid = m->scount;
+    uint32_t sz = ALIGN2(ssize);
+    uint32_t off;
+    if (!sid) {
+      off = SPAGE_HDRSIZE;
+    } else {
+      off = (uint8_t *) m->index[sid - 1].slot - (uint8_t *) m->page;
+      off += ALIGN2(m->index[sid - 1].size);
+    }
+    if (off + sz + SSLOT_HDRSIZE <= m->psize) {
+      void * p = (uint8_t *) m->page + off;
+      uint16_t sflag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
+      SSLOT_HDR_FLAG(p) = sflag;
+      SSLOT_HDR_SIZE(p) = ssize;
+      void * slot = SSLOT_HDR_SLOT(p);
+      // fprintf(stderr, "OFF %08u|%04u|%04u|%04u\n", off, sid, sflag| ssize);
+      sslot_t * s = &m->index[sid];
+      s->flag = sflag;
+      s->size = ssize;
+      s->slot = slot;
+      m->scount++;
+      return (sdrec_t) {
+        .id = (m->pnum << STORE_SLOTBITS) | sid,
+        .size = ssize,
+        .flag = sflag,
+        .slot = slot,
+        .map = m,
+      };
+    }
+  }
+  return (sdrec_t) {
+    .id = SRID_NIL,
+    .size = 0,
+    .flag = 0,
+    .slot = NULL,
+    .map = NULL,
+  };
+}
+
+
 spmap_t * spman_load(spman_t * pm, uint32_t pnum)
 {
-  if (pnum >= pm->cnt)
+  if (pnum >= pm->cnt) {
+    /* no page in file */
     return NULL;
+  }
 
-  {
+  { /* try to find loaded page */
     uint32_t  hash = hash32(pnum) & STORE_LIVEMASK;
     spmap_t * c = pm->map[hash];
     while (c) {
@@ -77,6 +167,7 @@ spmap_t * spman_load(spman_t * pm, uint32_t pnum)
     }
   }
 
+  /* drop loaded pages as needed */
   if (pm->maps >= STORE_LIVEPAGES) {
     uint32_t minc = 0, min = 0;
     for (uint32_t k = 0; k < STORE_LIVEPAGES; k++) {
@@ -110,16 +201,50 @@ spmap_t * spman_load(spman_t * pm, uint32_t pnum)
     }
   }
 
-  size_t off = pm->offset + sizeof(spage_t) * pnum;
-  spage_t * b = mmap(NULL, sizeof(spage_t), PROT_READ | PROT_WRITE, MAP_SHARED, pm->fd, off);
+  /* going to load page now! */
+  off_t off = pm->offset;
+  uint16_t pn;
+  for (uint32_t k = 0; k <= pnum; k++) {
+    if (lseek(pm->fd, off, SEEK_SET) == (off_t) -1) {
+      return NULL;
+    }
+    if (read(pm->fd, &pn, sizeof(pn)) != sizeof(pn)) {
+      return NULL;
+    }
+    if (k < pnum) {
+      off += pn * STORE_DATACHUNK;
+    }
+  }
+  uint16_t scount;
+  if (read(pm->fd, &scount, sizeof(scount)) != sizeof(scount)) {
+    return NULL;
+  }
+  uint32_t psize = pn * STORE_DATACHUNK;
+  void * b = mmap(NULL, psize, PROT_READ | PROT_WRITE, MAP_SHARED, pm->fd, off);
   if (b == MAP_FAILED)
     return NULL;
 
   spmap_t * m = malloc(sizeof(spmap_t));
+  if (!m) {
+    munmap(b, psize);
+    return NULL;
+  }
   m->pnum = pnum;
   m->inuse = 0;
   m->ref = 0;
+  m->scount = scount;
+  m->psize = psize;
   m->page = b;
+  m->poff = off;
+  m->sfree = 0;
+  m->sfhdr = 0;
+
+#if VERBOSEDEBUG > 0
+  fprintf(stderr, "[P] loaded page [1;33m%p[0;m:[1;32m%u[0;m (%u slots){%u}\n",
+    (void *) m->page, pnum, scount, psize);
+#endif
+
+  spmap_gen_index(m);
 
   uint32_t hash = hash32(pnum) & STORE_LIVEMASK;
 
@@ -136,23 +261,23 @@ spmap_t * spman_load(spman_t * pm, uint32_t pnum)
 
   pm->maps++;
 
-#if VERBOSEDEBUG
-  fprintf(stderr, "[P] loaded page [1;33m%p[0;m:[1;32m%u[0;m\n", (void *) m->page, pnum);
-#endif
-
   return spman_ref(pm, m);;
 }
 
 void spman_unload(spman_t * pm, spmap_t * m)
 {
-#if VERBOSEDEBUG
-    fprintf(stderr, "{P} unloading page [1;32m%u[0;m\n", m->pnum);
-#endif
     *(m->rev) = m->next;
     if (m->next) {
       m->next->rev = m->rev;
     }
-    munmap(m->page, sizeof(spage_t));
+    uint16_t * p = m->page;
+    *p = m->psize / STORE_DATACHUNK; p++;
+    *p = m->scount;
+#if VERBOSEDEBUG > 0
+    fprintf(stderr, "{P} unloading page [1;33m%p[0;m:[1;32m%u[0;m (%u slots){%u}\n",
+      (void *) m->page, m->pnum, m->scount, m->psize);
+#endif
+    munmap(m->page, m->psize);
     free(m);
     pm->maps--;
 }
@@ -173,38 +298,6 @@ void spman_unref(spman_t * pm, spmap_t * m)
   }
 }
 
-sdrec_t spmap_alloc(spmap_t * m, uint16_t size, uint16_t usage)
-{
-  uint32_t  sz = ALIGN16(size);
-  uint16_t  offset = 0;
-  spage_t * p = m->page;
-  sslot_t * t = p->info;
-  for (uint16_t k = 0; k < STORE_PAGESIZE; k++) {
-    if (t->flag == 0 && (offset + sz) <= STORE_DATASIZE) {
-      t->size = sz;
-      t->offset = offset;
-      t->flag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
-      return (sdrec_t) {
-        .id = (m->pnum << STORE_SLOTBITS) | k,
-        .size = t->size,
-        .flag = t->flag,
-        .slot = &p->data[t->offset],
-        .map = m,
-      };
-    }
-    offset = t->offset + t->size;
-    t++;
-  }
-  return (sdrec_t) {
-    .id = SRID_NIL,
-    .size = 0,
-    .flag = 0,
-    .slot = NULL,
-    .map = NULL,
-  };
-}
-
-
 sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
 {
   spmap_t * m;
@@ -217,15 +310,38 @@ sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
     pm->anum++;
   }
 
-  /* no free slots found till now */
-
-  if (!ftruncate(pm->fd, pm->offset + (pm->cnt + 1) * sizeof(spage_t))) {
-    pm->cnt++;
-#if VERBOSEDEBUG
-    fprintf(stderr, "[P] resizing store to %u pages (anum is %u)\n", pm->cnt, pm->anum);
+#if VERBOSEDEBUG > 2
+      fprintf(stderr, "[P] resizing store to %u pages (anum was %u)\n",
+        pm->cnt + 1, pm->anum);
 #endif
-    if ((m = spman_load(pm, pm->anum))) {
-      return spmap_alloc(m, size, usage);
+
+  /* no free slots found till now, so get offset from last page and append a new */
+  off_t off = (off_t) -1;
+  if (pm->cnt) {
+    m = spman_load(pm, pm->cnt - 1);
+    off = m->poff + m->psize;
+  } else {
+    off = pm->offset;
+  }
+  if (off != (off_t) -1) {
+    uint16_t pn = 16;
+    uint32_t psize = (pn * STORE_DATACHUNK);
+    if (!ftruncate(pm->fd, off + psize)) {
+#if VERBOSEDEBUG > 2
+      fprintf(stderr, "[P] appended %u bytes to store\n", psize);
+#endif
+      if (lseek(pm->fd, off, SEEK_SET) != (off_t) -1) {
+        uint16_t nil = pn;
+        if (write(pm->fd, &nil, sizeof(nil)) == sizeof(nil)) {
+          nil = 0;
+          if (write(pm->fd, &nil, sizeof(nil)) == sizeof(nil)) {
+            pm->cnt++;
+            if ((m = spman_load(pm, pm->anum))) {
+              return spmap_alloc(m, size, usage);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -237,9 +353,6 @@ sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
     .map = NULL,
   };
 }
-
-#define SRID_TO_PAGE(_srid) (((_srid) & STORE_PAGEMASK) >> STORE_SLOTBITS)
-#define SRID_TO_SLOT(_srid) ((_srid) & STORE_SLOTMASK)
 
 sdrec_t spman_get(spman_t * pm, srid_t id)
 {
@@ -260,13 +373,12 @@ sdrec_t spman_get(spman_t * pm, srid_t id)
   }
 
   if (m) {
-    spage_t * p = m->page;
-    if (p->info[snum].flag & SSLOT_FLAG_DATA) {
+    if (m->index[snum].flag & SSLOT_FLAG_DATA) {
       return (sdrec_t) {
         .id = id,
-        .size = p->info[snum].size,
-        .flag = p->info[snum].flag,
-        .slot = &p->data[p->info[snum].offset],
+        .size = m->index[snum].size,
+        .flag = m->index[snum].flag,
+        .slot = m->index[snum].slot,
         .map = m,
       };
     }
@@ -454,6 +566,8 @@ size_t sclass_walk_propagate(store_t * s, sclass_t * c, void * p)
 
 /*************************************************************************************************/
 
+#define ELEMENT(_t, _p) (*((_t *) (_p)))
+
 static
 size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
@@ -483,7 +597,7 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   for (uint16_t k = 0; k < r->sc->cnt; k++) {
     switch (r->sc->kind[k]) {
       case SKIND_INT32:
-        *((int32_t *) dp) = *((int32_t *) sp);
+        ELEMENT(int32_t, dp) = ELEMENT(int32_t, sp);
 #if VERBOSEDEBUG
         fprintf(stderr, "    element of <%p:%u> (int32) <%d>\n",
           (void *) r, r->id, *((int32_t *) dp));
@@ -492,7 +606,7 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         dp += sizeof(int32_t);
         break;
       case SKIND_UINT32:
-        *((uint32_t *) dp) = *((uint32_t *) sp);
+        ELEMENT(uint32_t, dp) = ELEMENT(uint32_t, sp);
 #if VERBOSEDEBUG
         fprintf(stderr, "    element of <%p:%u> (uint32) <%u>\n",
           (void *) r, r->id, *((int32_t *) dp));
@@ -501,7 +615,7 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         dp += sizeof(uint32_t);
         break;
       case SKIND_INT64:
-        *((int64_t *) dp) = *((int64_t *) sp);
+        ELEMENT(int64_t, dp) = ELEMENT(int64_t, sp);
 #if VERBOSEDEBUG
         fprintf(stderr, "    element of <%p:%u> (int64) <%ld>\n",
           (void *) r, r->id, (long) *((int64_t *) dp));
@@ -510,7 +624,7 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         dp += sizeof(int64_t);
         break;
       case SKIND_UINT64:
-        *((uint64_t *) dp) = *((uint64_t *) sp);
+        ELEMENT(uint64_t, dp) = ELEMENT(uint64_t, sp);
 #if VERBOSEDEBUG
         fprintf(stderr, "    element of <%p:%u> (uint64) <%lu>\n",
           (void *) r, r->id, (long unsigned) *((uint64_t *) dp));
@@ -519,7 +633,7 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         dp += sizeof(uint64_t);
         break;
       case SKIND_DOUBLE:
-        *((double *) dp) = *((double *) sp);
+        ELEMENT(double, dp) = ELEMENT(double, sp);
 #if VERBOSEDEBUG
         fprintf(stderr, "    element of <%p:%u> (double) <%g>\n",
           (void *) r, r->id, *((double *) dp));
@@ -528,22 +642,22 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         dp += sizeof(double);
         break;
       case SKIND_STRING: {
-        uint16_t l = *((uint16_t *) sp);
+        uint16_t l = ELEMENT(uint16_t, sp);
         sp += sizeof(uint16_t);
         gc_str_t * str = gc_new_str(&s->g, l, (char *) sp);
-        *((gc_str_t **) dp) = str;
+        ELEMENT(gc_str_t *, dp) = str;
 #if VERBOSEDEBUG
         fprintf(stderr, "    element of <%p:%u> (string) <%.*s>\n",
           (void *) r, r->id, gc_str_len(str), str->data);
 #endif
-        sp += ALIGN16(l);
+        sp += ALIGN2(l);
         dp += sizeof(gc_str_t *);
         break;
       }
       case SKIND_OBJECT: {
-        *((smrec_t **) dp) = store_get_object(s, *((srid_t *) sp));
+        ELEMENT(smrec_t *, dp) = store_get_object(s, *((srid_t *) sp));
 #if VERBOSEDEBUG
-        if (*((void **) dp)) {
+        if (ELEMENT(smrec_t *, dp)) {
           fprintf(stderr, "    element of <%p:%u> (object) <[1;33m%p[0;m:[1;31m%u[0;m:[1;35m%u[0;m>\n",
             (void *) r, r->id, *((void **) dp), (*((smrec_t **) dp))->id, (*((smrec_t **) dp))->sc->id);
         } else {
@@ -556,9 +670,9 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         break;
       }
       case SKIND_CLASS: {
-        *((sclass_t **) dp) = store_get_class(s, *((srid_t *) sp));
+        ELEMENT(sclass_t *, dp) = store_get_class(s, *((srid_t *) sp));
 #if VERBOSEDEBUG
-        if (*((void **) dp)) {
+        if (ELEMENT(sclass_t *, dp)) {
           fprintf(stderr, "    element of <%p:%u> (class) <[1;33m%p[0;m::[1;35m%u[0;m>\n",
             (void *) r, r->id, *((void **) dp), (*((sclass_t **) dp))->id);
         } else {
@@ -730,17 +844,17 @@ sclass_t * store_add_class(store_t * s, uint16_t cnt, skind_t kindv[cnt])
     return NULL;
   }
   uint8_t * p = r.slot;
-  *((uint16_t *) p) = cnt;
+  ELEMENT(uint16_t, p) = cnt;
 #if VERBOSEDEBUG
-  fprintf(stderr, "[D] class [1;35m%u[0;m of %u elements\n", r.id, *((uint16_t *) p));
+  fprintf(stderr, "[D] class [1;35m%u[0;m of %u elements\n", r.id, ELEMENT(uint16_t, p));
 #endif
   p += sizeof(uint16_t);
   for (uint16_t k = 0; k < cnt; k++) {
-    *((srid_t *) p) = kindv[k];
+    ELEMENT(skind_t, p) = kindv[k];
 #if VERBOSEDEBUG
-    fprintf(stderr, "    element %u kind: [1;34m%u[0;m\n", k, *((srid_t *) p));
+    fprintf(stderr, "    element %u kind: [1;34m%u[0;m\n", k, ELEMENT(skind_t, p));
 #endif
-    p += sizeof(srid_t);
+    p += sizeof(skind_t);
   }
 
   return store_get_class(s, r.id);
@@ -780,7 +894,7 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
       case SKIND_STRING: {
         uint16_t l = va_arg(ap, int);
         const char * a = va_arg(ap, const char *);
-        sz += sizeof(uint16_t) + (a ? ALIGN16(l) : 0);
+        sz += sizeof(uint16_t) + (a ? ALIGN2(l) : 0);
         break;
       }
       case SKIND_OBJECT:
@@ -796,7 +910,7 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
   va_end(ap);
 
   if (sz >= STORE_DATASIZE) {
-    gc_error(&s->g, "store: attempted to create an object lager than a data page!");
+    gc_error(&s->g, "store: attempted to create an object lager than DATASIZE!");
   }
 
   sdrec_t r = spman_add(&s->pm, (uint16_t) sz, SSLOT_USAGE_OBJECT);
@@ -859,7 +973,7 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
 #if VERBOSEDEBUG
         fprintf(stderr, "--- element (string) %.*s\n", l, a);
 #endif
-        p += ALIGN16(l);
+        p += ALIGN2(l);
         break;
       }
       case SKIND_OBJECT: {
