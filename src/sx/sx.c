@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 #include "sx.h"
 
 static
@@ -194,19 +196,19 @@ typedef __typeof__(((sxb_t *) NULL)->sg) sg_t;
 
 #define ALIGN16(_size) (((_size) + 15L) & ~15L)
 
-void ag_append(gc_global_t * g, ag_t * a, size_t len, const char str[len])
+void ag_append(ag_t * a, size_t len, const char str[len])
 {
   size_t alloc = a->se - a->s;
   size_t rest = a->se - a->sp;
 
   if (!a->s) {
     rest = alloc = ALIGN16(len);
-    a->s = a->sp = gc_mem_new(g, alloc);
+    a->s = a->sp = malloc(alloc);
     a->se = a->s + alloc;
   } else if (rest < len) {
     size_t o = a->sp - a->s;
     size_t n = alloc << 1;
-    a->s = gc_mem_realloc(g, alloc, n, a->s);
+    a->s = realloc(a->s, n);
     a->sp = a->s + o;
     a->se = a->s + n;
   }
@@ -245,11 +247,11 @@ size_t sxb_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 static
 size_t sxb_clear(gc_global_t * g, gc_hdr_t * o)
 {
+  (void) g;
   sxb_t * b = (sxb_t *) o;
 
   if (b->ag.s) {
-    size_t alloc = b->ag.se - b->ag.s;
-    gc_mem_free(g, alloc, b->ag.s);
+    free(b->ag.s);
   }
 
   return 0;
@@ -433,7 +435,7 @@ loop:
 #define TC(_state) do { b->bp = b->ba; b->s = (_state); goto loop; } while (0)
 #define RC(_state) \
   do {\
-    ag_append(g, &b->ag, b->u.l, (char *) b->u.r); \
+    ag_append(&b->ag, b->u.l, (char *) b->u.r); \
     b->bp = b->ba; \
     b->s = (_state); \
     goto loop; \
@@ -441,7 +443,7 @@ loop:
 
 #define RS(_state, _n, _s) \
   do {\
-    ag_append(g, &b->ag, (_n), (_s)); \
+    ag_append(&b->ag, (_n), (_s)); \
     b->bp = b->ba; \
     b->s = (_state); \
     goto loop; \
@@ -499,7 +501,7 @@ trans:
           if (c == '(')    {  TA(SXBS_ATOM_END); }
           if (c == '"')    {  TA(SXBS_ATOM_END); }
           if (c == '\'')   {  TA(SXBS_ATOM_END); }
-          ag_append(g, &b->ag, b->u.l, (char *) b->u.r);
+          ag_append(&b->ag, b->u.l, (char *) b->u.r);
           TC(SXBS_STRING);
         }
         TA(SXBS_ATOM_END);
@@ -531,7 +533,7 @@ trans:
         }
         if (c == 'x')      { sg->l = 0; TC(SXBS_ES_HEX); }
         if (c == 'u')      { sg->l = 0; TC(SXBS_ES_UNI); }
-        ag_append(g, &b->ag, 1, "\\");
+        ag_append(&b->ag, 1, "\\");
         RC(SXBS_ESTRING);
       }
       case SXBS_ES_OCT: {
@@ -561,9 +563,9 @@ trans:
             u = u << 3 | sg->b[k];
           }
           L("~~~ OCTW \\%o\n", u);
-          ag_append(g, &b->ag, 1, (char *) &u);
+          ag_append(&b->ag, 1, (char *) &u);
         } else {
-          ag_append(g, &b->ag, 1, "\\");
+          ag_append(&b->ag, 1, "\\");
         }
         TA(SXBS_ESTRING);
       }
@@ -597,9 +599,9 @@ trans:
             u = u << 4 | sg->b[k];
           }
           L("~~~ HEXW \\%x\n", u);
-          ag_append(g, &b->ag, 1, (char *) &u);
+          ag_append(&b->ag, 1, (char *) &u);
         } else {
-          ag_append(g, &b->ag, 2, "\\x");
+          ag_append(&b->ag, 2, "\\x");
         }
         TA(SXBS_ESTRING);
       }
@@ -634,9 +636,9 @@ trans:
           }
           L("~~~ UNIW \\%x\n", u);
           uint8_t mb[6];
-          ag_append(g, &b->ag, utf8_encode(u, mb), (char *) mb);
+          ag_append(&b->ag, utf8_encode(u, mb), (char *) mb);
         } else {
-          ag_append(g, &b->ag, 2, "\\u");
+          ag_append(&b->ag, 2, "\\u");
         }
         TA(SXBS_ESTRING);
       }
@@ -707,11 +709,7 @@ BT_SUITE_SETUP_DEF(sx, objectref)
   gc_global_t * g = malloc(sizeof(gc_global_t));
   bt_assert_ptr_not_equal(g, NULL);
 
-  mema_t a;
-  a.realloc = plain_realloc;
-  a.ud = NULL;
-
-  gc_init(g, a);
+  gc_init(g);
 
   *objectref = g;
 

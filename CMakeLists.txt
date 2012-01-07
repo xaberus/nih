@@ -56,7 +56,6 @@ add_library(nih SHARED
   ${libnih_SOURCE_DIR}/src/sx/sx.c
   ${libnih_SOURCE_DIR}/src/trie/pathman.c
   ${libnih_SOURCE_DIR}/src/trie/trie.c
-  ${libnih_SOURCE_DIR}/src/common/memory.c
   ${libnih_SOURCE_DIR}/src/store/store.c
 )
 

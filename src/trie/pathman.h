@@ -84,7 +84,7 @@ struct pathman {
   uint32_t                ffreelist;
 };
 
-pathman_t * pathman_init(const mema_t * a, pathman_t * pman);
+pathman_t * pathman_init(pathman_t * pman);
 void        pathman_clear(pathman_t * pman);
 
 struct plookup {

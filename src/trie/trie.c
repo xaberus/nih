@@ -11,7 +11,7 @@
 
 #include <time.h>
 
-trie_t * trie_init(const mema_t * a, trie_t * trie, uint8_t nodebits)
+trie_t * trie_init(trie_t * trie, uint8_t nodebits)
 {
   if (!trie)
     return NULL;
@@ -27,17 +27,16 @@ trie_t * trie_init(const mema_t * a, trie_t * trie, uint8_t nodebits)
   trie->nodemask = 0xffffffff >> trie->addrbits;
   trie->banksize = tnode_bank_size(trie->addrbits);
 
-  trie->nodes = mem_alloc(a, sizeof(tbank_t *));
+  trie->nodes = calloc(1, sizeof(tbank_t *));
   if (!trie->nodes)
     return NULL;
 
-  trie->nodes[0] = tnode_bank_alloc(a, trie->banksize, 0);
+  trie->nodes[0] = tnode_bank_alloc(trie->banksize, 0);
   if (!trie->nodes[0])
     return NULL;
   trie->banks = 1;
 
   trie->abank = trie->nodes[0];
-  trie->a = a;
 
   return trie;
 }
@@ -51,9 +50,9 @@ void trie_clear(trie_t * trie)
   trie->freelist = 0;
 
   for (uint32_t n = 0; n < trie->banks; n++) {
-    mem_free(trie->a, trie->nodes[n]);
+    free(trie->nodes[n]);
   }
-  mem_free(trie->a, trie->nodes);
+  free(trie->nodes);
   trie->nodes = NULL;
   trie->banks = 0;
   trie->abank = NULL;
@@ -87,18 +86,13 @@ struct tnode_tuple trie_mknode(trie_t * trie)
 
     if (!tuple.index && bank) {
       {
-        tbank_t ** tmp = mem_realloc(
-          trie->a,
-          trie->nodes,
-          sizeof(tbank_t *) * banks,
-          sizeof(tbank_t *) * (banks + 1)
-        );
+        tbank_t ** tmp = realloc(trie->nodes, sizeof(tbank_t *) * (banks + 1));
         if (!tmp)
           return tnode_tuple(NULL, 0);
         trie->nodes = tmp;
       }
 
-      bank = tnode_bank_alloc(trie->a, banksize, banks);
+      bank = tnode_bank_alloc(banksize, banks);
       if (!bank)
         return tnode_tuple(NULL, 0);
 
@@ -491,15 +485,9 @@ int trie_iter_next(trie_iter_t * iter)
 
         /* allocate */
         if (iter->slen >= iter->aslen) {
-          uint16_t             oslen;
           struct tnode_tuple * tmp;
-          oslen = iter->aslen;
           iter->aslen = ALIGN16(iter->slen);
-
-          tmp = mem_realloc(iter->trie->a,
-              iter->stride,
-              sizeof(struct tnode_tuple) * oslen,
-              sizeof(struct tnode_tuple) * iter->aslen);
+          tmp = realloc(iter->stride, sizeof(struct tnode_tuple) * iter->aslen);
           iter->stride = tmp;
         }
 
@@ -514,11 +502,9 @@ int trie_iter_next(trie_iter_t * iter)
               iter->len = iter->len + 1 + iter->stride[k].node->strlen;
           }
           if (iter->len > iter->alen) {
-            uint16_t  olen = iter->alen;
             uint8_t * tmp;
-
             iter->alen = ALIGN16(iter->len);
-            tmp = mem_realloc(iter->trie->a, iter->word, olen, iter->alen);
+            tmp = realloc(iter->word, iter->alen);
             iter->word = tmp;
           }
           for (int32_t k = 0, j = 0; k < iter->slen; k++) {
@@ -568,9 +554,9 @@ void trie_iter_clear(trie_iter_t * iter)
 {
   if (iter) {
     if (iter->stride)
-      mem_free(iter->trie->a, iter->stride);
+      free(iter->stride);
     if (iter->word)
-      mem_free(iter->trie->a, iter->word);
+      free(iter->word);
     memset(iter, 0, sizeof(iter));
   }
 }

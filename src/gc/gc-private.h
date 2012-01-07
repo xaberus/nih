@@ -3,6 +3,12 @@
 
 #include "gc.h"
 
+void   gc_mem_free(gc_global_t * g, size_t size, void * p);
+void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
+
+#define gc_mem_new(g, s) \
+  gc_mem_realloc(g, 0, (s), NULL)
+
 /* vector */
 #define TYPEOF(a) __typeof__(a)
 

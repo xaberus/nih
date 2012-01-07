@@ -1,5 +1,4 @@
 #include "common/err.h"
-#include "common/memory.h"
 #include "trie/trie.h"
 #include "gc/gc.h"
 #include "gc/gc-stack.h"
@@ -76,15 +75,15 @@ typedef struct spman {
   uint32_t  anum;
 } spman_t;
 
-spman_t * spman_init(gc_global_t * g, spman_t * pm, int fd, off_t offset, uint32_t cnt);
-int       spman_clear(gc_global_t * g, spman_t * pm);
+spman_t * spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt);
+int       spman_clear(spman_t * pm);
 
-spmap_t * spman_load(gc_global_t * g, spman_t * pm, uint32_t pnum);
-spmap_t * spman_ref(gc_global_t * g, spman_t * pm, spmap_t * m);
-void      spman_unref(gc_global_t * g, spman_t * pm, spmap_t * m);
+spmap_t * spman_load(spman_t * pm, uint32_t pnum);
+spmap_t * spman_ref(spman_t * pm, spmap_t * m);
+void      spman_unref(spman_t * pm, spmap_t * m);
 
-sdrec_t   spman_add(gc_global_t * g, spman_t * pm, uint16_t size, uint16_t usage);
-sdrec_t   spman_get(gc_global_t * g, spman_t * pm, srid_t id);
+sdrec_t   spman_add(spman_t * pm, uint16_t size, uint16_t usage);
+sdrec_t   spman_get(spman_t * pm, srid_t id);
 
 
 typedef enum skind {
@@ -133,7 +132,7 @@ typedef struct store {
 } store_t;
 
 
-store_t  * store_init(store_t * s, mema_t a, const char path[]);
+store_t  * store_init(store_t * s, const char path[]);
 void       store_clear(store_t * s);
 
 /* class slot:  (<cnt> <kind 0> <kind 1> ... <kind (count-1)>) */

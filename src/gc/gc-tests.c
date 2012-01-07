@@ -14,8 +14,7 @@
 BT_SUITE_DEF(gc, "garbage collection tests");
 
 struct gc_test {
-  gc_global_t     g[1];
-  mema_t a[1];
+  gc_global_t g[1];
 };
 
 typedef struct testobj {
@@ -78,12 +77,9 @@ BT_SUITE_SETUP_DEF(gc, objectref)
 {
   struct gc_test * test = malloc(sizeof(struct gc_test));
 
-  test->a->realloc = plain_realloc;
-  test->a->ud = NULL;
-
   bt_assert_ptr_not_equal(test, NULL);
 
-  gc_init(test->g, test->a[0]);
+  gc_init(test->g);
 
   *objectref = test;
 

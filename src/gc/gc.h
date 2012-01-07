@@ -5,7 +5,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
-#include "common/memory.h"
+#include <stdarg.h>
+#include <stdbool.h>
 
 #define GC_FLAG_WHITE0 0x01
 #define GC_FLAG_WHITE1 0x02
@@ -89,7 +90,6 @@ typedef struct {
   uint32_t        white;
   size_t          total;
   size_t          thres;
-  mema_t alloc;
 } gc_global_t;
 
 struct gc_vtable {
@@ -110,7 +110,7 @@ enum gc_vt_flags {
   GC_VT_FLAG_STR = 0x04 | GC_VT_FLAG_HDR,
 };
 
-void       gc_init(gc_global_t * g, mema_t alloc);
+void       gc_init(gc_global_t * g);
 void       gc_clear(gc_global_t * g);
 
 size_t     gc_collect(gc_global_t * g, bool full);
@@ -159,12 +159,6 @@ void gc_mark_str(gc_global_t * g, gc_str_t * s)
     gc_mark_hdr_i(g, GC_HDR(s));
   }
 }
-
-void   gc_mem_free(gc_global_t * g, size_t size, void * p);
-void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
-
-#define gc_mem_new(g, s) \
-  gc_mem_realloc(g, 0, (s), NULL)
 
 #define gc_barrier_back(_g, _o, _v) \
   do { \

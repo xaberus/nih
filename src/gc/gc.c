@@ -7,7 +7,9 @@
 void gc_mem_free(gc_global_t * g, size_t size, void * p)
 {
   log(0, "# %s(%p [%zu])\n", __FUNCTION__, p, size);
-  g->alloc.realloc(g->alloc.ud, p, size, 0);
+  (void) g;
+  (void) size;
+  free(p);
 }
 
 gc_vtable_t gc_blob_vtable = {
@@ -19,16 +21,21 @@ gc_vtable_t gc_blob_vtable = {
 
 void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p)
 {
-  assert((osz == 0) == (p == NULL));
-  assert(g);
-  assert(g->alloc.realloc);
-  p = g->alloc.realloc(g->alloc.ud, p, osz, nsz);
-  log(0, "# %s(%p [%zu -> %zu]) -> %p", __FUNCTION__, p, osz, nsz, p);
-  /*if (p == NULL && nsz > 0)
-    gc_err_mem(g);*/
-  assert((nsz == 0) == (p == NULL));
-  assert(p || !nsz);
-  return p;
+  if (nsz == 0 && p != NULL) {
+    free(p);
+    return NULL;
+  } else {
+    assert((osz == 0) == (p == NULL));
+    assert(g);
+    void * t = realloc(p, nsz);
+    log(0, "# %s(%p [%zu -> %zu]) -> %p", __FUNCTION__, p, osz, nsz, t);
+    if (t == NULL && nsz > 0) {
+      gc_error(g, "gc: realloc failed!");
+    }
+    assert((nsz == 0) == (t == NULL));
+    assert(t || !nsz);
+    return t;
+  }
 }
 
 static
@@ -83,10 +90,9 @@ void strings_reset(gc_global_t * g, gc_strings_t * ss)
   }
 }
 
-void gc_init(gc_global_t * g, mema_t alloc)
+void gc_init(gc_global_t * g)
 {
   log(6, "# %s()\n", __FUNCTION__);
-  g->alloc = alloc;
 
   g->state = GC_STATE_PAUSE;
   g->total = 0;
@@ -99,7 +105,7 @@ void gc_init(gc_global_t * g, mema_t alloc)
   gc_list_reset(&g->grey0);
   gc_list_reset(&g->grey1);
 
-  gc_vector_init(g, &g->roots, 0);
+  gc_vector_init(g, &g->roots, 16);
 }
 
 #define is_other(o, ow)  ((GC_HDR(o)->flag ^ GC_FLAG_WHITES) & (ow & GC_FLAG_WHITES))

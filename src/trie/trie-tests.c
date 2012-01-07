@@ -22,7 +22,6 @@ BT_SUITE_DEF(trie, "trie tests");
 
 struct trie_test {
   trie_t      trie[1];
-  mema_t a[1];
   size_t      num;
   char      * flag;
   char     ** strv;
@@ -36,9 +35,6 @@ BT_SUITE_SETUP_DEF(trie, objectref)
   uint16_t           n;
 
   bt_assert_ptr_not_equal(test, NULL);
-
-  test->a->realloc = plain_realloc;
-  test->a->ud = NULL;
 
   n = 0;
   if (!(fp = fopen(BROOT "/src/trie/trie-tests.txt", "r"))) {
@@ -69,11 +65,11 @@ BT_SUITE_SETUP_DEF(trie, objectref)
 
   fclose(fp);
 
-  bt_assert_ptr_equal(trie_init(test->a, test->trie, 18), NULL);
-  bt_assert_ptr_equal(trie_init(test->a, test->trie, 17), NULL);
-  bt_assert_ptr_equal(trie_init(test->a, test->trie, 0), NULL);
+  bt_assert_ptr_equal(trie_init(test->trie, 18), NULL);
+  bt_assert_ptr_equal(trie_init(test->trie, 17), NULL);
+  bt_assert_ptr_equal(trie_init(test->trie, 0), NULL);
 
-  bt_assert_ptr_not_equal(trie_init(test->a, test->trie, 8), NULL);
+  bt_assert_ptr_not_equal(trie_init(test->trie, 8), NULL);
 
   bt_log("[trie:init] bank size is %u (masks are 0x%x 0x%x)\n",
     test->trie->banksize, test->trie->addrmask, test->trie->nodemask);

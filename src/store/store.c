@@ -9,7 +9,7 @@
 
 #include "store-tests.c"
 
-#define VERBOSEDEBUG 1
+#define VERBOSEDEBUG 0
 
 uint32_t hash32(uint32_t M)
 {
@@ -24,12 +24,10 @@ uint32_t hash32(uint32_t M)
 
 #define ALIGN16(_size) (((_size) + 15L) & ~15L)
 
-spman_t * spman_init(gc_global_t * g, spman_t * pm, int fd, off_t offset, uint32_t cnt)
+spman_t * spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt)
 {
   if (!pm || fd == -1)
     return NULL;
-
-  (void) g;
 
   pm->fd = fd;
   pm->offset = offset;
@@ -41,7 +39,7 @@ spman_t * spman_init(gc_global_t * g, spman_t * pm, int fd, off_t offset, uint32
   return pm;
 }
 
-int spman_clear(gc_global_t * g, spman_t * pm)
+int spman_clear(spman_t * pm)
 {
   int fd = pm->fd;
 
@@ -49,7 +47,7 @@ int spman_clear(gc_global_t * g, spman_t * pm)
     spmap_t * m = pm->map[k], * n;
     while (m) {
       n = m->next;
-      spman_unref(g, pm, m);
+      spman_unref(pm, m);
       m = n;
     }
   }
@@ -63,7 +61,7 @@ int spman_clear(gc_global_t * g, spman_t * pm)
   return fd;
 }
 
-spmap_t * spman_load(gc_global_t * g, spman_t * pm, uint32_t pnum)
+spmap_t * spman_load(spman_t * pm, uint32_t pnum)
 {
   if (pnum >= pm->cnt)
     return NULL;
@@ -108,7 +106,7 @@ spmap_t * spman_load(gc_global_t * g, spman_t * pm, uint32_t pnum)
       }
     }
     if (del) {
-      spman_unref(g, pm, del);
+      spman_unref(pm, del);
     }
   }
 
@@ -117,7 +115,7 @@ spmap_t * spman_load(gc_global_t * g, spman_t * pm, uint32_t pnum)
   if (b == MAP_FAILED)
     return NULL;
 
-  spmap_t * m = gc_mem_new(g, sizeof(spmap_t));
+  spmap_t * m = malloc(sizeof(spmap_t));
   m->pnum = pnum;
   m->inuse = 0;
   m->ref = 0;
@@ -142,10 +140,10 @@ spmap_t * spman_load(gc_global_t * g, spman_t * pm, uint32_t pnum)
   fprintf(stderr, "[P] loaded page [1;33m%p[0;m:[1;32m%u[0;m\n", (void *) m->page, pnum);
 #endif
 
-  return spman_ref(g, pm, m);;
+  return spman_ref(pm, m);;
 }
 
-void spman_unload(gc_global_t * g, spman_t * pm, spmap_t * m)
+void spman_unload(spman_t * pm, spmap_t * m)
 {
 #if VERBOSEDEBUG
     fprintf(stderr, "{P} unloading page [1;32m%u[0;m\n", m->pnum);
@@ -155,32 +153,32 @@ void spman_unload(gc_global_t * g, spman_t * pm, spmap_t * m)
       m->next->rev = m->rev;
     }
     munmap(m->page, sizeof(spage_t));
-    gc_mem_free(g, sizeof(spmap_t), m);
+    free(m);
     pm->maps--;
 }
 
-spmap_t * spman_ref(gc_global_t * g, spman_t * pm, spmap_t * m)
+spmap_t * spman_ref(spman_t * pm, spmap_t * m)
 {
-  (void) g;
   (void) pm;
   m->ref++;
   return m;
 }
-void spman_unref(gc_global_t * g, spman_t * pm, spmap_t * m)
+
+void spman_unref(spman_t * pm, spmap_t * m)
 {
   if (m->ref > 1) {
     m->ref--;
   } else {
-    spman_unload(g, pm, m);
+    spman_unload( pm, m);
   }
 }
 
-sdrec_t spmap_alloc(gc_global_t * g, spmap_t * m, uint16_t size, uint16_t usage)
+sdrec_t spmap_alloc(spmap_t * m, uint16_t size, uint16_t usage)
 {
   uint32_t  sz = ALIGN16(size);
   uint16_t  offset = 0;
   spage_t * p = m->page;
-  sslot_t * t = &p->info;
+  sslot_t * t = p->info;
   for (uint16_t k = 0; k < STORE_PAGESIZE; k++) {
     if (t->flag == 0 && (offset + sz) <= STORE_DATASIZE) {
       t->size = sz;
@@ -207,12 +205,12 @@ sdrec_t spmap_alloc(gc_global_t * g, spmap_t * m, uint16_t size, uint16_t usage)
 }
 
 
-sdrec_t spman_add(gc_global_t * g, spman_t * pm, uint16_t size, uint16_t usage)
+sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
 {
   spmap_t * m;
 
-  while ((m = spman_load(g, pm, pm->anum))) {
-    sdrec_t r = spmap_alloc(g, m, size, usage);
+  while ((m = spman_load(pm, pm->anum))) {
+    sdrec_t r = spmap_alloc(m, size, usage);
     if (r.id != SRID_NIL) {
       return r;
     }
@@ -226,8 +224,8 @@ sdrec_t spman_add(gc_global_t * g, spman_t * pm, uint16_t size, uint16_t usage)
 #if VERBOSEDEBUG
     fprintf(stderr, "[P] resizing store to %u pages (anum is %u)\n", pm->cnt, pm->anum);
 #endif
-    if ((m = spman_load(g, pm, pm->anum))) {
-      return spmap_alloc(g, m, size, usage);
+    if ((m = spman_load(pm, pm->anum))) {
+      return spmap_alloc(m, size, usage);
     }
   }
 
@@ -243,7 +241,7 @@ sdrec_t spman_add(gc_global_t * g, spman_t * pm, uint16_t size, uint16_t usage)
 #define SRID_TO_PAGE(_srid) (((_srid) & STORE_PAGEMASK) >> STORE_SLOTBITS)
 #define SRID_TO_SLOT(_srid) ((_srid) & STORE_SLOTMASK)
 
-sdrec_t spman_get(gc_global_t * g, spman_t * pm, srid_t id)
+sdrec_t spman_get(spman_t * pm, srid_t id)
 {
   uint32_t  pnum = SRID_TO_PAGE(id);
   uint16_t  snum = SRID_TO_SLOT(id);
@@ -258,7 +256,7 @@ sdrec_t spman_get(gc_global_t * g, spman_t * pm, srid_t id)
   }
 
   if (!m) {
-    m = spman_load(g, pm, pnum);
+    m = spman_load(pm, pnum);
   }
 
   if (m) {
@@ -346,7 +344,7 @@ size_t sclass_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
     gc_error(g, "sclass: attempted to replace id %u", (unsigned) c->id);
   }
 
-  spmap_t * m = spman_load(g, &s->pm, SRID_TO_PAGE(c->id));
+  spmap_t * m = spman_load(&s->pm, SRID_TO_PAGE(c->id));
   if (!m) {
     gc_error(g, "sclass: could not load page %u", (unsigned) SRID_TO_PAGE(c->id));
   }
@@ -366,7 +364,7 @@ size_t sclass_clear(gc_global_t * g, gc_hdr_t * o)
     gc_error(g, "smrec: attempted to delete non-existent id %u", (unsigned) c->id);
   }
 
-  spmap_t * m = spman_load(g, &s->pm, SRID_TO_PAGE(c->id));
+  spmap_t * m = spman_load(&s->pm, SRID_TO_PAGE(c->id));
   if (!m) {
     gc_error(g, "sclass: could not load page %u", (unsigned) SRID_TO_PAGE(c->id));
   }
@@ -383,7 +381,7 @@ gc_vtable_t sclass_vtable = {
 
 sclass_t * store_get_class(store_t * s, srid_t id)
 {
-  sdrec_t r = spman_get(&s->g, &s->pm, id);
+  sdrec_t r = spman_get(&s->pm, id);
   if (r.id == SRID_NIL) {
     return NULL;
   }
@@ -391,10 +389,10 @@ sclass_t * store_get_class(store_t * s, srid_t id)
   if ((r.flag & SSLOT_USAGEMASK) == SSLOT_USAGE_CLASS) {
     if (srid_find(&s->i2r, r.id, &c)) {
       uint16_t cnt = *((uint16_t *) r.slot);
-      spman_ref(&s->g, &s->pm, r.map);
+      spman_ref(&s->pm, r.map);
       c = gc_new(&s->g, &sclass_vtable, sizeof(sclass_t) + sizeof(skind_t) * cnt,
             3, id, cnt, r.slot + sizeof(uint16_t));
-      spman_unref(&s->g, &s->pm, r.map);
+      spman_unref(&s->pm, r.map);
     }
   }
   return c;
@@ -473,7 +471,7 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 
   uint8_t * slot = va_arg(ap, uint8_t *);
 
-  r->ptr = gc_mem_new(g, r->sz);
+  r->ptr = malloc(r->sz);
 
 #if VERBOSEDEBUG
   fprintf(stderr, "{M} object <[1;33m%p[0;m:[1;31m%u[0;m> of class <[1;33m%p[0;m:[1;35m%u[0;m>\n",
@@ -594,7 +592,7 @@ size_t smrec_clear(gc_global_t * g, gc_hdr_t * o)
     gc_error(g, "smrec: attempted to delete non-existent id %u", (unsigned) r->id);
   }
 
-  gc_mem_free(g, r->sz, r->ptr);
+  free(r->ptr);
 
   return 0;
 }
@@ -625,7 +623,7 @@ gc_vtable_t smrec_vtable = {
 
 smrec_t * store_get_object(store_t * s, srid_t id)
 {
-  sdrec_t r = spman_get(&s->g, &s->pm, id);
+  sdrec_t r = spman_get(&s->pm, id);
   if (r.id == SRID_NIL) {
     return NULL;
   }
@@ -635,9 +633,9 @@ smrec_t * store_get_object(store_t * s, srid_t id)
       sclass_t * c = store_get_class(s, *((srid_t *) r.slot));
       if (c) {
         /* pin the page (map) so it does not vanish in the heat of the moment */
-        spman_ref(&s->g, &s->pm, r.map);
+        spman_ref(&s->pm, r.map);
         rec = gc_new(&s->g, &smrec_vtable, sizeof(smrec_t), 3, c, id, r.slot + sizeof(srid_t));
-        spman_unref(&s->g, &s->pm, r.map);
+        spman_unref(&s->pm, r.map);
       }
     }
   }
@@ -648,7 +646,7 @@ smrec_t * store_get_object(store_t * s, srid_t id)
 
 #define HEADER_STR0 "STORE000"
 
-store_t * store_init(store_t * s, mema_t a, const char path[])
+store_t * store_init(store_t * s, const char path[])
 {
   if (!s || !path) {
     return NULL;
@@ -691,15 +689,15 @@ store_t * store_init(store_t * s, mema_t a, const char path[])
     return NULL;
   }
 
-  if (!spman_init(&s->g, &s->pm, fd, 4096, s->hdr->cnt)) {
+  if (!spman_init(&s->pm, fd, 4096, s->hdr->cnt)) {
     munmap(s->hdr, 4096);
     close(fd);
     return NULL;
   }
 
-  gc_init(&s->g, a);
+  gc_init(&s->g);
 
-  if (!trie_init(&s->g.alloc, &s->i2r, 8)) {
+  if (!trie_init(&s->i2r, 8)) {
     gc_clear(&s->g);
     munmap(s->hdr, 4096);
     close(fd);
@@ -720,14 +718,14 @@ void store_clear(store_t * s)
   s->hdr->cnt = s->pm.cnt;
   munmap(s->hdr, 4096);
 
-  int fd = spman_clear(&s->g, &s->pm);
+  int fd = spman_clear(&s->pm);
 
   close(fd);
 }
 
 sclass_t * store_add_class(store_t * s, uint16_t cnt, skind_t kindv[cnt])
 {
-  sdrec_t r = spman_add(&s->g, &s->pm, sizeof(uint16_t) + cnt * sizeof(srid_t), SSLOT_USAGE_CLASS);
+  sdrec_t r = spman_add(&s->pm, sizeof(uint16_t) + cnt * sizeof(srid_t), SSLOT_USAGE_CLASS);
   if (r.id == SRID_NIL) {
     return NULL;
   }
@@ -801,7 +799,7 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
     gc_error(&s->g, "store: attempted to create an object lager than a data page!");
   }
 
-  sdrec_t r = spman_add(&s->g, &s->pm, (uint16_t) sz, SSLOT_USAGE_OBJECT);
+  sdrec_t r = spman_add(&s->pm, (uint16_t) sz, SSLOT_USAGE_OBJECT);
   if (r.id == SRID_NIL) {
     return NULL;
   }

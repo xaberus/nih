@@ -1,8 +1,9 @@
 #ifndef _TRIE_H
 #define _TRIE_H
 
+#include <malloc.h>
+
 #include "common/err.h"
-#include "common/memory.h"
 
 typedef struct {
   uint8_t      c;
@@ -36,9 +37,6 @@ struct tnode_tuple {
 };
 
 typedef struct {
-  /* downcast: allocator goes first! */
-  const mema_t * a;
-
   uint16_t  addrbits;
   uint32_t  addrmask;
   uint16_t  nodebits;
@@ -56,7 +54,7 @@ typedef struct {
 
 
 /* (1 << nodebits) is the size of a bank in the trie, thus 0 < nodebits <= 16 */
-trie_t * trie_init(const mema_t * a, trie_t * trie, uint8_t nodebits);
+trie_t * trie_init(trie_t * trie, uint8_t nodebits);
 void     trie_clear(trie_t * trie);
 
 err_t    trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t data, bool rep);

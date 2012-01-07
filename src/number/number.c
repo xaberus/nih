@@ -841,14 +841,10 @@ BT_SUITE_DEF(number, "number (big int) tests");
 BT_SUITE_SETUP_DEF(number, objectref)
 {
   gc_global_t   * g = malloc(sizeof(gc_global_t));
-  mema_t a = {
-    .realloc = plain_realloc,
-    .ud = NULL
-  };
 
   bt_assert_ptr_not_equal(g, NULL);
 
-  gc_init(g, a);
+  gc_init(g);
 
   *objectref = g;
 

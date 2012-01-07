@@ -10,9 +10,9 @@ void pathman_clear(pathman_t * pman)
     {
       pman->dfreelist = 0;
       for (uint32_t n = 0; n < pman->dbanks; n++) {
-        mem_free(pman->trie->a, pman->dirs[n]);
+        free(pman->dirs[n]);
       }
-      mem_free(pman->trie->a, pman->dirs);
+      free(pman->dirs);
       pman->dirs = NULL;
       pman->dbanks = 0;
       pman->dabank = NULL;
@@ -21,9 +21,9 @@ void pathman_clear(pathman_t * pman)
     {
       pman->ffreelist = 0;
       for (uint32_t n = 0; n < pman->fbanks; n++) {
-        mem_free(pman->trie->a, pman->files[n]);
+        free(pman->files[n]);
       }
-      mem_free(pman->trie->a, pman->files);
+      free(pman->files);
       pman->files = NULL;
       pman->fbanks = 0;
       pman->fabank = NULL;
@@ -33,9 +33,9 @@ void pathman_clear(pathman_t * pman)
   }
 }
 
-pathman_t * pathman_init(const mema_t * a, pathman_t * pman)
+pathman_t * pathman_init(pathman_t * pman)
 {
-  if (!trie_init(a, pman->trie, 10))
+  if (!trie_init(pman->trie, 10))
     return NULL;
 
   /* pre-initialize here, clear() would fail otherwise */
@@ -44,22 +44,22 @@ pathman_t * pathman_init(const mema_t * a, pathman_t * pman)
   pman->fbanks = 0;
   pman->files = NULL;
 
-  pman->dirs = mem_alloc(a, sizeof(struct pdir_bank *));
+  pman->dirs = malloc(sizeof(struct pdir_bank *));
   if (!pman->dirs)
     goto alloc_failed;
 
-  pman->files = mem_alloc(a, sizeof(struct pfile_bank *));
+  pman->files = malloc(sizeof(struct pfile_bank *));
   if (!pman->files)
     goto alloc_failed;
 
-  pman->dirs[0] = pdir_bank_alloc(a, 0);
+  pman->dirs[0] = pdir_bank_alloc(0);
   if (!pman->dirs[0])
     goto alloc_failed;
   pman->dbanks = 1;
   pman->dfreelist = 0;
   pman->dabank = pman->dirs[0];
 
-  pman->files[0] = pfile_bank_alloc(a, 0);
+  pman->files[0] = pfile_bank_alloc(0);
   if (!pman->files[0])
     goto alloc_failed;
   pman->fbanks = 1;
@@ -123,18 +123,13 @@ struct pdir_tuple pathman_mkdir(pathman_t * pman)
 
     if (!tuple.index && bank) {
       {
-        struct pdir_bank ** tmp = mem_realloc(
-          pman->trie->a,
-          pman->dirs,
-          sizeof(struct pdir_bank *) * banks,
-          sizeof(struct pdir_bank *) * (banks + 1)
-        );
+        struct pdir_bank ** tmp = realloc(pman->dirs, sizeof(struct pdir_bank *) * (banks + 1));
         if (!tmp)
           return pdir_tuple(NULL, 0);
         pman->dirs = tmp;
       }
 
-      bank = pdir_bank_alloc(pman->trie->a, banks);
+      bank = pdir_bank_alloc(banks);
       if (!bank)
         return pdir_tuple(NULL, 0);
 
@@ -177,18 +172,13 @@ struct pfile_tuple pathman_mkfile(pathman_t * pman)
 
     if (!tuple.index && bank) {
       {
-        struct pfile_bank ** tmp = mem_realloc(
-          pman->trie->a,
-          pman->files,
-          sizeof(struct pfile_bank *) * banks,
-          sizeof(struct pfile_bank *) * (banks + 1)
-        );
+        struct pfile_bank ** tmp = realloc(pman->files, sizeof(struct pfile_bank *) * (banks + 1));
         if (!tmp)
           return pfile_tuple(NULL, 0);
         pman->files = tmp;
       }
 
-      bank = pfile_bank_alloc(pman->trie->a, banks);
+      bank = pfile_bank_alloc(banks);
       if (!bank)
         return pfile_tuple(NULL, 0);
 

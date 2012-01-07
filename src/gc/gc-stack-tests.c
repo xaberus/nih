@@ -97,13 +97,9 @@ BT_SUITE_DEF(gc_stack, "tests garbage collected stack (gc:vector, gc:barrier, gc
 BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 {
   gc_global_t     g[1];
-  mema_t a;
   gc_stack_t    * st;
 
-  a.realloc = plain_realloc;
-  a.ud = NULL;
-
-  gc_init(g, a);
+  gc_init(g);
 
   st = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t), 0);
   bt_assert_ptr_not_equal(st, NULL);

@@ -20,7 +20,6 @@ BT_SUITE_DEF(pathman, "pathman tests");
 
 struct pathman_test {
   pathman_t   pman[1];
-  mema_t a[1];
   size_t      num;
   char      * flag;
   char     ** strv;
@@ -36,9 +35,6 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
   bt_assert_int_equal(sizeof(union paccess), sizeof(uint64_t));
 
   bt_assert_ptr_not_equal(test, NULL);
-
-  test->a->realloc = plain_realloc;
-  test->a->ud = NULL;
 
   n = 0;
   if (!(fp = fopen(BROOT "/src/trie/pathman-tests.txt", "r"))) {
@@ -74,7 +70,7 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
 
   fclose(fp);
 
-  bt_assert_ptr_not_equal(pathman_init(test->a, test->pman), NULL);
+  bt_assert_ptr_not_equal(pathman_init(test->pman), NULL);
 
   bt_log("[pathman:init] file bank size is %u\n", PDIR_BANKSIZE);
   bt_log("[pathman:init] dir bank size is %u\n", PFILE_BANKSIZE);
