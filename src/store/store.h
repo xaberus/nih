@@ -42,6 +42,8 @@ typedef struct sslot {
   uint16_t offset;
 } sslot_t;
 
+/* page layout: [u16:count] (u16:flag u16:size u8:data[size]):[count] */
+
 typedef struct spage {
   sslot_t  info[STORE_PAGESIZE];
   uint8_t  data[STORE_DATASIZE];
@@ -49,11 +51,12 @@ typedef struct spage {
 
 typedef struct spmap spmap_t;
 struct spmap {
-  uint32_t  pnum;
-  uint32_t  cnt;
-  uint32_t  ref;
-  spage_t * page;
-  spmap_t * next;
+  uint32_t   pnum;
+  uint32_t   inuse;
+  uint32_t   ref;
+  spage_t  * page;
+  spmap_t ** rev;
+  spmap_t *  next;
 };
 
 typedef struct sdrec {

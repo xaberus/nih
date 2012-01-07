@@ -73,7 +73,6 @@ spmap_t * spman_load(gc_global_t * g, spman_t * pm, uint32_t pnum)
     spmap_t * c = pm->map[hash];
     while (c) {
       if (c->pnum == pnum) {
-        c->cnt++;
         return c;
       }
       c = c->next;
@@ -86,25 +85,23 @@ spmap_t * spman_load(gc_global_t * g, spman_t * pm, uint32_t pnum)
       spmap_t * n = pm->map[k];
       while (n) {
         if (min) {
-          minc = minc > n->cnt ? n->cnt : minc;
+          minc = minc > n->inuse ? n->inuse : minc;
         } else {
           min = 1;
-          minc = n->cnt;
+          minc = n->inuse;
         }
         n = n->next;
       }
     }
     spmap_t * del = NULL;
     for (uint32_t k = 0; k < STORE_LIVEPAGES; k++) {
-      spmap_t ** p = &pm->map[k], * n = *p;
+      spmap_t * n = pm->map[k];
       while (n) {
-        if (n->cnt == minc) {
-          *p = n->next;
+        if (n->inuse == minc) {
           del = n;
           break;
         }
-        p = &n->next;
-        n = *p;
+        n = n->next;
       }
       if (del) {
         break;
@@ -122,7 +119,7 @@ spmap_t * spman_load(gc_global_t * g, spman_t * pm, uint32_t pnum)
 
   spmap_t * m = gc_mem_new(g, sizeof(spmap_t));
   m->pnum = pnum;
-  m->cnt = 0;
+  m->inuse = 0;
   m->ref = 0;
   m->page = b;
 
@@ -131,14 +128,35 @@ spmap_t * spman_load(gc_global_t * g, spman_t * pm, uint32_t pnum)
   if (!pm->map[hash]) {
     pm->map[hash] = m;
     m->next = NULL;
+    m->rev = &pm->map[hash];
   } else {
     m->next = pm->map[hash];
+    m->next->rev = &m->next;
     pm->map[hash] = m;
+    m->rev = &pm->map[hash];
   }
 
   pm->maps++;
 
+#if VERBOSEDEBUG
+  fprintf(stderr, "[P] loaded page [1;33m%p[0;m:[1;32m%u[0;m\n", (void *) m->page, pnum);
+#endif
+
   return spman_ref(g, pm, m);;
+}
+
+void spman_unload(gc_global_t * g, spman_t * pm, spmap_t * m)
+{
+#if VERBOSEDEBUG
+    fprintf(stderr, "{P} unloading page [1;32m%u[0;m\n", m->pnum);
+#endif
+    *(m->rev) = m->next;
+    if (m->next) {
+      m->next->rev = m->rev;
+    }
+    munmap(m->page, sizeof(spage_t));
+    gc_mem_free(g, sizeof(spmap_t), m);
+    pm->maps--;
 }
 
 spmap_t * spman_ref(gc_global_t * g, spman_t * pm, spmap_t * m)
@@ -153,35 +171,50 @@ void spman_unref(gc_global_t * g, spman_t * pm, spmap_t * m)
   if (m->ref > 1) {
     m->ref--;
   } else {
-    munmap(m->page, sizeof(spage_t));
-    gc_mem_free(g, sizeof(spmap_t), m);
-    pm->maps--;
+    spman_unload(g, pm, m);
   }
 }
 
-sdrec_t   spman_add(gc_global_t * g, spman_t * pm, uint16_t size, uint16_t usage)
+sdrec_t spmap_alloc(gc_global_t * g, spmap_t * m, uint16_t size, uint16_t usage)
+{
+  uint32_t  sz = ALIGN16(size);
+  uint16_t  offset = 0;
+  spage_t * p = m->page;
+  sslot_t * t = &p->info;
+  for (uint16_t k = 0; k < STORE_PAGESIZE; k++) {
+    if (t->flag == 0 && (offset + sz) <= STORE_DATASIZE) {
+      t->size = sz;
+      t->offset = offset;
+      t->flag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
+      return (sdrec_t) {
+        .id = (m->pnum << STORE_SLOTBITS) | k,
+        .size = t->size,
+        .flag = t->flag,
+        .slot = &p->data[t->offset],
+        .map = m,
+      };
+    }
+    offset = t->offset + t->size;
+    t++;
+  }
+  return (sdrec_t) {
+    .id = SRID_NIL,
+    .size = 0,
+    .flag = 0,
+    .slot = NULL,
+    .map = NULL,
+  };
+}
+
+
+sdrec_t spman_add(gc_global_t * g, spman_t * pm, uint16_t size, uint16_t usage)
 {
   spmap_t * m;
 
-  uint32_t  sz = ALIGN16(size);
-
   while ((m = spman_load(g, pm, pm->anum))) {
-    spage_t * p = m->page;
-    uint16_t  offset = 0;
-    for (uint16_t k = 0; k < STORE_PAGESIZE; k++) {
-      if (p->info[k].flag == 0 && (offset + sz) <= STORE_DATASIZE) {
-        p->info[k].size = sz;
-        p->info[k].offset = offset;
-        p->info[k].flag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
-        return (sdrec_t) {
-          .id = (m->pnum << STORE_SLOTBITS) | k,
-          .size = p->info[k].size,
-          .flag = p->info[k].flag,
-          .slot = &p->data[p->info[k].offset],
-          .map = m,
-        };
-      }
-      offset = p->info[k].offset + p->info[k].size;
+    sdrec_t r = spmap_alloc(g, m, size, usage);
+    if (r.id != SRID_NIL) {
+      return r;
     }
     pm->anum++;
   }
@@ -190,21 +223,11 @@ sdrec_t   spman_add(gc_global_t * g, spman_t * pm, uint16_t size, uint16_t usage
 
   if (!ftruncate(pm->fd, pm->offset + (pm->cnt + 1) * sizeof(spage_t))) {
     pm->cnt++;
-    // fprintf(stderr, "resizing store to %u (anum is %u)\n", pm->cnt, pm->anum);
+#if VERBOSEDEBUG
+    fprintf(stderr, "[P] resizing store to %u pages (anum is %u)\n", pm->cnt, pm->anum);
+#endif
     if ((m = spman_load(g, pm, pm->anum))) {
-      spage_t * p = m->page;
-      memset(p->info, 0, sizeof(sslot_t) * STORE_PAGESIZE);
-      memset(p->data, 0, STORE_DATASIZE);
-      p->info[0].size = sz;
-      p->info[0].offset = 0;
-      p->info[0].flag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
-      return (sdrec_t) {
-        .id = (m->pnum << STORE_SLOTBITS) | 0,
-        .size = p->info[0].size,
-        .flag = p->info[0].flag,
-        .slot = &p->data[0],
-        .map = m,
-      };
+      return spmap_alloc(g, m, size, usage);
     }
   }
 
@@ -217,10 +240,13 @@ sdrec_t   spman_add(gc_global_t * g, spman_t * pm, uint16_t size, uint16_t usage
   };
 }
 
+#define SRID_TO_PAGE(_srid) (((_srid) & STORE_PAGEMASK) >> STORE_SLOTBITS)
+#define SRID_TO_SLOT(_srid) ((_srid) & STORE_SLOTMASK)
+
 sdrec_t spman_get(gc_global_t * g, spman_t * pm, srid_t id)
 {
-  uint32_t  pnum = (id & STORE_PAGEMASK) >> STORE_SLOTBITS;
-  uint32_t  snum = (id & STORE_SLOTMASK);
+  uint32_t  pnum = SRID_TO_PAGE(id);
+  uint16_t  snum = SRID_TO_SLOT(id);
   uint32_t  hash = hash32(pnum) & STORE_LIVEMASK;
   spmap_t * m = pm->map[hash];
 
@@ -302,7 +328,7 @@ size_t sclass_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   sclass_t * c = (sclass_t *) o;
 
   if (argc != 3) {
-    gc_error(g, "smrec: init without arguments");
+    gc_error(g, "sclass: init without arguments");
   }
 
   c->id = va_arg(ap, srid_t);
@@ -317,8 +343,14 @@ size_t sclass_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 
   err_t err = srid_insert(&s->i2r, c->id, c, 0);
   if (err) {
-    gc_error(g, "smrec: attempted to replace id %u", (unsigned) c->id);
+    gc_error(g, "sclass: attempted to replace id %u", (unsigned) c->id);
   }
+
+  spmap_t * m = spman_load(g, &s->pm, SRID_TO_PAGE(c->id));
+  if (!m) {
+    gc_error(g, "sclass: could not load page %u", (unsigned) SRID_TO_PAGE(c->id));
+  }
+  m->inuse++;
 
   return 0;
 }
@@ -333,6 +365,12 @@ size_t sclass_clear(gc_global_t * g, gc_hdr_t * o)
   if (err) {
     gc_error(g, "smrec: attempted to delete non-existent id %u", (unsigned) c->id);
   }
+
+  spmap_t * m = spman_load(g, &s->pm, SRID_TO_PAGE(c->id));
+  if (!m) {
+    gc_error(g, "sclass: could not load page %u", (unsigned) SRID_TO_PAGE(c->id));
+  }
+  m->inuse--;
 
   return 0;
 }
@@ -353,8 +391,10 @@ sclass_t * store_get_class(store_t * s, srid_t id)
   if ((r.flag & SSLOT_USAGEMASK) == SSLOT_USAGE_CLASS) {
     if (srid_find(&s->i2r, r.id, &c)) {
       uint16_t cnt = *((uint16_t *) r.slot);
+      spman_ref(&s->g, &s->pm, r.map);
       c = gc_new(&s->g, &sclass_vtable, sizeof(sclass_t) + sizeof(skind_t) * cnt,
             3, id, cnt, r.slot + sizeof(uint16_t));
+      spman_unref(&s->g, &s->pm, r.map);
     }
   }
   return c;

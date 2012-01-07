@@ -81,9 +81,7 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 
   bt_log("[spman] page load\n");
   for (uint32_t n = 0; n < test->num; n++) {
-    for (uint16_t i = (rand() % 16) + 5; i > 0; i--) {
-      spman_load(test->g, pm, n);
-    }
+    spman_load(test->g, pm, n);
   }
 
   bt_log("[spman] page identity\n");
@@ -98,12 +96,12 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 
   bt_log("[spman] page 2x overallocation\n");
   for (uint32_t k = 0; k < STORE_PAGESIZE * test->num * 2; k++) {
-    sdrec_t r = spman_add(test->g, pm, STORE_DATASIZE / STORE_PAGESIZE, 0);
+    sdrec_t r = spman_add(test->g, pm, 1024, 0);
     bt_assert_int_not_equal(r.id, SRID_NIL);
-    bt_assert(r.size >= STORE_DATASIZE / STORE_PAGESIZE);
+    bt_assert(r.size >= 1024);
     bt_assert_ptr_not_equal(r.slot, NULL);
     // bt_log("add id: %u, size:%u\n", r.id, r.size);
-    memset(r.slot, k % 265, STORE_DATASIZE / STORE_PAGESIZE);
+    memset(r.slot, k % 265, 1024);
   }
 
 #ifdef TESTPROF
