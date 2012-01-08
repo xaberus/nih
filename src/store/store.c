@@ -12,7 +12,33 @@
 #define SRID_TO_PAGE(_srid) (((_srid) & STORE_PAGEMASK) >> STORE_SLOTBITS)
 #define SRID_TO_SLOT(_srid) ((_srid) & STORE_SLOTMASK)
 
-#define VERBOSEDEBUG 0
+#define VERBOSEDEBUG 1
+
+#define CLASS_FMT "[1;35m%u[0;m"
+#define PTR_FMT "[1;33m%p[0;m"
+#define PAGE_FMT "[1;32m%u[0;m"
+#define SRID_FMT "[1;31m%u[0;m"
+#define INT32_FMT "%d"
+#define UINT32_FMT "%u"
+#define INT64_FMT "%ld"
+#define UINT64_FMT "%lu"
+
+#define ELEMENT(_t, _p) (*((_t *) (_p)))
+
+#if VERBOSEDEBUG
+#define DWRITEP(_t, _d, _s, _f) \
+  do { \
+    _t val = (_s); \
+    ELEMENT(_t, _d) = val; (_d) += sizeof(_t); \
+    fprintf(stderr, "--- wrote element (" #_t ") " _f "\n", val);\
+  } while(0)
+#else
+#define DWRITEP(_t, _d, _s, _f) \
+  do { \
+    _t val = _s; \
+    ELEMENT(_t, _d) = val; (_d) += sizeof(_t); \
+  } while(0)
+#endif
 
 uint32_t hash32(uint32_t M)
 {
@@ -240,7 +266,7 @@ spmap_t * spman_load(spman_t * pm, uint32_t pnum)
   m->sfhdr = 0;
 
 #if VERBOSEDEBUG > 0
-  fprintf(stderr, "[P] loaded page [1;33m%p[0;m:[1;32m%u[0;m (%u slots){%u}\n",
+  fprintf(stderr, "[P] loaded page "PTR_FMT":"PAGE_FMT" (%u slots) {%u bytes}\n",
     (void *) m->page, pnum, scount, psize);
 #endif
 
@@ -274,7 +300,7 @@ void spman_unload(spman_t * pm, spmap_t * m)
     *p = m->psize / STORE_DATACHUNK; p++;
     *p = m->scount;
 #if VERBOSEDEBUG > 0
-    fprintf(stderr, "{P} unloading page [1;33m%p[0;m:[1;32m%u[0;m (%u slots){%u}\n",
+    fprintf(stderr, "{P} unloading page "PTR_FMT":"PAGE_FMT" (%u slots) {%u bytes}\n",
       (void *) m->page, m->pnum, m->scount, m->psize);
 #endif
     munmap(m->page, m->psize);
@@ -311,7 +337,7 @@ sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
   }
 
 #if VERBOSEDEBUG > 2
-      fprintf(stderr, "[P] resizing store to %u pages (anum was %u)\n",
+      fprintf(stderr, "[P] resizing store to %u pages (anum was "PAGE_FMT")\n",
         pm->cnt + 1, pm->anum);
 #endif
 
@@ -566,7 +592,21 @@ size_t sclass_walk_propagate(store_t * s, sclass_t * c, void * p)
 
 /*************************************************************************************************/
 
-#define ELEMENT(_t, _p) (*((_t *) (_p)))
+#if VERBOSEDEBUG
+#define MCOPYP(_t, _d, _s, _f, _r) \
+  do { \
+    _t val = ELEMENT(_t, _s); (_s) += sizeof(_t); \
+    ELEMENT(_t, _d) = val; (_d) += sizeof(_t); \
+    fprintf(stderr, "    element of <%p:%u> (" #_t ") " _f "\n", \
+      (void *) r, r ? r->id : SRID_NIL, val);\
+  } while(0)
+#else
+#define MCOPYP(_t, _d, _s, _f, _r) \
+  do { \
+    _t val = ELEMENT(_t, _s); (_s) += sizeof(_t); \
+    ELEMENT(_t, _d) = val; (_d) += sizeof(_t); \
+  } while(0)
+#endif
 
 static
 size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
@@ -588,7 +628,7 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   r->ptr = malloc(r->sz);
 
 #if VERBOSEDEBUG
-  fprintf(stderr, "{M} object <[1;33m%p[0;m:[1;31m%u[0;m> of class <[1;33m%p[0;m:[1;35m%u[0;m>\n",
+  fprintf(stderr, "{M} object <"PTR_FMT":"SRID_FMT"> of class <"PTR_FMT":"CLASS_FMT">\n",
     (void *) r, r->id, (void *) r->sc, r->sc->id);
 #endif
 
@@ -597,50 +637,15 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   for (uint16_t k = 0; k < r->sc->cnt; k++) {
     switch (r->sc->kind[k]) {
       case SKIND_INT32:
-        ELEMENT(int32_t, dp) = ELEMENT(int32_t, sp);
-#if VERBOSEDEBUG
-        fprintf(stderr, "    element of <%p:%u> (int32) <%d>\n",
-          (void *) r, r->id, *((int32_t *) dp));
-#endif
-        sp += sizeof(int32_t);
-        dp += sizeof(int32_t);
-        break;
+        MCOPYP(int32_t, dp, sp, INT32_FMT, r); break;
       case SKIND_UINT32:
-        ELEMENT(uint32_t, dp) = ELEMENT(uint32_t, sp);
-#if VERBOSEDEBUG
-        fprintf(stderr, "    element of <%p:%u> (uint32) <%u>\n",
-          (void *) r, r->id, *((int32_t *) dp));
-#endif
-        sp += sizeof(uint32_t);
-        dp += sizeof(uint32_t);
-        break;
+        MCOPYP(uint32_t, dp, sp, UINT32_FMT, r); break;
       case SKIND_INT64:
-        ELEMENT(int64_t, dp) = ELEMENT(int64_t, sp);
-#if VERBOSEDEBUG
-        fprintf(stderr, "    element of <%p:%u> (int64) <%ld>\n",
-          (void *) r, r->id, (long) *((int64_t *) dp));
-#endif
-        sp += sizeof(int64_t);
-        dp += sizeof(int64_t);
-        break;
+        MCOPYP(int64_t, dp, sp, INT64_FMT, r); break;
       case SKIND_UINT64:
-        ELEMENT(uint64_t, dp) = ELEMENT(uint64_t, sp);
-#if VERBOSEDEBUG
-        fprintf(stderr, "    element of <%p:%u> (uint64) <%lu>\n",
-          (void *) r, r->id, (long unsigned) *((uint64_t *) dp));
-#endif
-        sp += sizeof(uint64_t);
-        dp += sizeof(uint64_t);
-        break;
+        MCOPYP(uint64_t, dp, sp, UINT64_FMT, r); break;
       case SKIND_DOUBLE:
-        ELEMENT(double, dp) = ELEMENT(double, sp);
-#if VERBOSEDEBUG
-        fprintf(stderr, "    element of <%p:%u> (double) <%g>\n",
-          (void *) r, r->id, *((double *) dp));
-#endif
-        sp += sizeof(double);
-        dp += sizeof(double);
-        break;
+        MCOPYP(double, dp, sp, "%g", r); break;
       case SKIND_STRING: {
         uint16_t l = ELEMENT(uint16_t, sp);
         sp += sizeof(uint16_t);
@@ -655,33 +660,35 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         break;
       }
       case SKIND_OBJECT: {
-        ELEMENT(smrec_t *, dp) = store_get_object(s, *((srid_t *) sp));
+        smrec_t * val = store_get_object(s, ELEMENT(srid_t, sp));
+        sp += sizeof(srid_t);
+        ELEMENT(smrec_t *, dp) =  val;
+        dp += sizeof(smrec_t *);
 #if VERBOSEDEBUG
-        if (ELEMENT(smrec_t *, dp)) {
-          fprintf(stderr, "    element of <%p:%u> (object) <[1;33m%p[0;m:[1;31m%u[0;m:[1;35m%u[0;m>\n",
-            (void *) r, r->id, *((void **) dp), (*((smrec_t **) dp))->id, (*((smrec_t **) dp))->sc->id);
+        if (val) {
+          fprintf(stderr, "    element of <%p:%u> (object) <"PTR_FMT":"SRID_FMT":"CLASS_FMT">\n",
+            (void *) r, r->id, (void *) val, val->id, val->sc->id);
         } else {
-          fprintf(stderr, "    element of <%p:%u> (object) <[1;33m%p[0;m:[1;31m(nil)[0;m>\n",
-            (void *) r, r->id, *((void **) dp));
+          fprintf(stderr, "    element of <%p:%u> (object) <"PTR_FMT">\n",
+            (void *) r, r->id, (void *) val);
         }
 #endif
-        sp += sizeof(srid_t);
-        dp += sizeof(void *);
         break;
       }
       case SKIND_CLASS: {
-        ELEMENT(sclass_t *, dp) = store_get_class(s, *((srid_t *) sp));
+        sclass_t * val = store_get_class(s, ELEMENT(srid_t, sp));
+        sp += sizeof(srid_t);
+        ELEMENT(sclass_t *, dp) = val;
+        dp += sizeof(sclass_t *);
 #if VERBOSEDEBUG
         if (ELEMENT(sclass_t *, dp)) {
-          fprintf(stderr, "    element of <%p:%u> (class) <[1;33m%p[0;m::[1;35m%u[0;m>\n",
-            (void *) r, r->id, *((void **) dp), (*((sclass_t **) dp))->id);
+          fprintf(stderr, "    element of <%p:%u> (class) <"PTR_FMT":"CLASS_FMT">\n",
+            (void *) r, r->id, (void *) val, val->id);
         } else {
-          fprintf(stderr, "    element of <%p:%u> (class) <[1;33m%p[0;m:[1;31m(nil)[0;m>\n",
-            (void *) r, r->id, *((void **) dp));
+          fprintf(stderr, "    element of <%p:%u> (class) <"PTR_FMT">\n",
+            (void *) r, r->id, (void *) val);
         }
 #endif
-        sp += sizeof(srid_t);
-        dp += sizeof(void *);
         break;
       }
     }
@@ -866,7 +873,7 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
   /*va_start(ap, c);
   va_end(ap);*/
 
-  size_t sz = 0;
+  uint32_t sz = sizeof(srid_t);
 
   va_start(ap, c);
   for (uint16_t k = 0; k < c->cnt; k++) {
@@ -920,92 +927,64 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
 
   uint8_t * p = r.slot;
 
-  *((srid_t *) p) = c->id;
 #if VERBOSEDEBUG
-  fprintf(stderr, "{D} object of class %u\n", *((srid_t *) p));
+  fprintf(stderr, "{D} object of class %u {%u bytes}\n", c->id, sz);
 #endif
-  p += sizeof(srid_t);
+
+  /* write class reference first */
+  DWRITEP(srid_t, p, c->id, SRID_FMT);
 
   va_start(ap, c);
   for (uint16_t k = 0; k < c->cnt; k++) {
     switch (c->kind[k]) {
       case SKIND_INT32:
-        *((int32_t *) p) = va_arg(ap, int32_t);
-#if VERBOSEDEBUG
-        fprintf(stderr, "--- element (int32) %d\n", *((int32_t *) p));
-#endif
-        p += sizeof(int32_t);
-        break;
+        DWRITEP(int32_t, p, va_arg(ap, int32_t), INT32_FMT); break;
       case SKIND_UINT32:
-        *((uint32_t *) p) = va_arg(ap, uint32_t);
-#if VERBOSEDEBUG
-        fprintf(stderr, "--- element (uint32) %u\n", *((uint32_t *) p));
-#endif
-        p += sizeof(uint32_t);
-        break;
+        DWRITEP(uint32_t, p, va_arg(ap, uint32_t), UINT32_FMT); break;
       case SKIND_INT64:
-        *((int64_t *) p) = va_arg(ap, int64_t);
-#if VERBOSEDEBUG
-        fprintf(stderr, "--- element (int64) %ld\n", (long) *((int64_t *) p));
-#endif
-        p += sizeof(int64_t);
-        break;
+        DWRITEP(int64_t, p, va_arg(ap, int64_t), INT64_FMT); break;
       case SKIND_UINT64:
-        *((uint64_t *) p) = va_arg(ap, uint64_t);
-#if VERBOSEDEBUG
-        fprintf(stderr, "--- element (uint64) %lu\n", (long unsigned) *((uint64_t *) p));
-#endif
-        p += sizeof(uint64_t);
-        break;
+        DWRITEP(uint64_t, p, va_arg(ap, uint64_t), UINT64_FMT); break;
       case SKIND_DOUBLE:
-        *((double *) p) = va_arg(ap, double);
-#if VERBOSEDEBUG
-        fprintf(stderr, "--- element (double) %g\n", *((double *) p));
-#endif
-        p += sizeof(double);
-        break;
+        DWRITEP(double, p, va_arg(ap, double), "%g"); break;
       case SKIND_STRING: {
         uint16_t l = va_arg(ap, int);
         const char * a = va_arg(ap, const char *);
-        *((uint16_t *) p) = l;
-        p += sizeof(uint16_t);
-        memcpy(p, a, l);
+        ELEMENT(uint16_t, p) = l; p += sizeof(uint16_t);
+        memcpy(p, a, l); p += ALIGN2(l);
 #if VERBOSEDEBUG
-        fprintf(stderr, "--- element (string) %.*s\n", l, a);
+        fprintf(stderr, "--- wrote element (string) %.*s\n", l, a);
 #endif
-        p += ALIGN2(l);
         break;
       }
       case SKIND_OBJECT: {
         smrec_t * t = va_arg(ap, smrec_t *);
         if (t) {
-          *((srid_t *) p) = t->id;
+          ELEMENT(srid_t, p) = t->id; p += sizeof(srid_t);
 #if VERBOSEDEBUG
-          fprintf(stderr, "--- element (object) %u\n", *((srid_t *) p));
+          fprintf(stderr, "--- wrote element (object) %u\n", t->id);
 #endif
         } else {
-          *((srid_t *) p) = SRID_NIL;
+          ELEMENT(srid_t, p) = SRID_NIL; p += sizeof(srid_t);
 #if VERBOSEDEBUG
-          fprintf(stderr, "--- element (object) (nil)\n");
+          fprintf(stderr, "--- wrote element (object) (nil)\n");
 #endif
         }
-        p += sizeof(srid_t);
         break;
       }
       case SKIND_CLASS: {
-        sclass_t * t = va_arg(ap, sclass_t *);
-        if (t) {
-          *((srid_t *) p) = t->id;
+        sclass_t * c = va_arg(ap, sclass_t *);
+        if (c) {
+          ELEMENT(srid_t, p) = c->id; p += sizeof(srid_t);
 #if VERBOSEDEBUG
-          fprintf(stderr, "--- element (class) %u\n", *((srid_t *) p));
+          fprintf(stderr, "--- wrote element (class) %u\n", c->id);
 #endif
         } else {
-          *((srid_t *) p) = SRID_NIL;
+          ELEMENT(srid_t, p) = SRID_NIL; p += sizeof(srid_t);
 #if VERBOSEDEBUG
-          fprintf(stderr, "--- element (class) (nil)\n");
+          fprintf(stderr, "--- wrote element (class) (nil)\n");
 #endif
         }
-        p += sizeof(srid_t);
         break;
       }
     }

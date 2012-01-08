@@ -155,6 +155,7 @@ BT_SUITE_SETUP_DEF(store, objectref)
   struct store_test * test = malloc(sizeof(struct store_test));
   bt_assert_ptr_not_equal(test, NULL);
 
+  unlink(store_test_path);
   bt_assert_ptr_not_equal(store_init(test->s, store_test_path), NULL);
 
   *objectref = test;
