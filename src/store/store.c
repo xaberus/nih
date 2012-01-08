@@ -12,7 +12,7 @@
 #define SRID_TO_PAGE(_srid) (((_srid) & STORE_PAGEMASK) >> STORE_SLOTBITS)
 #define SRID_TO_SLOT(_srid) ((_srid) & STORE_SLOTMASK)
 
-#define VERBOSEDEBUG 1
+#define VERBOSEDEBUG 0
 
 #define CLASS_FMT "[1;35m%u[0;m"
 #define PTR_FMT "[1;33m%p[0;m"
@@ -25,21 +25,6 @@
 
 #define ELEMENT(_t, _p) (*((_t *) (_p)))
 
-#if VERBOSEDEBUG
-#define DWRITEP(_t, _d, _s, _f) \
-  do { \
-    _t val = (_s); \
-    ELEMENT(_t, _d) = val; (_d) += sizeof(_t); \
-    fprintf(stderr, "--- wrote element (" #_t ") " _f "\n", val);\
-  } while(0)
-#else
-#define DWRITEP(_t, _d, _s, _f) \
-  do { \
-    _t val = _s; \
-    ELEMENT(_t, _d) = val; (_d) += sizeof(_t); \
-  } while(0)
-#endif
-
 uint32_t hash32(uint32_t M)
 {
   M = (M + 0x7ed55d16) + (M << 12);
@@ -51,7 +36,89 @@ uint32_t hash32(uint32_t M)
   return M;
 }
 
+/*************************************************************************************************/
+
 #define ALIGN2(_size) (((_size) + 1L) & ~1L)
+
+/* on disk format */
+
+inline static
+uint8_t * sdisk_u16_write(uint8_t * dst, uint16_t value)
+{
+  *((uint16_t *) dst) = value;
+  return dst + sizeof(uint16_t);
+}
+
+inline static
+uint8_t * sdisk_i32_write(uint8_t * dst, int32_t value)
+{
+  *((int32_t *) dst) = value;
+  return dst + sizeof(int32_t);
+}
+
+inline static
+uint8_t * sdisk_u32_write(uint8_t * dst, uint32_t value)
+{
+  *((uint32_t *) dst) = value;
+  return dst + sizeof(uint32_t);
+}
+
+inline static
+uint8_t * sdisk_i64_write(uint8_t * dst, int64_t value)
+{
+  *((int64_t *) dst) = value;
+  return dst + sizeof(int64_t);
+}
+
+inline static
+uint8_t * sdisk_u64_write(uint8_t * dst, uint64_t value)
+{
+  *((uint64_t *) dst) = value;
+  return dst + sizeof(uint64_t);
+}
+
+inline static
+uint8_t * sdisk_dbl_write(uint8_t * dst, double value)
+{
+  *((double *) dst) = value;
+  return dst + sizeof(double);
+}
+
+inline static
+uint8_t * sdisk_str_write(uint8_t * dst, uint16_t len, const char value[len])
+{
+  uint32_t skip = ALIGN2(len) - len;
+  dst = sdisk_u16_write(dst, len);
+  memcpy(dst, value, len);
+  dst += len;
+  if (skip) {
+    memset(dst, 0, skip);
+  }
+  return dst + skip;
+}
+
+inline static
+uint8_t * sdisk_obj_write(uint8_t * dst, smrec_t * o)
+{
+  if (o) {
+    return sdisk_u32_write(dst, o->id);
+  } else {
+    return sdisk_u32_write(dst, SRID_NIL);
+  }
+}
+
+inline static
+uint8_t * sdisk_cls_write(uint8_t * dst, sclass_t * c)
+{
+  if (c) {
+    return sdisk_u32_write(dst, c->id);
+  } else {
+    return sdisk_u32_write(dst, SRID_NIL);
+  }
+}
+
+
+/*************************************************************************************************/
 
 spman_t * spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt)
 {
@@ -536,6 +603,25 @@ sclass_t * store_get_class(store_t * s, srid_t id)
   return c;
 }
 
+inline static
+uint16_t sclass_instargc(sclass_t * c)
+{
+  uint16_t r = 0;
+  for (uint16_t k = 0; k < c->cnt; k++) {
+    switch (c->kind[k]) {
+      case SKIND_INT32: r++; break;
+      case SKIND_UINT32: r++; break;
+      case SKIND_INT64: r++; break;
+      case SKIND_UINT64: r++; break;
+      case SKIND_DOUBLE: r++; break;
+      case SKIND_STRING: r += 2; break;
+      case SKIND_OBJECT: r++; break;
+      case SKIND_CLASS: r++; break;
+    }
+  }
+  return r;
+}
+
 uint16_t sclass_mem_size(sclass_t * c)
 {
   uint16_t sz = 0;
@@ -875,43 +961,42 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
 
   uint32_t sz = sizeof(srid_t);
 
+  union {
+    uint16_t     u16;
+    int32_t      i32;
+    uint32_t     u32;
+    int64_t      i64;
+    uint64_t     u64;
+    double       dbl;
+    const char * str;
+    smrec_t    * obj;
+    sclass_t   * cls;
+  } args[sclass_instargc(c)];
+
   va_start(ap, c);
-  for (uint16_t k = 0; k < c->cnt; k++) {
+  for (uint16_t k = 0, v = 0; k < c->cnt; k++) {
     switch (c->kind[k]) {
       case SKIND_INT32:
-        va_arg(ap, int32_t);
-        sz += sizeof(int32_t); break;
-        break;
+        args[v++].i32 = va_arg(ap, int32_t); sz += sizeof(int32_t); break;
       case SKIND_UINT32:
-        va_arg(ap, uint32_t);
-        sz += sizeof(uint32_t); break;
-        break;
+        args[v++].u32 = va_arg(ap, uint32_t); sz += sizeof(uint32_t); break;
       case SKIND_INT64:
-        va_arg(ap, int64_t);
-        sz += sizeof(int64_t); break;
-        break;
+        args[v++].i64 = va_arg(ap, int64_t); sz += sizeof(int64_t); break;
       case SKIND_UINT64:
-        va_arg(ap, uint64_t);
-        sz += sizeof(uint64_t); break;
-        break;
+        args[v++].u64 = va_arg(ap, uint64_t); sz += sizeof(uint64_t); break;
       case SKIND_DOUBLE:
-        va_arg(ap, double);
-        sz += sizeof(double); break;
-        break;
+        args[v++].dbl = va_arg(ap, double); sz += sizeof(double); break;
       case SKIND_STRING: {
         uint16_t l = va_arg(ap, int);
         const char * a = va_arg(ap, const char *);
-        sz += sizeof(uint16_t) + (a ? ALIGN2(l) : 0);
+        args[v++].u16 = l; sz += sizeof(uint16_t);
+        args[v++].str = a; sz += (a ? ALIGN2(l) : 0);
         break;
       }
       case SKIND_OBJECT:
-        va_arg(ap, smrec_t *);
-        sz += sizeof(srid_t); break;
-        break;
+        args[v++].obj = va_arg(ap, smrec_t *); sz += sizeof(smrec_t *); break;
       case SKIND_CLASS:
-        va_arg(ap, sclass_t *);
-        sz += sizeof(srid_t); break;
-        break;
+        args[v++].cls = va_arg(ap, sclass_t *); sz += sizeof(sclass_t *); break;
     }
   }
   va_end(ap);
@@ -928,69 +1013,33 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
   uint8_t * p = r.slot;
 
 #if VERBOSEDEBUG
-  fprintf(stderr, "{D} object of class %u {%u bytes}\n", c->id, sz);
+  fprintf(stderr, "{D} writing object of class %u {%u bytes}\n", c->id, sz);
 #endif
 
   /* write class reference first */
-  DWRITEP(srid_t, p, c->id, SRID_FMT);
+  p = sdisk_cls_write(p, c);
 
-  va_start(ap, c);
-  for (uint16_t k = 0; k < c->cnt; k++) {
+  for (uint16_t k = 0, v = 0; k < c->cnt; k++) {
     switch (c->kind[k]) {
       case SKIND_INT32:
-        DWRITEP(int32_t, p, va_arg(ap, int32_t), INT32_FMT); break;
+        p = sdisk_i32_write(p, args[v++].i32); break;
       case SKIND_UINT32:
-        DWRITEP(uint32_t, p, va_arg(ap, uint32_t), UINT32_FMT); break;
+        p = sdisk_u32_write(p, args[v++].u32); break;
       case SKIND_INT64:
-        DWRITEP(int64_t, p, va_arg(ap, int64_t), INT64_FMT); break;
+        p = sdisk_i64_write(p, args[v++].i64); break;
       case SKIND_UINT64:
-        DWRITEP(uint64_t, p, va_arg(ap, uint64_t), UINT64_FMT); break;
+        p = sdisk_u64_write(p, args[v++].u64); break;
       case SKIND_DOUBLE:
-        DWRITEP(double, p, va_arg(ap, double), "%g"); break;
-      case SKIND_STRING: {
-        uint16_t l = va_arg(ap, int);
-        const char * a = va_arg(ap, const char *);
-        ELEMENT(uint16_t, p) = l; p += sizeof(uint16_t);
-        memcpy(p, a, l); p += ALIGN2(l);
-#if VERBOSEDEBUG
-        fprintf(stderr, "--- wrote element (string) %.*s\n", l, a);
-#endif
-        break;
-      }
-      case SKIND_OBJECT: {
-        smrec_t * t = va_arg(ap, smrec_t *);
-        if (t) {
-          ELEMENT(srid_t, p) = t->id; p += sizeof(srid_t);
-#if VERBOSEDEBUG
-          fprintf(stderr, "--- wrote element (object) %u\n", t->id);
-#endif
-        } else {
-          ELEMENT(srid_t, p) = SRID_NIL; p += sizeof(srid_t);
-#if VERBOSEDEBUG
-          fprintf(stderr, "--- wrote element (object) (nil)\n");
-#endif
-        }
-        break;
-      }
+        p = sdisk_dbl_write(p, args[v++].dbl); break;
+      case SKIND_STRING:
+        p = sdisk_str_write(p, args[v].u16, args[v+1].str); v += 2; break;
+      case SKIND_OBJECT:
+        p = sdisk_obj_write(p, args[v++].obj); break;
       case SKIND_CLASS: {
-        sclass_t * c = va_arg(ap, sclass_t *);
-        if (c) {
-          ELEMENT(srid_t, p) = c->id; p += sizeof(srid_t);
-#if VERBOSEDEBUG
-          fprintf(stderr, "--- wrote element (class) %u\n", c->id);
-#endif
-        } else {
-          ELEMENT(srid_t, p) = SRID_NIL; p += sizeof(srid_t);
-#if VERBOSEDEBUG
-          fprintf(stderr, "--- wrote element (class) (nil)\n");
-#endif
-        }
-        break;
+        p = sdisk_cls_write(p, args[v++].cls); break;
       }
     }
   }
-
-  va_end(ap);
 
   return store_get_object(s, r.id);
 }
