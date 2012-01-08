@@ -56,7 +56,7 @@ typedef struct sslot {
  * u16@pn u16@count
  * (
  *   u16@flag u16@size
- *     u8[ALIGN16(size)]@data
+ *     u8[ALIGN2(size)]@data
  * )[count]
  */
 
@@ -115,14 +115,27 @@ typedef enum skind {
   SKIND_CLASS,
 } skind_t;
 
-typedef struct sclass {
-  gc_hdr_t gch;
-  srid_t   id;     /* class record id */
-  uint16_t cnt;    /* number of fields */
-  skind_t  kind[];
-} sclass_t;
-
 typedef struct smrec smrec_t;
+typedef struct sclass sclass_t;
+
+/* FIELD META LAYOUT: (string@name) (sclass@class | nil) */
+
+typedef struct scfld {
+  skind_t    kind;    /* field kind */
+  smrec_t  * meta;   /* field meta or nil */
+} scfld_t;
+
+/* CLASS META LAYOUT: (string@name) */
+
+struct sclass {
+  gc_obj_t  gch;
+  srid_t    id;     /* class record id */
+  smrec_t * meta;   /* class metadata (very likely just nil)*/
+  uint16_t  fcnt;   /* number of fields */
+  scfld_t   flds[];
+};
+
+
 struct smrec {
   gc_obj_t   gco;
   sclass_t * sc;    /* pointer unpacked class this data implements */
@@ -149,10 +162,17 @@ typedef struct store {
 store_t  * store_init(store_t * s, const char path[]);
 void       store_clear(store_t * s);
 
-/* class slot:  (<cnt> <kind 0> <kind 1> ... <kind (count-1)>) */
-sclass_t * store_add_class(store_t * s, uint16_t cnt, skind_t kindv[cnt]);
+/* CLASS SLOT:  rec@cmeta u16@fcnt (kind@fkind rec@fmeta)[fcnt] */
+
+sclass_t * store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t flds[fcnt]);
 sclass_t * store_get_class(store_t * s, srid_t id);
 
-/* object slot: (<class> <element@kind 0> <element@kind 1> ... <element@kind (count-1)>) */
+/* OBJECT SLOT: class@sc field<sc.fields[0].kind> ... field<sc.fields[sc.cnt].kind> */
+
+/* field<xINTyy>: xyy@value */
+/* field<STRING>: u16@len (u8[ALIGN2(len)])@value */
+/* field<OBJECT>: rec@value */
+/* field<CLASS>: class@value */
+
 smrec_t  * store_add_object(store_t * s, sclass_t * c, ...);
 smrec_t  * store_get_object(store_t * s, srid_t id);

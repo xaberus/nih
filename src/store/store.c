@@ -530,17 +530,20 @@ size_t sclass_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   store_t  * s = (store_t *) g;
   sclass_t * c = (sclass_t *) o;
 
-  if (argc != 3) {
+  if (argc != 4) {
     gc_error(g, "sclass: init without arguments");
   }
 
   c->id = va_arg(ap, srid_t);
-  c->cnt = va_arg(ap, int);
+  c->meta = va_arg(ap, smrec_t *);
+  c->fcnt = va_arg(ap, int);
 
   uint8_t * p = va_arg(ap, uint8_t *);
 
-  for (uint16_t k = 0; k < c->cnt; k++) {
-    c->kind[k] = *((srid_t *) p);
+  for (uint16_t k = 0; k < c->fcnt; k++) {
+    c->flds[k].kind = ELEMENT(uint16_t, p);
+    p += sizeof(uint16_t);
+    c->flds[k].meta = store_get_object(s, ELEMENT(srid_t, p));
     p += sizeof(srid_t);
   }
 
@@ -578,10 +581,30 @@ size_t sclass_clear(gc_global_t * g, gc_hdr_t * o)
   return 0;
 }
 
+static
+size_t sclass_propagate(gc_global_t * g, gc_obj_t * o)
+{
+  sclass_t * c = (sclass_t *) o;
+  size_t n = 0;
+
+  if (c->meta) {
+    gc_mark(g, GC_HDR(c->meta)); n++;
+  }
+
+  for (uint16_t k = 0; k < c->fcnt; k++) {
+    smrec_t * meta = c->flds[k].meta;
+    if (meta) {
+      gc_mark(g, GC_HDR(meta)); n++;
+    }
+  }
+  return n;
+}
+
 gc_vtable_t sclass_vtable = {
-  .flag = GC_VT_FLAG_HDR,
+  .flag = GC_VT_FLAG_OBJ,
   .gc_init = sclass_init,
   .gc_clear = sclass_clear,
+  .gc_propagate = sclass_propagate,
 };
 
 sclass_t * store_get_class(store_t * s, srid_t id)
@@ -590,13 +613,16 @@ sclass_t * store_get_class(store_t * s, srid_t id)
   if (r.id == SRID_NIL) {
     return NULL;
   }
+
   void * c = NULL;
   if ((r.flag & SSLOT_USAGEMASK) == SSLOT_USAGE_CLASS) {
     if (srid_find(&s->i2r, r.id, &c)) {
-      uint16_t cnt = *((uint16_t *) r.slot);
+      uint8_t * p = r.slot;
+      smrec_t * meta = store_get_object(s, ELEMENT(srid_t, p)); p += sizeof(srid_t);
+      uint16_t fcnt = ELEMENT(uint16_t, p); p += sizeof(uint16_t);
       spman_ref(&s->pm, r.map);
-      c = gc_new(&s->g, &sclass_vtable, sizeof(sclass_t) + sizeof(skind_t) * cnt,
-            3, id, cnt, r.slot + sizeof(uint16_t));
+      c = gc_new(&s->g, &sclass_vtable, sizeof(sclass_t) + sizeof(scfld_t) * fcnt,
+            4, id, meta, fcnt, p);
       spman_unref(&s->pm, r.map);
     }
   }
@@ -607,8 +633,8 @@ inline static
 uint16_t sclass_instargc(sclass_t * c)
 {
   uint16_t r = 0;
-  for (uint16_t k = 0; k < c->cnt; k++) {
-    switch (c->kind[k]) {
+  for (uint16_t k = 0; k < c->fcnt; k++) {
+    switch (c->flds[k].kind) {
       case SKIND_INT32: r++; break;
       case SKIND_UINT32: r++; break;
       case SKIND_INT64: r++; break;
@@ -625,8 +651,8 @@ uint16_t sclass_instargc(sclass_t * c)
 uint16_t sclass_mem_size(sclass_t * c)
 {
   uint16_t sz = 0;
-  for (uint16_t k = 0; k < c->cnt; k++) {
-    switch (c->kind[k]) {
+  for (uint16_t k = 0; k < c->fcnt; k++) {
+    switch (c->flds[k].kind) {
       case SKIND_INT32:
       case SKIND_UINT32:
         sz += sizeof(uint32_t); break;
@@ -649,8 +675,8 @@ uint16_t sclass_mem_size(sclass_t * c)
 size_t sclass_walk_propagate(store_t * s, sclass_t * c, void * p)
 {
   size_t k = 0;
-  for (uint16_t k = 0; k < c->cnt; k++) {
-    switch (c->kind[k]) {
+  for (uint16_t k = 0; k < c->fcnt; k++) {
+    switch (c->flds[k].kind) {
       case SKIND_INT32:
       case SKIND_UINT32:
         p = (uint8_t *) p + sizeof(uint32_t); break;
@@ -720,8 +746,8 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 
   uint8_t * sp = slot;
   uint8_t * dp = r->ptr;
-  for (uint16_t k = 0; k < r->sc->cnt; k++) {
-    switch (r->sc->kind[k]) {
+  for (uint16_t k = 0; k < r->sc->fcnt; k++) {
+    switch (r->sc->flds[k].kind) {
       case SKIND_INT32:
         MCOPYP(int32_t, dp, sp, INT32_FMT, r); break;
       case SKIND_UINT32:
@@ -930,24 +956,31 @@ void store_clear(store_t * s)
   close(fd);
 }
 
-sclass_t * store_add_class(store_t * s, uint16_t cnt, skind_t kindv[cnt])
+sclass_t * store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t flds[fcnt])
 {
-  sdrec_t r = spman_add(&s->pm, sizeof(uint16_t) + cnt * sizeof(srid_t), SSLOT_USAGE_CLASS);
+  uint32_t sz = sizeof(srid_t) + sizeof(uint16_t) + fcnt * (sizeof(uint16_t) + sizeof(srid_t));
+  if (sz >= STORE_DATASIZE) {
+    gc_error(&s->g, "store: attempted to create a class lager than DATASIZE!");
+  }
+
+  sdrec_t r = spman_add(&s->pm, sz, SSLOT_USAGE_CLASS);
   if (r.id == SRID_NIL) {
     return NULL;
   }
+
   uint8_t * p = r.slot;
-  ELEMENT(uint16_t, p) = cnt;
+
 #if VERBOSEDEBUG
-  fprintf(stderr, "[D] class [1;35m%u[0;m of %u elements\n", r.id, ELEMENT(uint16_t, p));
+  fprintf(stderr, "[D] writing class [1;35m%u[0;m of %u elements {%u bytes}\n",
+    r.id, fcnt, sz);
 #endif
-  p += sizeof(uint16_t);
-  for (uint16_t k = 0; k < cnt; k++) {
-    ELEMENT(skind_t, p) = kindv[k];
-#if VERBOSEDEBUG
-    fprintf(stderr, "    element %u kind: [1;34m%u[0;m\n", k, ELEMENT(skind_t, p));
-#endif
-    p += sizeof(skind_t);
+
+  p = sdisk_obj_write(p, meta);
+  p = sdisk_u16_write(p, fcnt);
+
+  for (uint16_t k = 0; k < fcnt; k++) {
+    p = sdisk_u16_write(p, flds[k].kind);
+    p = sdisk_obj_write(p, flds[k].meta);
   }
 
   return store_get_class(s, r.id);
@@ -974,8 +1007,8 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
   } args[sclass_instargc(c)];
 
   va_start(ap, c);
-  for (uint16_t k = 0, v = 0; k < c->cnt; k++) {
-    switch (c->kind[k]) {
+  for (uint16_t k = 0, v = 0; k < c->fcnt; k++) {
+    switch (c->flds[k].kind) {
       case SKIND_INT32:
         args[v++].i32 = va_arg(ap, int32_t); sz += sizeof(int32_t); break;
       case SKIND_UINT32:
@@ -994,9 +1027,9 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
         break;
       }
       case SKIND_OBJECT:
-        args[v++].obj = va_arg(ap, smrec_t *); sz += sizeof(smrec_t *); break;
+        args[v++].obj = va_arg(ap, smrec_t *); sz += sizeof(srid_t); break;
       case SKIND_CLASS:
-        args[v++].cls = va_arg(ap, sclass_t *); sz += sizeof(sclass_t *); break;
+        args[v++].cls = va_arg(ap, sclass_t *); sz += sizeof(srid_t); break;
     }
   }
   va_end(ap);
@@ -1005,7 +1038,7 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
     gc_error(&s->g, "store: attempted to create an object lager than DATASIZE!");
   }
 
-  sdrec_t r = spman_add(&s->pm, (uint16_t) sz, SSLOT_USAGE_OBJECT);
+  sdrec_t r = spman_add(&s->pm, sz, SSLOT_USAGE_OBJECT);
   if (r.id == SRID_NIL) {
     return NULL;
   }
@@ -1013,14 +1046,14 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
   uint8_t * p = r.slot;
 
 #if VERBOSEDEBUG
-  fprintf(stderr, "{D} writing object of class %u {%u bytes}\n", c->id, sz);
+  fprintf(stderr, "{D} writing object of class %u with {%u elements, %u bytes}\n", c->id, c->fcnt, sz);
 #endif
 
   /* write class reference first */
   p = sdisk_cls_write(p, c);
 
-  for (uint16_t k = 0, v = 0; k < c->cnt; k++) {
-    switch (c->kind[k]) {
+  for (uint16_t k = 0, v = 0; k < c->fcnt; k++) {
+    switch (c->flds[k].kind) {
       case SKIND_INT32:
         p = sdisk_i32_write(p, args[v++].i32); break;
       case SKIND_UINT32:
