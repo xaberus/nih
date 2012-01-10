@@ -3,50 +3,58 @@
 
 #include "gc.h"
 
+#if 0
 void   gc_mem_free(gc_global_t * g, size_t size, void * p);
 void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
 
 #define gc_mem_new(g, s) \
   gc_mem_realloc(g, 0, (s), NULL)
+#endif
+
+#define ALIGN16(_size) (((_size) + 15L) & ~15L)
 
 /* vector */
-#define TYPEOF(a) __typeof__(a)
 
-#define gc_vector_init(_g, _v, _init) \
+#define gc_vector_init(_err, _g, _v, _init) \
   do { \
-    TYPEOF(_v) __v = (_v); \
-    gc_global_t * __g = (_g); \
+    __typeof__(_v) __v = (_v); \
     __v->count = 0; \
     __v->dsize = (_init); \
-    __v->data = gc_mem_new(__g, __v->dsize * sizeof(__v->data[0])); \
-    __v->psize = 0; \
-    __v->proc = NULL; \
-    memset(__v->data, 0, sizeof(TYPEOF(__v->data[0])) * __v->dsize); \
+    __v->data = malloc(__v->dsize * sizeof(__v->data[0])); \
+    if (!__v->data) { \
+      (_err) = err_return(ERR_MEM_USE_ALLOC, "malloc() failed"); \
+    } else { \
+      __v->psize = 0; \
+      __v->proc = NULL; \
+      memset(__v->data, 0, sizeof(__typeof__(__v->data[0])) * __v->dsize); \
+    } \
   } while (0)
 
 #define gc_vector_init_basic(_g, _v, _init) \
   do { \
-    TYPEOF(_v) __v = (_v); \
-    gc_global_t * __g = (_g); \
+    __typeof__(_v) __v = (_v); \
     __v->count = 0; \
     __v->dsize = (_init); \
-    __v->data = gc_mem_new(__g, __v->dsize * sizeof(__v->data[0])); \
-    memset(__v->data, 0, sizeof(TYPEOF(__v->data[0])) * __v->dsize); \
+    __v->data = malloc(__g, __v->dsize * sizeof(__v->data[0])); \
+    if (!__v->data) { \
+      (_err) = err_return(ERR_MEM_USE_ALLOC, "malloc() failed"); \
+    } else { \
+      memset(__v->data, 0, sizeof(__typeof__(__v->data[0])) * __v->dsize); \
+    } \
   } while (0)
 
 
 #define gc_vector_clear(_g, _v) \
   do { \
-    TYPEOF(_v) __v = (_v); \
-    TYPEOF(_g) __g = (_g); \
+    __typeof__(_v) __v = (_v); \
     if (__v->data) { \
-      gc_mem_free(__g, __v->dsize * sizeof(__v->data[0]), __v->data); \
+      free(__v->data); \
       __v->data = NULL; \
       __v->dsize = 0; \
       __v->count = 0; \
     } \
     if (__v->proc) { \
-      gc_mem_free(__g, __v->psize * sizeof(__v->proc[0]), __v->proc); \
+      free(__v->proc); \
       __v->proc = NULL; \
       __v->psize = 0; \
     } \
@@ -54,10 +62,9 @@ void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
 
 #define gc_vector_clear_basic(_g, _v) \
   do { \
-    TYPEOF(_v) __v = (_v); \
-    TYPEOF(_g) __g = (_g); \
+    __typeof__(_v) __v = (_v); \
     if (__v->data) { \
-      gc_mem_free(__g, __v->dsize * sizeof(__v->data[0]), __v->data); \
+      free(__v->data); \
       __v->data = NULL; \
       __v->dsize = 0; \
       __v->count = 0; \
@@ -67,43 +74,55 @@ void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
 
 #define gc_vector_reset(_g, _v) \
   do { \
-    TYPEOF(_v) __v = (_v); \
+    __typeof__(_v) __v = (_v); \
     __v->count = 0; \
-    memset(__v->data, 0, sizeof(TYPEOF(__v->data[0])) * __v->dsize); \
-    memset(__v->proc, 0, sizeof(TYPEOF(__v->proc[0])) * __v->psize); \
+    memset(__v->data, 0, sizeof(__typeof__(__v->data[0])) * __v->dsize); \
+    memset(__v->proc, 0, sizeof(__typeof__(__v->proc[0])) * __v->psize); \
   } while (0)
 
 #define gc_vector_reset_basic(_g, _v) \
   do { \
-    TYPEOF(_v) __v = (_v); \
+    __typeof__(_v) __v = (_v); \
     __v->count = 0; \
-    memset(__v->data, 0, sizeof(TYPEOF(__v->data[0])) * __v->dsize); \
+    memset(__v->data, 0, sizeof(__typeof__(__v->data[0])) * __v->dsize); \
   } while (0)
 
-#define gc_vector_process(_g, _v, _grow) \
+#define gc_vector_process(_err, _g, _v, _grow) \
   do { \
-    TYPEOF(_v) __v = (_v); \
-    TYPEOF(_g) __g = (_g); \
+    __typeof__(_v) __v = (_v); \
     size_t __grow = (_grow); \
     if (__v->proc) { \
-      __v->proc = gc_mem_realloc(__g, __v->psize * sizeof(__v->proc[0]), __grow * sizeof(__v->proc[0]), __v->proc); \
+      void * __tmp = realloc(__v->proc, __grow * sizeof(__v->proc[0])); \
+      if (!__tmp) { \
+        (_err) = err_return(ERR_MEM_REALLOC, "realloc() failed"); \
+      } else { \
+      __v->proc = __tmp; \
       __v->psize = __grow; \
+      } \
     } else { \
-      __v->proc = gc_mem_new(__g, __grow * sizeof(__v->proc[0])); \
-      __v->psize = __grow; \
+      __v->proc = malloc(__grow * sizeof(__v->proc[0])); \
+      if (!__v->proc ) { \
+        (_err) = err_return(ERR_MEM_REALLOC, "malloc() failed"); \
+      } else { \
+        __v->psize = __grow; \
+      } \
     } \
     memset(__v->proc, 0, __v->psize * sizeof(__v->proc[0])); \
   } while (0)
 
-#define gc_vector_resize(_g, _v, _grow) \
+#define gc_vector_resize(_err, _g, _v, _grow) \
   do { \
-    TYPEOF(_v) __v = (_v); \
-    TYPEOF(_g) __g = (_g); \
+    __typeof__(_v) __v = (_v); \
     size_t __count = (_grow); \
     size_t __grow = ALIGN16(__count); \
     if (__grow > __v->dsize) { \
-      __v->data = gc_mem_realloc(__g, __v->dsize * sizeof(__v->data[0]), __grow * sizeof(__v->data[0]), __v->data); \
-      memset(&__v->data[__v->dsize], 0, (__grow - __v->dsize) * sizeof(__v->data[0])); \
+      void * __tmp = realloc(__v->data, __grow * sizeof(__v->data[0])); \
+      if (!__tmp) { \
+        (_err) = err_return(ERR_MEM_USE_ALLOC, "realloc() failed"); \
+      } else { \
+        __v->data = __tmp; \
+        memset(&__v->data[__v->dsize], 0, (__grow - __v->dsize) * sizeof(__v->data[0])); \
+      } \
     } else { \
       memset(&__v->data[__grow], 0, (__v->dsize - __grow) * sizeof(__v->data[0])); \
       __v->count = __count; \
@@ -113,9 +132,9 @@ void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
 
 #define gc_vector_swap(_g, _v) \
   do { \
-    TYPEOF(_v) __v = (_v); \
+    __typeof__(_v) __v = (_v); \
     if (__v->proc) { \
-      TYPEOF(__v->proc) __tmp = __v->data; \
+      __typeof__(__v->proc) __tmp = __v->data; \
       size_t __tsize = __v->dsize; \
       __v->data = __v->proc; \
       __v->dsize = __v->psize; \
@@ -125,24 +144,26 @@ void * gc_mem_realloc(gc_global_t * g, size_t osz, size_t nsz, void * p);
     } \
   } while (0)
 
-#define ALIGN16(_size) (((_size) + 15L) & ~15L)
-
-#define gc_vector_append(_g, _v, _value) \
+#define gc_vector_append(_err, _g, _v, _value) \
   do { \
-    TYPEOF(_v) __v = (_v); \
-    TYPEOF(_g) __g = (_g); \
+    __typeof__(_v) __v = (_v); \
     if (!(__v->count < __v->dsize)) { \
       size_t __sz = ALIGN16(__v->count + 1); \
-      __v->data = gc_mem_realloc(__g, __v->dsize, __sz * sizeof(__v->data[0]), __v->data); \
-      __v->dsize = __sz; \
+      void * __tmp = realloc(__v->data, __sz * sizeof(__v->data[0])); \
+      if (!__tmp) { \
+        (_err) = err_return(ERR_MEM_USE_ALLOC, "realloc() failed"); \
+      } else { \
+        __v->data = __tmp; \
+        __v->dsize = __sz; \
+      } \
     } \
     __v->data[__v->count++] =  _value; \
   } while (0)
 
 #define gc_vector_remove_all(_g, _v, _value) \
   do { \
-    TYPEOF(_v) __v = (_v); \
-    TYPEOF(_value) value = (_value); \
+    __typeof__(_v) __v = (_v); \
+    __typeof__(_value) value = (_value); \
     for (size_t k = 0; k < __v->count; k++) { \
       if (__v->data[k] == value) { \
         for (size_t l = k + 1, m = __v->count; l < m; l++) { \
@@ -172,13 +193,13 @@ void gch_unlink(gc_hdr_t ** head, gc_hdr_t ** prev, gc_hdr_t * node)
 
 #define gc_head_prepare(_l) \
   do { \
-    TYPEOF(_l) __l = (_l); \
+    __typeof__(_l) __l = (_l); \
     __l->sweep = &__l->head; \
   } while (0)
 
 #define gc_head_reset(_l) \
   do { \
-    TYPEOF(_l) __l = (_l); \
+    __typeof__(_l) __l = (_l); \
     __l->head = 0; \
     __l->sweep = &__l->head; \
   } while (0)
@@ -192,7 +213,7 @@ void gcl_prepend(gc_obj_t ** head, gc_obj_t * node)
 
 #define gc_list_reset(_l) \
   do { \
-    TYPEOF(_l) __l = (_l); \
+    __typeof__(_l) __l = (_l); \
     __l->head = 0; \
   } while (0)
 
@@ -222,7 +243,7 @@ void gclp_insert(gc_obj_t ** loop, gc_obj_t * node)
 
 #define gc_loop_reset(_l) \
   do { \
-    TYPEOF(_l) __l = (_l); \
+    __typeof__(_l) __l = (_l); \
     __l->loop = 0; \
   } while (0)
 
@@ -330,12 +351,18 @@ void intern_hdr(gc_global_t * g, gc_hdr_t * o, uint32_t size)
 }
 
 inline static
-void strings_resize(gc_global_t * g, gc_strings_t * ss, uint32_t newmask)
+err_r * strings_resize(gc_strings_t * ss, uint32_t newmask)
 {
   log(0, "# %s(%08x->%08x)\n", __FUNCTION__, ss->mask, newmask);
   gc_buckets_t * buckets = &ss->buckets;
 
-  gc_vector_process(g, buckets, newmask + 1);
+  {
+    err_r * err = NULL;
+    gc_vector_process(err, g, buckets, newmask + 1);
+    if (err) {
+      return err;
+    }
+  }
 
   for (size_t i = 0; i < buckets->dsize; i++) {
     gc_bucket_t * b = &buckets->data[i];
@@ -354,10 +381,12 @@ void strings_resize(gc_global_t * g, gc_strings_t * ss, uint32_t newmask)
     n->sweep = &n->head;
   }
   ss->mask = newmask;
+
+  return NULL;
 }
 
 inline static
-void intern_str(gc_global_t * g, gc_str_t * s, uint32_t size)
+err_r * intern_str(gc_global_t * g, gc_str_t * s, uint32_t size)
 {
   log(0, "# %s(%p [%u])\n", __FUNCTION__, (void *) s, size);
   GC_HDR(s)->flag = (g->white & GC_FLAG_WHITES);
@@ -366,9 +395,13 @@ void intern_str(gc_global_t * g, gc_str_t * s, uint32_t size)
   if (g->strings.count++ > g->strings.mask) {
     uint32_t newmask = (g->strings.mask << 1) | 1;
     if (g->state != GC_STATE_SWEEP_STRING && newmask < 0xffffff - 1) {
-      strings_resize(g, &g->strings, newmask);
+      err_r * err =  strings_resize(&g->strings, newmask);
+      if (err) {
+        return err_return(ERR_FAILURE, "strings_resize() failed");
+      }
     }
   }
+  return NULL;
 }
 
 extern gc_vtable_t gc_str_vtable;

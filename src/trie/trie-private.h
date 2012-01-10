@@ -1,5 +1,8 @@
-void               trie_print(trie_t * trie, int fd);
-struct tnode_tuple trie_find_i(trie_t * trie, uint16_t len, const uint8_t word[len]);
+/* tuple */ typedef struct { err_r * err; tbank_t * tbank; } e_tbank_t;
+/* tuple */ typedef struct { err_r * err; ttuple_t ttuple; } e_ttuple_t;
+
+void       trie_print(trie_t * trie, int fd);
+e_ttuple_t trie_find_i(trie_t * trie, uint16_t len, const uint8_t word[len]);
 
 #if 0
 # include <assert.h>
@@ -12,19 +15,8 @@ struct tnode_tuple trie_find_i(trie_t * trie, uint16_t len, const uint8_t word[l
   for (__type * __iter = (__init), * __next = __iter ? __iter->next : NULL; __iter; \
        __iter = __next, __next = __iter ? __iter->next : NULL)
 
-struct tnode_tuple trie_mknode(trie_t * trie);
+e_ttuple_t trie_mknode(trie_t * trie);
 void               trie_remnode(trie_t * trie, uint32_t index);
-
-inline static
-struct tnode_tuple tnode_tuple(tnode_t * node, uint32_t index)
-{
-  struct tnode_tuple ret = {
-    .node = node,
-    .index = index,
-  };
-
-  return ret;
-}
 
 inline static
 uint32_t tnode_bank_size(uint16_t addrbits)
@@ -33,41 +25,35 @@ uint32_t tnode_bank_size(uint16_t addrbits)
 }
 
 inline static
-tbank_t * tnode_bank_alloc(uint32_t size, uint32_t addr)
+e_tbank_t tnode_bank_alloc(uint32_t size, uint32_t addr)
 {
   tbank_t * bank;
 
   bank = malloc(sizeof(tbank_t) + sizeof(tnode_t) * size);
-
-  if (bank) {
-    memset(bank, 0, sizeof(tbank_t) + sizeof(tnode_t) * size);
-    bank->used = 0;
-    bank->addr = addr;
+  if (!bank) {
+    return (e_tbank_t) {err_return(ERR_MEM_USE_ALLOC, "malloc() failed"), NULL};
   }
 
-  return bank;
+  memset(bank, 0, sizeof(tbank_t) + sizeof(tnode_t) * size);
+  bank->used = 0;
+  bank->addr = addr;
+
+  return (e_tbank_t) {NULL, bank};
 }
 
 inline static
-struct tnode_tuple tnode_bank_mknode(tbank_t * bank, uint32_t size, uint16_t nodebits)
+ttuple_t tnode_bank_mknode(tbank_t * bank, uint16_t nodebits)
 {
-  if (!bank)
-    return tnode_tuple(NULL, 0);
-
   uint32_t next = bank->used;
 
-  if (next < size) {
-    tnode_t * node = &bank->nodes[next];
-    memset(node, 0, sizeof(tnode_t));
-    bank->used++;
-    return tnode_tuple(node, IDX2INDEX(next | (bank->addr << nodebits)));
-  }
-
-  return tnode_tuple(NULL, 0);
+  tnode_t * node = &bank->nodes[next];
+  memset(node, 0, sizeof(tnode_t));
+  bank->used++;
+  return (ttuple_t) {node, IDX2INDEX(next | (bank->addr << nodebits))};
 }
 
 inline static
-struct tnode_tuple tnode_get(trie_t * trie, uint32_t index)
+ttuple_t tnode_get(trie_t * trie, uint32_t index)
 {
   tbank_t * bank;
   tnode_t * node;
@@ -81,51 +67,51 @@ struct tnode_tuple tnode_get(trie_t * trie, uint32_t index)
     bank = trie->nodes[addr];
     node = &bank->nodes[idx];
     if (node->isused) {
-      return (struct tnode_tuple) {
+      return (ttuple_t) {
         .node = node,
         .index = IDX2INDEX(index),
       };
     }
   }
 
-  return (struct tnode_tuple){
+  return (ttuple_t){
     .node = NULL,
     .index = 0,
   };
 }
 
 inline static
-err_t _trie_stride_alloc(trie_t * trie, uint16_t rest, struct tnode_tuple stride[rest])
+err_r * _trie_stride_alloc(trie_t * trie, uint16_t rest, ttuple_t stride[rest])
 {
-  struct tnode_tuple new;
+  e_ttuple_t e;
 
   for (uint32_t n = 0; n < rest; n++) {
-    new = trie_mknode(trie);
-    if (!new.index) {
+    e = trie_mknode(trie);
+    if (e.err) {
       for (uint32_t k = 0; k < n; k++) {
         stride[k].node->isused = 1;
         trie_remnode(trie, stride[k].index);
       }
-      return ERR_MEM_USE_ALLOC;
+      return err_return(ERR_MEM_USE_ALLOC, "error while allocating stride: trie_mknode() failed");
     }
-    stride[n] = new;
+    stride[n] = e.ttuple;
   }
   return 0;
 }
 
 /* append child, then tail */
 static inline
-struct tnode_tuple __trie_prev_append_child_append_tail(trie_t * trie,
-    struct tnode_tuple tuple,
-    struct tnode_tuple prev,
+ttuple_t __trie_prev_append_child_append_tail(trie_t * trie,
+    ttuple_t tuple,
+    ttuple_t prev,
     uint16_t i,
     uint16_t len,
     const uint8_t word[len],
     uint16_t rest,
-    struct tnode_tuple stride[rest],
+    ttuple_t stride[rest],
     uint64_t data)
 {
-  struct tnode_tuple new;
+  ttuple_t new;
   uint32_t           m, n;
 
   /*dprintf(2, "IDOR T len:%u\n", len);*/
@@ -164,17 +150,17 @@ struct tnode_tuple __trie_prev_append_child_append_tail(trie_t * trie,
 
 /* append child, then tail */
 static inline
-struct tnode_tuple __trie_parent_append_child_append_tail(trie_t * trie,
-    struct tnode_tuple tuple,
-    struct tnode_tuple parent,
+ttuple_t __trie_parent_append_child_append_tail(trie_t * trie,
+    ttuple_t tuple,
+    ttuple_t parent,
     uint16_t i,
     uint16_t len,
     const uint8_t word[len],
     uint16_t rest,
-    struct tnode_tuple stride[rest],
+    ttuple_t stride[rest],
     uint64_t data)
 {
-  struct tnode_tuple new;
+  ttuple_t new;
   uint32_t           m, n;
 
   /*dprintf(2, "IDOR X len:%u\n", len);*/
@@ -217,16 +203,16 @@ struct tnode_tuple __trie_parent_append_child_append_tail(trie_t * trie,
 
 /* become child, then append tail */
 static inline
-struct tnode_tuple __trie_become_child_append_tail(trie_t * trie,
-    struct tnode_tuple tuple,
+ttuple_t __trie_become_child_append_tail(trie_t * trie,
+    ttuple_t tuple,
     uint16_t i,
     uint16_t len,
     const uint8_t word[len],
     uint16_t rest,
-    struct tnode_tuple stride[rest],
+    ttuple_t stride[rest],
     uint64_t data)
 {
-  struct tnode_tuple new;
+  ttuple_t new;
   uint32_t           m, n;
 
   /*printf(2, "IDOR R len:%u\n", len);*/
@@ -259,15 +245,15 @@ struct tnode_tuple __trie_become_child_append_tail(trie_t * trie,
 
 /* append tail to empty root */
 static inline
-struct tnode_tuple __trie_append_tail_to_root(trie_t * trie,
-    struct tnode_tuple tuple,
+ttuple_t __trie_append_tail_to_root(trie_t * trie,
+    ttuple_t tuple,
     uint16_t len,
     const uint8_t word[len],
     uint16_t rest,
-    struct tnode_tuple stride[rest],
+    ttuple_t stride[rest],
     uint64_t data)
 {
-  struct tnode_tuple new;
+  ttuple_t new;
   uint32_t           m, n;
 
   /*dprintf(2, "IDOR M len:%u\n", len);*/
@@ -300,16 +286,16 @@ struct tnode_tuple __trie_append_tail_to_root(trie_t * trie,
 }
 
 static inline
-struct tnode_tuple __trie_split_0_set(trie_t * trie,
-    struct tnode_tuple tuple,
+ttuple_t __trie_split_0_set(trie_t * trie,
+    ttuple_t tuple,
     uint16_t i,
     uint16_t len,
     const uint8_t word[len],
     uint16_t rest,
-    struct tnode_tuple stride[rest],
+    ttuple_t stride[rest],
     uint64_t data)
 {
-  struct tnode_tuple new = stride[0];
+  ttuple_t new = stride[0];
 
   (void) trie;
   (void) word;
@@ -334,17 +320,17 @@ struct tnode_tuple __trie_split_0_set(trie_t * trie,
 }
 
 static inline
-struct tnode_tuple __trie_split_n_child(trie_t * trie,
-    struct tnode_tuple tuple,
+ttuple_t __trie_split_n_child(trie_t * trie,
+    ttuple_t tuple,
     uint16_t i,
     uint8_t n,
     uint16_t len,
     const uint8_t word[len],
     uint16_t rest,
-    struct tnode_tuple stride[rest],
+    ttuple_t stride[rest],
     uint64_t data)
 {
-  struct tnode_tuple dend = stride[0];
+  ttuple_t dend = stride[0];
 
   (void) trie;
   (void) word;
@@ -361,7 +347,7 @@ struct tnode_tuple __trie_split_n_child(trie_t * trie,
   dend.node->data = data;
 
   if (n + 1 < tuple.node->strlen) {
-    struct tnode_tuple new = stride[1];
+    ttuple_t new = stride[1];
     new.node->isused = 1;
     new.node->iskey = 1;
 
@@ -382,17 +368,17 @@ struct tnode_tuple __trie_split_n_child(trie_t * trie,
   return dend;
 }
 static inline
-struct tnode_tuple __trie_split_n_next(trie_t * trie,
-    struct tnode_tuple tuple,
+ttuple_t __trie_split_n_next(trie_t * trie,
+    ttuple_t tuple,
     uint16_t i,
     uint8_t n,
     uint16_t len,
     const uint8_t word[len],
     uint16_t rest,
-    struct tnode_tuple stride[rest],
+    ttuple_t stride[rest],
     uint64_t data)
 {
-  struct tnode_tuple m = stride[0];
+  ttuple_t m = stride[0];
 
   m.node->isused = 1;
   m.node->iskey = 1;
@@ -411,10 +397,10 @@ struct tnode_tuple __trie_split_n_next(trie_t * trie,
   tuple.node->strlen = n;
 
   if (word[i] < m.node->c) {
-    tuple = __trie_parent_append_child_append_tail(trie, tnode_tuple(NULL, 0),
+    tuple = __trie_parent_append_child_append_tail(trie, (ttuple_t) {NULL, 0},
         tuple, i, len, word, rest - 1, stride + 1, data);
   } else {
-    tuple = __trie_prev_append_child_append_tail(trie, tnode_tuple(NULL, 0),
+    tuple = __trie_prev_append_child_append_tail(trie, (ttuple_t) {NULL, 0},
         m, i, len, word, rest - 1, stride + 1, data);
   }
 
@@ -434,13 +420,13 @@ enum trie_insert_action {
 };
 
 struct trie_eppoit {
-  err_t err;
-  struct tnode_tuple parent;
-  struct tnode_tuple prev;
+  err_r * err;
+  ttuple_t parent;
+  ttuple_t prev;
   enum trie_insert_action act;
   uint16_t i;
   uint8_t n;
-  struct tnode_tuple tuple;
+  ttuple_t tuple;
 };
 
 inline static
@@ -478,21 +464,21 @@ uint32_t trie_calc_stride_length(struct trie_eppoit * epo, uint32_t len)
 
 inline static
 struct trie_eppoit _trie_insert_decide(trie_t * trie,
-    struct tnode_tuple tuple,
+    ttuple_t tuple,
     uint16_t len,
     const uint8_t word[len],
     bool rep)
 {
   (void) trie;
-  struct tnode_tuple prev = {NULL, 0};
-  struct tnode_tuple parent = {NULL, 0};
-  struct tnode_tuple tmp = {NULL, 0};
+  ttuple_t prev = {NULL, 0};
+  ttuple_t parent = {NULL, 0};
+  ttuple_t tmp = {NULL, 0};
 
-  uint32_t           i, n = 0;
-  uint8_t            c;
-  uint8_t            nlen;
-  int                act = TRIE_INSERT_FAILURE;
-  err_t              err = 0;
+  uint32_t i, n = 0;
+  uint8_t  c;
+  uint8_t  nlen;
+  int      act = TRIE_INSERT_FAILURE;
+  err_r  * err = NULL;
 
   for (i = 0, c = word[i]; tuple.index && i < len; c = word[i]) {
     if (c == tuple.node->c) {
@@ -500,7 +486,7 @@ struct trie_eppoit _trie_insert_decide(trie_t * trie,
       nlen = tuple.node->strlen;
       if (i == len) {
         if (!rep && tuple.node->isdata) { /* duplicate */
-          err = ERR_DUPLICATE;
+          err = err_return(ERR_DUPLICATE, "attempted to insert duplicate while rep = false");
           break;
         } else {
           if (nlen > 0) {
@@ -526,7 +512,7 @@ struct trie_eppoit _trie_insert_decide(trie_t * trie,
       }
       tmp = tnode_get(trie, tuple.node->child);
       if (tmp.index) {
-        prev = tnode_tuple(NULL, 0);
+        prev = (ttuple_t) {NULL, 0};
         parent = tuple;
         tuple = tmp;
         continue;
@@ -562,10 +548,11 @@ struct trie_eppoit _trie_insert_decide(trie_t * trie,
   }
 break_main:
 
-  if (!act)
-    err = ERR_CORRUPTION;
+  if (!act) {
+    err = err_return(ERR_DUPLICATE, "unable to decide what to do");
+  }
 
-  struct trie_eppoit ret = {
+  return (struct trie_eppoit) {
     .err = err,
     .parent = parent,
     .prev = prev,
@@ -574,5 +561,4 @@ break_main:
     .n = n,
     .tuple = tuple,
   };
-  return ret;
 }

@@ -31,8 +31,8 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-inline")
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ftrapv")
 
 add_definitions(-DTEST)
+add_definitions(-D_XOPEN_SOURCE=700)
 #add_definitions(-DTESTPROF="cpuprof")
-
 add_definitions(-DBROOT="${CMAKE_CURRENT_SOURCE_DIR}")
 
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fpic")
@@ -50,13 +50,14 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--warn-unresolve
 include_directories(${libnih_SOURCE_DIR})
 
 add_library(nih SHARED
+  ${libnih_SOURCE_DIR}/src/common/err.c
   ${libnih_SOURCE_DIR}/src/gc/gc.c
   ${libnih_SOURCE_DIR}/src/gc/gc-stack.c
   ${libnih_SOURCE_DIR}/src/number/number.c
   ${libnih_SOURCE_DIR}/src/sx/sx.c
   ${libnih_SOURCE_DIR}/src/trie/pathman.c
   ${libnih_SOURCE_DIR}/src/trie/trie.c
-  ${libnih_SOURCE_DIR}/src/store/store.c
+  #${libnih_SOURCE_DIR}/src/store/store.c
 )
 
 #target_link_libraries(nih m profiler)

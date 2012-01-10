@@ -75,8 +75,11 @@ typedef struct {
   gc_stack_t * stack;
 } sxb_t;
 
-sxb_t  * sxb_new(gc_global_t * g);
-sx_t   * sxb_read(gc_global_t * g, sxb_t * b, gc_str_t * str);
+/* tuple */ typedef struct { err_r * err; sxb_t * sxb; } e_sxb_t;
+e_sxb_t sxb_new(gc_global_t * g);
+
+/* tuple */ typedef struct { err_r * err; sx_t * sx; } e_sx_t;
+e_sx_t sxb_read(gc_global_t * g, sxb_t * b, gc_str_t * str);
 
 inline static
 uint32_t sx_lnklen(sx_t * x)
@@ -89,4 +92,4 @@ uint32_t sx_lnklen(sx_t * x)
   return len;
 }
 
-gc_str_t * sx_dump(gc_global_t * g, sx_t * x);
+e_gc_str_t sx_dump(gc_global_t * g, sx_t * x);

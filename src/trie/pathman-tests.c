@@ -70,7 +70,7 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
 
   fclose(fp);
 
-  bt_assert_ptr_not_equal(pathman_init(test->pman), NULL);
+  bt_chkerr(pathman_init(test->pman));
 
   bt_log("[pathman:init] file bank size is %u\n", PDIR_BANKSIZE);
   bt_log("[pathman:init] dir bank size is %u\n", PFILE_BANKSIZE);
@@ -83,13 +83,15 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
 BT_TEST_DEF(pathman, border, object, "border cases")
 {
   struct pathman_test * test = object;
-  struct plookup        dlup, flup;
+  e_pdir_t dlup;
+  e_pfile_t flup;
 
   dlup = pathman_add_dir(test->pman, "/a", 0);
   bt_chkerr(dlup.err);
   bt_assert_ptr_not_equal(dlup.dir, NULL);
   flup = pathman_add_file(test->pman, dlup.dir, "foo/bar", 0);
-  bt_assert(flup.err == ERR_IN_INVALID);
+  bt_assert(flup.err);
+  err_reset();
 
   return BT_RESULT_OK;
 }
@@ -97,8 +99,8 @@ BT_TEST_DEF(pathman, border, object, "border cases")
 BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
 {
   struct pathman_test * test = object;
-  struct plookup        dlup = {ERR_SUCCESS, pstate(tnode_tuple(NULL, 0)), NULL, NULL};
-  struct plookup        flup;
+  e_pdir_t dlup = {NULL, NULL};
+  e_pfile_t flup;
 
   uint32_t fnum = 0, dnum = 0;
 
@@ -140,12 +142,11 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
 
       // bt_log("D %s\n", buf);
 
-      dlup = pathman_lookup(test->pman, buf);
+      dlup = pathman_get_dir(test->pman, buf);
       if (dlup.err) {
         bt_log("FAIL dir '%s'\n", test->strv[k]);
         bt_chkerr(dlup.err);
       }
-      bt_assert(dlup.state.node.isdir);
       bt_assert_ptr_not_equal(dlup.dir, NULL);
     } else if (test->flag[k] == 2 && dlup.dir) {
       bt_assert(dl + fl < 1023);
@@ -155,12 +156,11 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
 
       // bt_log("F %s\n", buf);
 
-      flup = pathman_lookup(test->pman, buf);
+      flup = pathman_get_file(test->pman, buf);
       if (flup.err) {
         bt_log("FAIL file '%s'\n", basename(test->strv[k]));
         bt_chkerr(flup.err);
       }
-      bt_assert(flup.state.node.isfile);
       bt_assert_ptr_not_equal(flup.file, NULL);
       //bt_assert(flup.file->rid == k);
     }

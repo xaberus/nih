@@ -8,20 +8,23 @@ gc_vtable_t number_vtable = {
   .gc_clear = NULL,
 };
 
-number_t * number_new(gc_global_t * g, uint64_t bits)
+e_number_t number_new(gc_global_t * g, uint64_t bits)
 {
   uint64_t s = ALIGN32(bits) >> 5; /* bits / 32 */
   uint64_t b = s << 2; /* s * 4 */
 
   if (s > INT32_MAX || b > GC_SIZE_MAX) {
-    gc_error(g, "number: cannot store %Qu bits", bits);
-    return NULL;
+    return (e_number_t) {err_return(ERR_FAILURE, "bits too large"), NULL};
   }
 
-  number_t * n = gc_new(g, &number_vtable, sizeof(number_t) + 4 * b, 0);
+  e_void_t e = gc_new(g, &number_vtable, sizeof(number_t) + 4 * b, 0);
+  if (e.err) {
+    return (e_number_t) {err_return(ERR_FAILURE, "gc_new() failed"), NULL};
+  }
+  number_t * n = e.value;
   n->s = 0;
 
-  return n;
+  return (e_number_t) {NULL, n};
 }
 
 inline static
@@ -221,13 +224,14 @@ void intern_set_hex(number_t * n, int sign, size_t len, const char str[len])
   n->s = s * sign;
 }
 
-number_t * number_setstrc(gc_global_t * g, number_t * n, size_t len, const char str[len])
+e_number_t number_setstrc(gc_global_t * g, number_t * n, size_t len, const char str[len])
 {
   const char * p = str, * pe = p + len, * ps;
   char         c;
   int          sign = 1;
   unsigned     form;
   uint64_t     digits = 0;
+  err_r      * err = NULL;
 
   enum {
     ERROR = 0, START = 1, NUMBER0, NUMBERX, BIN, BINC, OCT, OCTC, HEX, HEXC, DEC, DECC,
@@ -347,7 +351,10 @@ loop:
           case '_': { TC(DECC); }
         }
       } goto abort;
-      case ERROR: { goto abort; }
+      case ERROR: {
+        err = err_return(ERR_IN_INVALID, "malformed string");
+        goto abort;
+      }
     }
   }
   if (digits) {
@@ -356,9 +363,19 @@ loop:
 #define PREPARE(_g, _n, _bits) \
   do { \
     if (!(_n)) { \
-      (_n) = number_new((_g), (_bits)); \
+      e_number_t e = number_new((_g), (_bits)); \
+      if (e.err) { \
+        err = err_return(ERR_FAILURE, "number_new() failed");\
+        goto abort; \
+      } \
+      (_n) = e.number; \
     } else if ((number_size(n) << 5) < (_bits)) { \
-      (_n) = number_new((_g), (_bits)); \
+      e_number_t e = number_new((_g), (_bits)); \
+      if (e.err) { \
+        err = err_return(ERR_FAILURE, "number_new() failed");\
+        goto abort; \
+      } \
+      (_n) = e.number; \
     } \
   } while (0)
 
@@ -367,39 +384,39 @@ loop:
         bits = ALIGN32(digits);
         PREPARE(g, n, bits);
         intern_set_bin(n, sign, len - (ps - str), ps);
-        return n;
+        return (e_number_t) {NULL, n};
       }
       case OCT: {
         bits = ALIGN32(digits * 3);
         PREPARE(g, n, bits);
         intern_set_oct(n, sign, len - (ps - str), ps);
-        return n;
+        return (e_number_t) {NULL, n};
       }
       case DEC: {
         const double cpb = 0.3010299956639812;
         bits = (digits / cpb);
         PREPARE(g, n, bits);
         intern_set_dec(n, sign, len - (ps - str), ps);
-        return n;
+        return (e_number_t) {NULL, n};
       }
       case HEX: {
         bits = ALIGN32(digits * 4);
         PREPARE(g, n, bits);
         intern_set_hex(n, sign, len - (ps - str), ps);
-        return n;
+        return (e_number_t) {NULL, n};
       }
       default: { goto abort; }
     }
   } else {
     PREPARE(g, n, 32);
     n->s = 0;
-    return n;
+    return (e_number_t) {NULL, n};
   }
 abort:
-  return NULL;
+  return (e_number_t) {err, NULL};
 }
 
-number_t * number_sethex(gc_global_t * g, number_t * n, gc_str_t * hex)
+e_number_t number_sethex(gc_global_t * g, number_t * n, gc_str_t * hex)
 {
   return number_setstrc(g, n, gc_str_len(hex), hex->data);
 }
@@ -409,11 +426,7 @@ uint32_t iabs(int32_t i)
 {
   return i > 0 ? i : -i;
 }
-
-#define alloc_buffer(_size) \
-  (void *) (((gc_hdr_t *) gc_new(g, &gc_blob_vtable, sizeof(gc_hdr_t) + (_size), 0)) + 1)
-
-gc_str_t * number_gethex(gc_global_t * g, number_t * n)
+e_gc_str_t number_gethex(gc_global_t * g, number_t * n)
 {
   uint32_t * d = n->data;
   uint32_t   len = 2;
@@ -426,7 +439,10 @@ gc_str_t * number_gethex(gc_global_t * g, number_t * n)
 
   len += s * 8;
 
-  buf = alloc_buffer(len + 1);
+  buf = malloc(len + 1);
+  if (!buf) {
+    return (e_gc_str_t) {err_return(ERR_MEM_ALLOC, "malloc() failed"), NULL};
+  }
   p = buf;
 
   if (n->s < 0) {
@@ -474,7 +490,9 @@ gc_str_t * number_gethex(gc_global_t * g, number_t * n)
     }
   }
 
-  return gc_new_str(g, p - buf, buf);
+  e_gc_str_t e = gc_new_str(g, p - buf, buf);
+  free(buf);
+  return e;
 }
 
 static const
@@ -497,7 +515,7 @@ uint32_t intern_lbz(uint32_t msl)
   return 32 + 1 - a - lbz_tab[msl >> a];
 }
 
-gc_str_t * number_getdec(gc_global_t * g, number_t * n)
+e_gc_str_t number_getdec(gc_global_t * g, number_t * n)
 {
   uint32_t s = iabs(n->s);
 
@@ -512,10 +530,17 @@ gc_str_t * number_getdec(gc_global_t * g, number_t * n)
     sz++;
   }
 
-  uint32_t * tn = alloc_buffer((s) * sizeof(uint32_t));
+  uint32_t * tn = malloc((s) * sizeof(uint32_t));
+  if (!tn) {
+    return (e_gc_str_t) {err_return(ERR_MEM_ALLOC, "malloc() failed"), NULL};
+  }
   memcpy(tn, n->data, s * sizeof(uint32_t));
 
-  char * buf = alloc_buffer(sz + 1), * p = buf + sz;
+  char * buf = malloc(sz + 1), * p = buf + sz;
+  if (!buf) {
+    free(tn);
+    return (e_gc_str_t) {err_return(ERR_MEM_ALLOC, "malloc() failed"), NULL};
+  }
 
   uint64_t r;
 
@@ -544,7 +569,10 @@ gc_str_t * number_getdec(gc_global_t * g, number_t * n)
     *(--p) = '-';
   }
 
-  return gc_new_str(g, sz - (p - buf), p);
+  e_gc_str_t e = gc_new_str(g, sz - (p - buf), p);
+  free(tn);
+  free(buf);
+  return e;
 }
 
 inline static
@@ -643,7 +671,7 @@ uint32_t intern_sub_dl(uint32_t au, uint32_t rd[au], uint32_t ad[au], uint32_t b
   return 0;
 }
 
-number_t * number_add(gc_global_t * g, number_t * a, number_t * b)
+e_number_t number_add(gc_global_t * g, number_t * a, number_t * b)
 {
   int32_t    as, bs, rs;
   uint32_t   au, bu;
@@ -668,7 +696,11 @@ number_t * number_add(gc_global_t * g, number_t * a, number_t * b)
   /* |a| >= |b| */
 
   rs = as + 1;
-  n = number_new(g, rs << 5);
+  e_number_t e = number_new(g, rs << 5);
+  if (e.err) {
+    return (e_number_t) {err_return(ERR_FAILURE, "number_new() failed"), NULL};
+  }
+  n = e.number;
   rd = n->data;
 
   if ((as ^ bs) < 0) { /* (0b1---) ^ (0b0---) = (0b1~~~)  < 0 */
@@ -687,10 +719,10 @@ number_t * number_add(gc_global_t * g, number_t * a, number_t * b)
     rs = (t = au + c, as < 0) ? -t : t;
   }
   n->s = rs;
-  return n;
+  return (e_number_t) {NULL, n};
 }
 
-number_t * number_sub(gc_global_t * g, number_t * a, number_t * b)
+e_number_t number_sub(gc_global_t * g, number_t * a, number_t * b)
 {
   int32_t    as, bs, rs;
   uint32_t   au, bu;
@@ -715,7 +747,11 @@ number_t * number_sub(gc_global_t * g, number_t * a, number_t * b)
   /* |a| >= |b| */
 
   rs = au + 1;
-  n = number_new(g, rs << 5);
+  e_number_t e = number_new(g, rs << 5);
+  if (e.err) {
+    return (e_number_t) {err_return(ERR_FAILURE, "number_new() failed"), NULL};
+  }
+  n = e.number;
   rd = n->data;
 
   if ((as ^ bs) < 0) { /* (0b1---) ^ (0b0---) = (0b1~~~)  < 0 */
@@ -734,7 +770,7 @@ number_t * number_sub(gc_global_t * g, number_t * a, number_t * b)
     rs = (t = au + c, as < 0) ? -t : t;
   }
   n->s = rs;
-  return n;
+  return (e_number_t) {NULL, n};
 }
 
 inline static
@@ -778,31 +814,36 @@ void intern_shr(uint32_t ru, uint32_t rd[ru], uint32_t au, uint32_t ad[au], uint
 }
 
 
-number_t * number_shl(gc_global_t * g, number_t * a, uint32_t s)
+e_number_t number_shl(gc_global_t * g, number_t * a, uint32_t s)
 {
   uint32_t au = iabs(a->s);
 
   if (au == 0) {
-    return a;
+    return (e_number_t) {NULL, a};
   }
 
   uint64_t bits = ALIGN32((uint64_t) au * 32 - intern_lbz(a->data[au - 1]) + s);
   uint32_t ru = bits >> 5;
-  number_t * r = number_new(g, bits);
+  number_t * r;
+  e_number_t e = number_new(g, bits);
+  if (e.err) {
+    return (e_number_t) {err_return(ERR_FAILURE, "number_new() failed"), NULL};
+  }
+  r = e.number;
 
   intern_shl(ru, r->data, au, a->data, s);
 
   r->s = (a->s < 0) ? -ru : ru;
 
-  return r;
+  return (e_number_t) {NULL, r};
 }
 
-number_t * number_shr(gc_global_t * g, number_t * a, uint32_t s)
+e_number_t number_shr(gc_global_t * g, number_t * a, uint32_t s)
 {
   uint32_t au = iabs(a->s);
 
   if (au == 0) {
-    return a;
+    return (e_number_t) {NULL, a};
   }
 
   uint64_t bits = (uint64_t) au * 32 - intern_lbz(a->data[au - 1]);
@@ -812,13 +853,18 @@ number_t * number_shr(gc_global_t * g, number_t * a, uint32_t s)
   bits = ALIGN32(bits - s);
   uint32_t ru = bits >> 5;
 
-  number_t * r = number_new(g, bits);
+  number_t * r;
+  e_number_t e = number_new(g, bits);
+  if (e.err) {
+    return (e_number_t) {err_return(ERR_FAILURE, "number_new() failed"), NULL};
+  }
+  r = e.number;
 
   intern_shr(ru, r->data, au, a->data, s);
 
   r->s = (a->s < 0) ? -ru : ru;
 
-  return r;
+  return (e_number_t) {NULL, r};
 }
 
 #ifdef TEST
@@ -865,15 +911,13 @@ BT_TEST_DEF(number, plain, object, "simple tests")
   gc_global_t * g = object;
 
   {
-    number_t * n;
-    gc_str_t * s;
-
 # define testnum(_A, _B) \
   do { \
-    n = number_setstrc(g, NULL, strlen(_A), (_A)); \
-    bt_assert_ptr_not_equal(n, NULL); \
-    s = number_gethex(g, n); \
-    bt_assert_str_equal(s->data, (_B)); \
+    e_number_t e = number_setstrc(g, NULL, strlen(_A), (_A)); \
+    bt_chkerr(e.err); \
+    e_gc_str_t ee = number_gethex(g, e.number); \
+    bt_chkerr(ee.err); \
+    bt_assert_str_equal(ee.gc_str->data, (_B)); \
     bt_log("number_setstrc: %s OK\n", (_A)); \
     gc_collect(g, 1); \
   } while (0)
@@ -910,15 +954,14 @@ BT_TEST_DEF(number, plain, object, "simple tests")
   }
 
   {
-    number_t * n;
-    gc_str_t * s;
 
 # define testnum(_A, _B) \
   do { \
-    n = number_setstrc(g, NULL, strlen(_A), (_A)); \
-    bt_assert_ptr_not_equal(n, NULL); \
-    s = number_getdec(g, n); \
-    bt_assert_str_equal(s->data, (_B)); \
+    e_number_t e = number_setstrc(g, NULL, strlen(_A), (_A)); \
+    bt_chkerr(e.err); \
+    e_gc_str_t ee = number_getdec(g, e.number); \
+    bt_chkerr(ee.err); \
+    bt_assert_str_equal(ee.gc_str->data, (_B)); \
     bt_log("number_setstrc: %s OK\n", (_A)); \
     gc_collect(g, 1); \
   } while (0)
@@ -952,21 +995,15 @@ BT_TEST_DEF(number, plain, object, "simple tests")
 
 # define testop(_N, _OP, _A, _B, _C) \
   do { \
-    number_t * c, * a, * b; \
-    gc_str_t * s; \
-    bt_assert_ptr_not_equal((a = number_new(g, (_N))), NULL); \
-    bt_assert_ptr_not_equal((a = number_setstrc(g, a, strlen(_A), (_A))), NULL); \
-    bt_assert_ptr_not_equal((s = number_gethex(g, a)), NULL); \
-    bt_assert_str_equal(s->data, (_A)); \
-    bt_assert_ptr_not_equal((b = number_new(g, (_N))), NULL); \
-    bt_assert_ptr_not_equal((b = number_setstrc(g, b, strlen(_B), (_B))), NULL); \
-    bt_assert_ptr_not_equal((s = number_gethex(g, b)), NULL); \
-    bt_assert_str_equal(s->data, (_B)); \
-    bt_assert_ptr_not_equal((c = _OP(g, a, b)), NULL); \
-    bt_assert_ptr_not_equal((s = number_gethex(g, c)), NULL); \
-    bt_assert_str_equal(s->data, (_C)); \
-    /*bt_log("number: %s = %s(%s, %s) == %s, OK\n", s->data, #_OP, (_A), (_B), (_C));*/ \
-    bt_log("%s: %s == %s, OK\n", # _OP, s->data, (_C)); \
+    e_number_t ea = number_new(g, (_N)); bt_chkerr(ea.err); \
+    ea = number_setstrc(g, ea.number, strlen(_A), (_A)); bt_chkerr(ea.err); \
+    e_gc_str_t es = number_gethex(g, ea.number); bt_chkerr(es.err); bt_assert_str_equal(es.gc_str->data, (_A)); \
+    e_number_t eb = number_new(g, (_N)); bt_chkerr(eb.err); \
+    eb = number_setstrc(g, eb.number, strlen(_B), (_B)); bt_chkerr(eb.err); \
+    es = number_gethex(g, eb.number); bt_chkerr(es.err); bt_assert_str_equal(es.gc_str->data, (_B)); \
+    e_number_t ec = _OP(g, ea.number, eb.number); bt_chkerr(ec.err); \
+    es = number_gethex(g, ec.number); bt_chkerr(es.err); bt_assert_str_equal(es.gc_str->data, (_C)); \
+    bt_log("%s: %s == %s, OK\n", # _OP, es.gc_str->data, (_C)); \
     gc_collect(g, 1); \
   } while (0)
 
@@ -998,17 +1035,12 @@ BT_TEST_DEF(number, plain, object, "simple tests")
 
 # define testbop(_N, _OP, _A, _B, _C) \
   do { \
-    number_t * c, * a; \
-    gc_str_t * s; \
-    bt_assert_ptr_not_equal((a = number_new(g, (_N))), NULL); \
-    bt_assert_ptr_not_equal((a = number_setstrc(g, a, strlen(_A), (_A))), NULL); \
-    bt_assert_ptr_not_equal((s = number_gethex(g, a)), NULL); \
-    bt_assert_str_equal(s->data, (_A)); \
-    bt_assert_ptr_not_equal((c = _OP(g, a, (_B))), NULL); \
-    bt_assert_ptr_not_equal((s = number_gethex(g, c)), NULL); \
-    bt_assert_str_equal(s->data, (_C)); \
-    /*bt_log("number: %s = %s(%s, %s) == %s, OK\n", s->data, #_OP, (_A), (_B), (_C));*/ \
-    bt_log("%s: %s == %s, OK\n", # _OP, s->data, (_C)); \
+    e_number_t ea = number_new(g, (_N)); bt_chkerr(ea.err); \
+    ea = number_setstrc(g, ea.number, strlen(_A), (_A)); bt_chkerr(ea.err); \
+    e_gc_str_t es = number_gethex(g, ea.number); bt_chkerr(es.err); bt_assert_str_equal(es.gc_str->data, (_A)); \
+    e_number_t ec = _OP(g, ea.number, (_B)); bt_chkerr(ec.err); \
+    es = number_gethex(g, ec.number); bt_chkerr(es.err); bt_assert_str_equal(es.gc_str->data, (_C)); \
+    bt_log("%s: %s == %s, OK\n", # _OP, es.gc_str->data, (_C)); \
     gc_collect(g, 1); \
   } while (0)
 

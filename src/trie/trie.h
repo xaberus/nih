@@ -31,10 +31,10 @@ struct tbank {
 };
 
 /* invariant: index == 0 implies node == NULL */
-struct tnode_tuple {
+typedef struct ttuple {
   tnode_t  * node;
   uint32_t   index;
-};
+} ttuple_t;
 
 typedef struct {
   uint16_t  addrbits;
@@ -52,14 +52,13 @@ typedef struct {
   uint32_t  freelist;
 } trie_t;
 
-
 /* (1 << nodebits) is the size of a bank in the trie, thus 0 < nodebits <= 16 */
-trie_t * trie_init(trie_t * trie, uint8_t nodebits);
-void     trie_clear(trie_t * trie);
+err_r    * trie_init(trie_t * trie, uint8_t nodebits);
+void       trie_clear(trie_t * trie);
 
-err_t    trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t data, bool rep);
-err_t    trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len]);
-err_t    trie_find(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t * data);
+err_r    * trie_insert(trie_t * trie, uint16_t len, const uint8_t word[len], uint64_t data, bool rep);
+err_r    * trie_delete(trie_t * trie, uint16_t len, const uint8_t word[len]);
+e_uint64_t trie_find(trie_t * trie, uint16_t len, const uint8_t word[len]);
 
 typedef struct {
   trie_t             * trie;
@@ -69,14 +68,14 @@ typedef struct {
   int32_t              spos;
   uint16_t             slen;
   uint16_t             aslen;
-  struct tnode_tuple * stride;
-  struct tnode_tuple   tuple;
+  ttuple_t * stride;
+  ttuple_t   tuple;
   unsigned             fsm; /* stop = 0, child = 1, next = 2 */
   uintptr_t            data;
-} trie_iter_t;
+} titer_t;
 
-trie_iter_t * trie_iter_init(trie_t * trie, trie_iter_t * iter);
-int           trie_iter_next(trie_iter_t * iter);
-void          trie_iter_clear(trie_iter_t * iter);
+void trie_iter_init(trie_t * trie, titer_t * iter);
+int  trie_iter_next(titer_t * iter);
+void trie_iter_clear(titer_t * iter);
 
 #endif /* _TRIE_H */

@@ -8,15 +8,19 @@
 #define GC_STACK_MIN 16
 
 static
-size_t gc_stack_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
+err_r * gc_stack_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
+  (void) g;
   gc_stack_t * s = (gc_stack_t *) o;
   (void) argc;
   (void) ap;
 
-  s->d = gc_mem_new(g, sizeof(gc_hdr_t *) * GC_STACK_MIN);
-  s->de = s->d + GC_STACK_MIN;
+  s->d = malloc(sizeof(gc_hdr_t *) * GC_STACK_MIN);
+  if (!s->d) {
+    return err_return(ERR_MEM_USE_ALLOC, "malloc() failed");
+  }
 
+  s->de = s->d + GC_STACK_MIN;
   s->dp = NULL; /* empty */
 
   return 0;
@@ -25,9 +29,10 @@ size_t gc_stack_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 static
 size_t gc_stack_clear(gc_global_t * g, gc_hdr_t * o)
 {
+  (void) g;
   gc_stack_t * s = (gc_stack_t *) o;
 
-  gc_mem_free(g, s->de - s->d, s->d);
+  free(s->d);
 
   return 0;
 }
@@ -57,7 +62,7 @@ gc_vtable_t gc_stack_vtable = {
   .gc_propagate = gc_stack_propagate,
 };
 
-void gc_stack_set(gc_global_t * g, gc_stack_t * s, size_t len)
+err_r * gc_stack_set(gc_stack_t * s, size_t len)
 {
   gc_hdr_t ** d;
   size_t alloc = s->de - s->d;
@@ -74,7 +79,10 @@ void gc_stack_set(gc_global_t * g, gc_stack_t * s, size_t len)
 
   if (len > alloc) {
     len = ALIGN16(len);
-    d = gc_mem_realloc(g, alloc * sizeof(gc_stack_t), len * sizeof(gc_stack_t), s->d);
+    d = realloc(s->d, len * sizeof(gc_stack_t));
+    if (!d) {
+      return err_return(ERR_MEM_REALLOC, "realloc() failed");
+    }
     if (s->dp) {
       s->dp = d + (s->dp - s->d);
     }
@@ -82,10 +90,11 @@ void gc_stack_set(gc_global_t * g, gc_stack_t * s, size_t len)
     s->de = d + len;
   }
   //fprintf(stderr, "       ->     [%+8p|%+8p|%+8p]\n", s->d, s->dp, s->de);
+  return NULL;
 }
 
 
-void gc_stack_pushf(gc_global_t * g, gc_stack_t * s, gc_hdr_t * h)
+err_r * gc_stack_pushf(gc_global_t * g, gc_stack_t * s, gc_hdr_t * h)
 {
   gc_hdr_t ** d;
   size_t alloc, len;
@@ -99,7 +108,10 @@ void gc_stack_pushf(gc_global_t * g, gc_stack_t * s, gc_hdr_t * h)
     } else {
       alloc = (s->de - s->d);
       len = ALIGN16(alloc + 1);
-      d = gc_mem_realloc(g, alloc * sizeof(gc_stack_t), len * sizeof(gc_stack_t), s->d);
+      d = realloc(s->d, len * sizeof(gc_stack_t));
+      if (!d) {
+        return err_return(ERR_MEM_REALLOC, "realloc() failed");
+      }
       s->dp = d + (s->dp - s->d);
       s->d = d;
       s->de = d + len;
@@ -109,6 +121,8 @@ void gc_stack_pushf(gc_global_t * g, gc_stack_t * s, gc_hdr_t * h)
   if (h) {
     gc_barrier(g, &s->gco, h);
   }
+
+  return NULL;
 }
 
 gc_hdr_t * gc_stack_top(gc_stack_t * s)
@@ -133,7 +147,7 @@ size_t gc_stack_size(gc_stack_t * s)
   return 0;
 }
 
-gc_str_t * gc_stack_strcat(gc_global_t * g, gc_stack_t * s)
+e_gc_str_t gc_stack_strcat(gc_global_t * g, gc_stack_t * s)
 {
   if (gc_stack_size(s)) {
     gc_hdr_t ** c;
@@ -153,7 +167,10 @@ gc_str_t * gc_stack_strcat(gc_global_t * g, gc_stack_t * s)
 
       sz = len + sizeof(gc_str_t) + 1;
 
-      b = gc_mem_new(g, sz); p = b->data;
+      b = malloc(sz); p = b->data;
+      if (!b) {
+        return (e_gc_str_t) {err_return(ERR_MEM_USE_ALLOC, "malloc() failed"), NULL};
+      }
 
       for (c = s->d; c <= s->dp; c++) {
         if ((*c)->vtable == &gc_str_vtable) {
@@ -173,8 +190,8 @@ gc_str_t * gc_stack_strcat(gc_global_t * g, gc_stack_t * s)
             if (is_dead(t, other_white(g))) {
               flip_white(t);
             }
-            gc_mem_free(g, sz, b);
-            return t;
+            free(b);
+            return (e_gc_str_t) {NULL, t};
           }
         }
         t = (gc_str_t *) GC_HDR(t)->next;
@@ -184,8 +201,11 @@ gc_str_t * gc_stack_strcat(gc_global_t * g, gc_stack_t * s)
       GC_HDR(b)->next = NULL;
       b->hash = h;
       b->data[len] = '\0';
-      intern_str(g, b, sz);
-      return b;
+      err_r * err = intern_str(g, b, sz);
+      if (err) {
+        return (e_gc_str_t) {err_return(ERR_FAILURE, "intern_str() failed"), NULL};
+      }
+      return (e_gc_str_t) {NULL, b};
     }
   }
 

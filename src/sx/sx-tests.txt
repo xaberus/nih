@@ -10,9 +10,13 @@ foo
       (h i j))
    (k l m n))
 
+(a b (a b c) d e f g h i j)
+
 (a b c)
 
 (s ('l' (u 16 le)) ('b' (u 16 be)))
+
+(keep () me () on () one ()                line)
 
 ; this is from http://sexpr.sourceforge.net
 (we should be able to have () arbitrary empty expressions () right?)
@@ -25,7 +29,7 @@ foo
 ;FIXME (single quote '(tells the parser to ignore what appears in here ")"))
 (thisissupposedtobeareallylongatomtotestthegrowingoftheparservaluebuffersoihopetoputabunchofgibberishherenowoksfhaskdjhflkewrhtlkwehtlksdfjhglskdfjhglsdkfjghlskdfjhgksdjfghlskdjfghlsdfhglsdkfjghgksdfjhglskdfjghlsdkfjghlsdkfjghsldkfjghslkdfjghlskjrhtlkwerjthlwkerjthwlkerjthwlerktjhwelrkjthwelkrjthwelkrtjhwlekrjthwelkrjthwlekrjthwlekjrthwlerkjthlwkerjthwlekrjthwlekrjthlwkerjthwlekrjthwlekrjthwlekrjthwlekrjthwlkerjthwlekrthwiuertyowieruytoweiurtyowierutywoeirutywoeirutywoeirutyoweirutyowiuertyoiweruylgjkhdlsdkjfghsdfng,mdfgnbs,fnmdbgbsbngfsngfnsd,fmngbsbfngbnmsfdbgs,bfmnfngnb,dfg hopefully that worked)
 (lets see if this ; this comment should be ignored
-; and so should this one, and their parens shouldn't mess things up 
+; and so should this one, and their parens shouldn't mess things up
 is ok)
 "another valid atom"
 '(yet another valid atom "to parse")

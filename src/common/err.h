@@ -13,6 +13,7 @@ enum err_type {
   ERR_FAILURE,
   ERR_CORRUPTION,
 
+  ERR_PROGRESS,
   ERR_ERRNO,
 
   /*  argument passing */
@@ -44,6 +45,7 @@ enum err_type {
   ERR_BUFFER_OVERFLOW,
 
   /* io errors */
+  ERR_NOT_FD,
   ERR_NOT_FILE,
   ERR_NOT_DIRECTORY,
   ERR_NOT_WRITEABLE,
@@ -60,14 +62,37 @@ enum err_type {
   ERR_SX_ATOM_END_GARBAGE,
 };
 
+typedef struct err_r {
+  err_t        err;
+  const char * file;
+  int          line;
+  const char * fun;
+  const char * msg;
+} err_r;
 
-typedef void (err_log_t)(void *, char format[], ...);
+#define err_return(_err, _msg) err_push((_err), __FILE__, __LINE__, __FUNCTION__, (_msg))
+err_r * err_push(err_t, const char *, int, const char *, const char *);
+err_r * err_pop();
+void    err_reset();
+void    err_report(int fd);
 
-extern err_log_t * err_logger;
-extern void      * err_logger_data;
+/* tuple */ typedef struct { err_r * err; size_t size; } e_size_t;
+/* tuple */ typedef struct { err_r * err; uint32_t uint32; } e_uint32_t;
+/* tuple */ typedef struct { err_r * err; uint64_t uint64; } e_uint64_t;
+/* tuple */ typedef struct { err_r * err; void * value; } e_void_t;
 
 #ifdef TEST
-#define bt_chkerr(__err) bt_assert_int_equal(__err, 0)
+#define bt_chkerr(_err) \
+  do { \
+    err_r * err = (_err); \
+    if (err) { \
+      err_report(STDOUT_FILENO); \
+      dprintf(STDOUT_FILENO, "->%s:%s:%d\n", \
+          __FILE__, __FUNCTION__, __LINE__); \
+      err_reset(); \
+      return BT_RESULT_FAIL; \
+    } \
+  } while(0)
 #endif /* TEST */
 
 #endif /* __ERR_H__ */

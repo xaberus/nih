@@ -6,7 +6,8 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <stdarg.h>
-#include <stdbool.h>
+
+#include "common/err.h"
 
 #define GC_FLAG_WHITE0 0x01
 #define GC_FLAG_WHITE1 0x02
@@ -96,10 +97,10 @@ struct gc_vtable {
   uint32_t     flag;
   const char * name;
   /* gc_hdr_t */
-  size_t       (* gc_init)(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap);
-  size_t       (* gc_clear)(gc_global_t * g, gc_hdr_t * o);
+  err_r * (* gc_init)(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap);
+  size_t  (* gc_clear)(gc_global_t * g, gc_hdr_t * o);
   /* gc_obj_t */
-  size_t       (* gc_propagate)(gc_global_t * g, gc_obj_t * o);
+  size_t  (* gc_propagate)(gc_global_t * g, gc_obj_t * o);
 };
 
 extern gc_vtable_t gc_blob_vtable;
@@ -110,16 +111,19 @@ enum gc_vt_flags {
   GC_VT_FLAG_STR = 0x04 | GC_VT_FLAG_HDR,
 };
 
-void       gc_init(gc_global_t * g);
+/*************************************************************************************************/
+
+err_r *    gc_init(gc_global_t * g);
 void       gc_clear(gc_global_t * g);
 
 size_t     gc_collect(gc_global_t * g, bool full);
 
-gc_str_t * gc_new_str(gc_global_t * g, uint32_t len, const char str[len]);
-gc_str_t * gc_new_strf(gc_global_t * g, const char * fmt, ...);
-void *     gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size, int argc, ...);
+/* tuple */ typedef struct { err_r * err; gc_str_t * gc_str; } e_gc_str_t;
+e_gc_str_t gc_new_str(gc_global_t * g, uint32_t len, const char str[len]);
+e_gc_str_t gc_new_strf(gc_global_t * g, const char * fmt, ...);
+e_void_t   gc_new(gc_global_t * g, gc_vtable_t * vtable, uint32_t size, int argc, ...);
 
-void       gc_add_root(gc_global_t * g, gc_obj_t * o);
+err_r    * gc_add_root(gc_global_t * g, gc_obj_t * o);
 void       gc_del_root(gc_global_t * g, gc_obj_t * o);
 
 void       gc_barrier_oh(gc_global_t * g, gc_obj_t * o, gc_hdr_t * h);
@@ -129,6 +133,8 @@ void       gc_barrier_back_o(gc_global_t * g, gc_obj_t * o);
 void       gc_mark_obj_i(gc_global_t * g, gc_obj_t * o);
 void       gc_mark_hdr_i(gc_global_t * g, gc_hdr_t * o);
 void       gc_mark_str_i(gc_global_t * g, gc_str_t * s);
+
+/*************************************************************************************************/
 
 inline static
 void gc_mark(gc_global_t * g, gc_hdr_t * o)
@@ -173,8 +179,5 @@ void gc_mark_str(gc_global_t * g, gc_str_t * s)
       gc_barrier_oh((_g), (_o), (_v)); \
     } \
   } while (0)
-
-
-#define gc_error(g, ...) ((void) g, assert(0))
 
 #endif /* _GC_H */

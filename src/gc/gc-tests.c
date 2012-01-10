@@ -24,7 +24,7 @@ typedef struct testobj {
 } testobj_t;
 
 static
-size_t testobj_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
+err_r * testobj_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
   (void) g;
   (void) argc;
@@ -36,7 +36,7 @@ size_t testobj_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   t->count = 0;
   t->flag = 1;
 
-  return 0;
+  return NULL;
 }
 
 static
@@ -79,7 +79,7 @@ BT_SUITE_SETUP_DEF(gc, objectref)
 
   bt_assert_ptr_not_equal(test, NULL);
 
-  gc_init(test->g);
+  bt_chkerr(gc_init(test->g));
 
   *objectref = test;
 
@@ -101,18 +101,30 @@ BT_TEST_DEF(gc, str, object, "string tests")
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;
-  gc_str_t       * s;
+
+#define checknstr(_n, _str, _s) \
+  do { \
+    const char * __str = (_str); \
+    uint32_t __n = (_n); \
+    e_gc_str_t __e = gc_new_str(g, __n, __str); \
+    bt_chkerr(__e.err); \
+    bt_assert_ptr_equal(__e.gc_str, (_s)); \
+  } while(0)
 
   bt_log("[gc:str] hash size: %u\n", g->strings.mask + 1);
-  s = gc_new_str(g, 3, "abc");
-  bt_assert_ptr_equal(gc_new_str(g, 3, "xabc" + 1), s);
-  bt_assert_ptr_equal(gc_new_str(g, 3, "xxabc" + 2), s);
-  bt_assert_ptr_equal(gc_new_str(g, 3, "xxxabc" + 3), s);
-  bt_assert_ptr_equal(gc_new_str(g, 3, "xxxxabc" + 4), s);
-  bt_assert_ptr_equal(gc_new_str(g, 3, "xxxxxabc" + 5), s);
-  bt_assert_ptr_equal(gc_new_str(g, 3, "xxxxxxabc" + 6), s);
-  bt_assert_ptr_equal(gc_new_str(g, 3, "xxxxxxxabc" + 7), s);
-  bt_assert_ptr_equal(gc_new_str(g, 3, "xxxxxxxxabc" + 8), s);
+
+  e_gc_str_t e = gc_new_str(g, 3, "abc");
+
+  checknstr(3, "xabc" + 1, e.gc_str);
+  checknstr(3, "xxabc" + 2, e.gc_str);
+  checknstr(3, "xxxabc" + 3, e.gc_str);
+  checknstr(3, "xxxxabc" + 4, e.gc_str);
+  checknstr(3, "xxxxxabc" + 5, e.gc_str);
+  checknstr(3, "xxxxxxabc" + 6, e.gc_str);
+  checknstr(3, "xxxxxxxabc" + 7, e.gc_str);
+  checknstr(3, "xxxxxxxxabc" + 8, e.gc_str);
+#undef checknstr
+
   bt_assert_int_equal(g->strings.count, 1);
   bt_log("[gc:str] alignment ok\n");
 
@@ -126,7 +138,8 @@ BT_TEST_DEF(gc, str, object, "string tests")
     }
 
     while (fgets(buf, 512, fp)) {
-      bt_assert_ptr_not_equal(gc_new_str(g, strlen(buf), buf), NULL);
+      e_gc_str_t e = gc_new_str(g, strlen(buf), buf);
+      bt_chkerr(e.err);
     }
     fclose(fp);
     bt_log("[gc:str] hash size: %u (%zu strings)\n", g->strings.mask + 1, g->strings.count);
@@ -145,32 +158,34 @@ BT_TEST_DEF(gc, pressure, object, "tests behaviour unter collect pressure")
   struct gc_test * test = object;
   gc_global_t    * g = test->g;
   testobj_t      * o;
+  e_void_t         e;
 
   bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
   bt_log("[GC] total: %zu\n", g->total);
 
-  o = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
-  gc_add_root(g, &o->gco);
+  e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); o = e.value;
+  bt_chkerr(gc_add_root(g, &o->gco));
 
   const unsigned   N = 10;
 
+  testobj_t * lj, * lk, * ll, * lm;
   for (unsigned j = 0; j < N; j++) {
-    testobj_t * lj = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
+    e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); lj = e.value;
     o->arr[o->count++] = (gc_hdr_t *) lj;
     obj_barrier(g, o, lj);
     gc_collect(g, 0);
     for (unsigned k = 0; k < N; k++) {
-      testobj_t * lk = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
+      e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); lk = e.value;
       lj->arr[lj->count++] = (gc_hdr_t *) lk;
       obj_barrier(g, lj, lk);
       gc_collect(g, 0);
       for (unsigned l = 0; l < N; l++) {
-        testobj_t * ll = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
+        e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); ll = e.value;
         lk->arr[lk->count++] = (gc_hdr_t *) ll;
         obj_barrier(g, lk, ll);
         gc_collect(g, 0);
         for (unsigned m = 0; m < N; m++) {
-          testobj_t * lm = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
+          e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); lm = e.value;
           ll->arr[ll->count++] = (gc_hdr_t *) lm;
           obj_barrier(g, ll, lm);
           gc_collect(g, 0);
@@ -192,13 +207,12 @@ BT_TEST_DEF(gc, cycles, object, "cycles should not matter at all")
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;
-  testobj_t      * a;
-  testobj_t      * b;
-  testobj_t      * c;
+  testobj_t      * a, * b, * c;
+  e_void_t       e;
 
-  a = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
-  b = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
-  c = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
+  e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); a = e.value;
+  e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); b = e.value;
+  e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); c = e.value;
 
   a->arr[a->count++] = (gc_hdr_t *) b;
   a->arr[a->count++] = (gc_hdr_t *) c;
@@ -218,22 +232,23 @@ BT_TEST_DEF(gc, misuse, object, "tests behaviour under collection misuse")
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;
-  testobj_t      * o;
+  testobj_t      * o, * lj, * lk;
+  e_void_t         e;
 
   bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
   bt_log("[GC] total: %zu\n", g->total);
 
-  o = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
+  e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); o = e.value;
   gc_add_root(g, &o->gco);
   for (unsigned j = 0; j < 20; j++) {
     gc_collect(g, 1);
-    testobj_t * lj = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
+    e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); lj = e.value;
     o->arr[o->count++] = (gc_hdr_t *) lj;
     obj_barrier(g, o, lj);
     gc_collect(g, 1);
     for (unsigned k = 0; k < 20; k++) {
       gc_collect(g, 1);
-      testobj_t * lk = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0);
+      e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); lk = e.value;
       lj->arr[lj->count++] = (gc_hdr_t *) lk;
       obj_barrier(g, lj, lk);
       gc_collect(g, 1);
@@ -276,38 +291,44 @@ BT_TEST_DEF(gc, general, object, "tests generalized behaviour")
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;
-  testobj_t      * o;
+  testobj_t      * o, * lj, * lk, * ll, * lm;
+  e_void_t         e;
+  e_gc_str_t       ee;
 
   bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
   bt_log("[GC] total: %zu\n", g->total);
 
-  o = gc_new(g, &testobj_genvtable, sizeof(testobj_t), 0);
+  e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); o = e.value;
   gc_add_root(g, &o->gco);
 
   const unsigned   N = 10;
 
   for (unsigned j = 0; j < N; j++) {
-    testobj_t * lj = gc_new(g, &testobj_genvtable, sizeof(testobj_t), 0);
+    e = gc_new(g, &testobj_genvtable, sizeof(testobj_t), 0); bt_chkerr(e.err); lj = e.value;
     o->arr[o->count++] = (gc_hdr_t *) lj;
-    o->arr[o->count++] = (gc_hdr_t *) gc_new_strf(g, "str after %x", (void *) lj);
+    ee = gc_new_strf(g, "str after %x", (void *) lj); bt_chkerr(ee.err);
+    o->arr[o->count++] = (gc_hdr_t *) ee.gc_str;
     obj_barrier(g, o, lj);
     gc_collect(g, 0);
     for (unsigned k = 0; k < N; k++) {
-      testobj_t * lk = gc_new(g, &testobj_genvtable, sizeof(testobj_t), 0);
+      e = gc_new(g, &testobj_genvtable, sizeof(testobj_t), 0); bt_chkerr(e.err); lk = e.value;
       lj->arr[lj->count++] = (gc_hdr_t *) lk;
-      lj->arr[lj->count++] = (gc_hdr_t *) gc_new_strf(g, "str after %x", (void *) lk);
+      ee = gc_new_strf(g, "str after %x", (void *) lk); bt_chkerr(ee.err);
+      lj->arr[lj->count++] = (gc_hdr_t *) ee.gc_str;
       obj_barrier(g, lj, lk);
       gc_collect(g, 0);
       for (unsigned l = 0; l < N; l++) {
-        testobj_t * ll = gc_new(g, &testobj_genvtable, sizeof(testobj_t), 0);
+        e = gc_new(g, &testobj_genvtable, sizeof(testobj_t), 0); bt_chkerr(e.err); ll = e.value;
         lk->arr[lk->count++] = (gc_hdr_t *) ll;
-        lk->arr[lk->count++] = (gc_hdr_t *) gc_new_strf(g, "str after %x", (void *) ll);
+        ee = gc_new_strf(g, "str after %x", (void *) ll); bt_chkerr(ee.err);
+        lk->arr[lk->count++] = (gc_hdr_t *) ee.gc_str;
         obj_barrier(g, lk, ll);
         gc_collect(g, 0);
         for (unsigned m = 0; m < N; m++) {
-          testobj_t * lm = gc_new(g, &testobj_genvtable, sizeof(testobj_t), 0);
+          e = gc_new(g, &testobj_genvtable, sizeof(testobj_t), 0); bt_chkerr(e.err); lm = e.value;
           ll->arr[ll->count++] = (gc_hdr_t *) lm;
-          ll->arr[ll->count++] = (gc_hdr_t *) gc_new_strf(g, "str after %x", (void *) lm);
+          ee = gc_new_strf(g, "str after %x", (void *) lm); bt_chkerr(ee.err);
+          ll->arr[ll->count++] = (gc_hdr_t *) ee.gc_str;
           obj_barrier(g, ll, lm);
           gc_collect(g, 0);
         }

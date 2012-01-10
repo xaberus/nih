@@ -3,7 +3,7 @@
 #include "sx.h"
 
 static
-size_t sx_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
+err_r * sx_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
   sx_t * x = (sx_t *) o;
   (void) g;
@@ -13,7 +13,7 @@ size_t sx_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   x->kind = SX_NONE;
   x->next = NULL;
 
-  return 0;
+  return NULL;
 }
 static
 size_t sx_propagate(gc_global_t * g, gc_obj_t * o)
@@ -48,10 +48,11 @@ typedef struct {
   uint32_t level;
 } wrec_t;
 
-static
-gc_str_t * levelstr(gc_global_t * g, uint32_t level)
+inline static
+e_gc_str_t levelstr(gc_global_t * g, uint32_t level)
 {
-  char buf[level]; memset(buf, ' ', level);
+  char buf[level];
+  memset(buf, ' ', level);
   return gc_new_str(g, level, buf);
 }
 
@@ -82,31 +83,202 @@ uint32_t atom_len(sx_t * a)
 }
 
 inline static
-int isatomlist(sx_t * x)
+uint32_t istail(sx_t * x)
+{
+  uint32_t c = 0, l = 0;
+  for (; x; x = x->next) {
+    if (!(x->kind & SX_ATOM)) {
+      return 0;
+    }
+    l += atom_len(x);
+    c++;
+  }
+  return (l < 40) ? c: 0;
+}
+
+
+inline static
+uint32_t isshortlist(sx_t * x)
 {
   assert(x->kind & SX_LIST);
   uint32_t c = 0, l = 0;
   for (sx_t * s = x->lst; s; s = s->next) {
     if (!(s->kind & SX_ATOM)) {
-      /*if ((s->kind & SX_LIST) && s->lst == NULL) {
-        l += 2;
-        s = s->next;
-        continue;
-      }*/
-      return 0;
+      if ((s->kind & SX_LIST)) {
+        if (s->lst == NULL) {
+          l += 2;
+          c++;
+          continue;
+        } else if(!s->lst->next) {
+          l += 5;
+          c++;
+          continue;
+        }
+      }
+      return 1;
     }
     l += atom_len(s);
     c++;
   }
-  return c >= 3 && l > 160;
+  if (l > 100) {
+    return 0;
+  }
+
+  if (c >= 2) {
+    return (l < 80) ? c : 1;
+  } else {
+    return (l < 30) ? 1 : 0;
+  }
 }
 
-uint32_t sx_writer(gc_global_t * g, gc_stack_t * st, sx_t * x, wrec_t * wr)
+#define ALIGN16(_size) (((_size) + 15L) & ~15L)
+
+err_r * sx_writer(gc_global_t * g, gc_stack_t * st, sx_t * x, wrec_t * wr)
 {
+  err_r * err = NULL;
+  uint32_t lva = 0;
+  uint32_t lvl = 0;
+  struct {
+    sx_t   * sx;
+    uint32_t indent;
+    uint32_t shortlist;
+  } * lvv = NULL;
+  uint32_t indent = 0;
+  uint32_t lastindent = 0;
+  uint32_t shortlist = 1;
+
+#define lwrite_lit(_s) \
+  do { \
+    e_gc_str_t e = gc_new_str(g, sizeof(_s) - 1, (_s)); \
+    if (e.err) { \
+      err = err_return(ERR_FAILURE, "gc_new_str() failed"); \
+      goto out; \
+    } \
+    if (gc_stack_push(g, st, e.gc_str)) { \
+      err = err_return(ERR_FAILURE, "gc_stack_push() failed"); \
+      goto out; \
+    } \
+  } while(0)
+
+#define lwrite_gc_str(_s) \
+  do { \
+    if (gc_stack_push(g, st, (_s))) { \
+      err = err_return(ERR_FAILURE, "gc_stack_push() failed"); \
+      goto out; \
+    } \
+  } while(0)
+
+#define lwrite_indent(_i) \
+  do { \
+    e_gc_str_t e = levelstr(g, (_i)); \
+    if (e.err) { \
+      err = err_return(ERR_FAILURE, "gc_new_str() failed"); \
+      goto out; \
+    } \
+    if (gc_stack_push(g, st, e.gc_str)) { \
+      err = err_return(ERR_FAILURE, "gc_stack_push() failed"); \
+      goto out; \
+    } \
+  } while(0)
+
+  while(x) {
+    switch (x->kind) {
+      case SX_PLAIN:
+        lastindent = indent;
+        lwrite_gc_str(x->str);
+        indent += gc_str_len(x->str);
+        break;
+      case SX_SQ:
+        lastindent = indent;
+        lwrite_lit("'"); indent++;
+        lwrite_gc_str(x->str); indent += gc_str_len(x->str);
+        lwrite_lit("'"); indent++;
+        break;
+      case SX_DQ:
+        lastindent = indent;
+        lwrite_lit("\""); indent++;
+        lwrite_gc_str(x->str); indent += gc_str_len(x->str);
+        lwrite_lit("\""); indent++;
+        break;
+      case SX_NUM: {
+        e_gc_str_t e = number_getdec(g, x->num);
+        if (e.err) {
+          err = err_return(ERR_FAILURE, "number_getdec() failed");
+          goto out;
+        }
+        lwrite_gc_str(e.gc_str); indent += gc_str_len(e.gc_str);
+        break;
+      }
+      case SX_NONE:
+      case SX_ATOM:
+        err = err_return(ERR_IN_INVALID, "incomplete sx tuple passed");
+        goto out;
+      case SX_LIST:
+        if (x->lst) {
+          if (lvl >= lva) {
+            lva = ALIGN16(lvl + 1);
+            void * tmp = realloc(lvv, lva * sizeof(lvv[0]));
+            if (!tmp) {
+              err = err_return(ERR_MEM_REALLOC, "realloc() failed");
+              goto out;
+            }
+            lvv = tmp;
+          }
+          lvv[lvl].sx = x; lvv[lvl].indent = indent; lvv[lvl].shortlist = shortlist; lvl++;
+          lwrite_lit("("); indent++;
+          lastindent = indent;
+          shortlist = isshortlist(x);
+          x = x->lst;
+          continue;
+        } else {
+          lastindent = indent;
+          lwrite_lit("()"); indent += 2;
+        }
+    }
+
+    x = x->next;
+    if (x) {
+      if (!shortlist) {
+        shortlist = istail(x);
+      }
+      if (shortlist) {
+        shortlist--;
+        lwrite_lit(" "); indent++;
+      } else {
+        lwrite_lit("\n");
+        indent = lastindent;
+        lwrite_indent(indent);
+      }
+    } else {
+      while (!x && lvl) {
+        lvl--; x = lvv[lvl].sx->next; indent = lvv[lvl].indent - 1; shortlist = lvv[lvl].shortlist;
+        lwrite_lit(")"); indent++;
+      }
+      if (shortlist) {
+        shortlist--;
+        lwrite_lit(" "); indent++;
+      } else {
+        lwrite_lit("\n");
+        lwrite_indent(indent);
+      }
+    }
+  }
+
+out:
+  free(lvv);
+
+  return err;
+}
+
+//e_uint32_t sx_writer(gc_global_t * g, gc_stack_t * st, sx_t * x, wrec_t * wr);
+/*{
   switch (x->kind) {
     case SX_LIST: {
       uint32_t level = wr->level;
-      gc_stack_push(g, st, gc_new_str(g, 1, "(")); wr->level++;
+      if (gc_stack_push(g, st, gc_new_str(g, 1, "("))) {
+        return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+      }
+      wr->level++;
       sx_t * c = x->lst;
 
       if (!isatomlist(x)) {
@@ -116,23 +288,37 @@ uint32_t sx_writer(gc_global_t * g, gc_stack_t * st, sx_t * x, wrec_t * wr)
         }
 
         if (c) {
-          gc_stack_push(g, st, gc_new_str(g, 1, " ")); wr->level++;
+          if (gc_stack_push(g, st, gc_new_str(g, 1, " "))) {
+            return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+          }
+          wr->level++;
           wr->level = sx_writer(g, st, c, wr);
           c = c->next;
         }
 
         while (c) {
           if ((c->kind & SX_ATOM)) {
-            gc_stack_push(g, st, gc_new_str(g, 1, " ")); wr->level++;
+            if (gc_stack_push(g, st, gc_new_str(g, 1, " "))) {
+              return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+            }
+            wr->level++;
             wr->level = sx_writer(g, st, c, wr);
           } else {
             if ((c->kind & SX_LIST) && !c->lst) {
-              gc_stack_push(g, st, gc_new_str(g, 1, " "));
-              gc_stack_push(g, st, gc_new_str(g, 2, "()"));
+              if (gc_stack_push(g, st, gc_new_str(g, 1, " "))) {
+                return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+              }
+              if (gc_stack_push(g, st, gc_new_str(g, 2, "()"))) {
+                return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+              }
               wr->level += 3;
             } else {
-              gc_stack_push(g, st, gc_new_str(g, 1, "\n"));
-              gc_stack_push(g, st, levelstr(g, wr->level));
+              if (gc_stack_push(g, st, gc_new_str(g, 1, "\n"))) {
+                return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+              }
+              if (gc_stack_push(g, st, levelstr(g, wr->level))) {
+                return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+              }
               wr->level = sx_writer(g, st, c, wr);
             }
           }
@@ -140,32 +326,54 @@ uint32_t sx_writer(gc_global_t * g, gc_stack_t * st, sx_t * x, wrec_t * wr)
         }
       } else {
         while (c) {
-          gc_stack_push(g, st, gc_new_str(g, 1, "\n"));
-          gc_stack_push(g, st, levelstr(g, wr->level));
+          if (gc_stack_push(g, st, gc_new_str(g, 1, "\n"))) {
+            return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+          }
+          if (gc_stack_push(g, st, levelstr(g, wr->level))) {
+            return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+          }
           sx_writer(g, st, c, wr);
           c = c->next;
         }
       }
-      gc_stack_push(g, st, gc_new_str(g, 1, ")"));
+      if (gc_stack_push(g, st, gc_new_str(g, 1, ")"))) {
+        return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+      }
       wr->level = level;
       return level;
       break;
     }
     case SX_PLAIN:
-      gc_stack_push(g, st, x->str);
+      if (gc_stack_push(g, st, x->str)) {
+        return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+      }
       return wr->level + gc_str_len(x->str);
     case SX_SQ:
-      gc_stack_push(g, st, gc_new_str(g, 1, "'"));
-      gc_stack_push(g, st, x->str);
-      gc_stack_push(g, st, gc_new_str(g, 1, "'"));
+      if (gc_stack_push(g, st, gc_new_str(g, 1, "'"))) {
+        return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+      }
+      if (gc_stack_push(g, st, x->str)) {
+        return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+      }
+      if (gc_stack_push(g, st, gc_new_str(g, 1, "'"))) {
+        return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+      }
       return wr->level + gc_str_len(x->str) + 2;
     case SX_DQ:
-      gc_stack_push(g, st, gc_new_str(g, 1, "\""));
-      gc_stack_push(g, st, x->str);
-      gc_stack_push(g, st, gc_new_str(g, 1, "\""));
+      if (gc_stack_push(g, st, gc_new_str(g, 1, "\""))) {
+        return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+      }
+      if (gc_stack_push(g, st, x->str)) {
+        return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+      }
+      if (gc_stack_push(g, st, gc_new_str(g, 1, "\""))) {
+        return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+      }
       return wr->level + gc_str_len(x->str) + 2;
     case SX_NUM: {
-      gc_stack_push(g, st, number_getdec(g, x->num));
+      if (gc_stack_push(g, st, number_getdec(g, x->num))) {
+        return (e_uint32_t) {err_return(ERR_FAILURE, "gc_stack_push() failed"), 0};
+      }
       return wr->level + gc_str_len((gc_str_t *) gc_stack_top(st));
     }
     case SX_NONE:
@@ -175,28 +383,38 @@ uint32_t sx_writer(gc_global_t * g, gc_stack_t * st, sx_t * x, wrec_t * wr)
       break;
   }
   return 0;
-}
+}*/
 
-gc_str_t * sx_dump(gc_global_t * g, sx_t * x)
+e_gc_str_t sx_dump(gc_global_t * g, sx_t * x)
 {
-  gc_stack_t * st = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t), 0);
+  gc_stack_t * st;
   wrec_t       wr = {0};
 
-  sx_writer(g, st, x, &wr);
+  {
+    e_void_t e = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t), 0);
+    if (e.err) {
+      return (e_gc_str_t) {err_return(ERR_FAILURE, "could not create a new gc-stack"), NULL};
+    }
+    st = e.value;
+  }
+
+  if (sx_writer(g, st, x, &wr)) {
+    return (e_gc_str_t) {err_return(ERR_FAILURE, "sx_writer() failed"), NULL};
+  }
 
   return gc_stack_strcat(g, st);
 }
 
 /**************************************************/
 
-typedef int (sxb_evfn_t)(gc_global_t * g, sxb_t * b);
+typedef err_r * (sxb_evfn_t)(gc_global_t * g, sxb_t * b);
 
 typedef __typeof__(((sxb_t *) NULL)->ag) ag_t;
 typedef __typeof__(((sxb_t *) NULL)->sg) sg_t;
 
 #define ALIGN16(_size) (((_size) + 15L) & ~15L)
 
-void ag_append(ag_t * a, size_t len, const char str[len])
+err_r * ag_append(ag_t * a, size_t len, const char str[len])
 {
   size_t alloc = a->se - a->s;
   size_t rest = a->se - a->sp;
@@ -204,11 +422,18 @@ void ag_append(ag_t * a, size_t len, const char str[len])
   if (!a->s) {
     rest = alloc = ALIGN16(len);
     a->s = a->sp = malloc(alloc);
+    if (!a->s) {
+      return err_return(ERR_MEM_ALLOC, "malloc() failed");
+    }
     a->se = a->s + alloc;
   } else if (rest < len) {
     size_t o = a->sp - a->s;
     size_t n = alloc << 1;
-    a->s = realloc(a->s, n);
+    void * tmp = realloc(a->s, n);
+    if (!tmp) {
+      return err_return(ERR_MEM_REALLOC, "realloc() failed");
+    }
+    a->s = tmp;
     a->sp = a->s + o;
     a->se = a->s + n;
   }
@@ -216,10 +441,12 @@ void ag_append(ag_t * a, size_t len, const char str[len])
   memcpy(a->sp, str, len);
 
   a->sp += len;
+
+  return NULL;
 }
 
 static
-size_t sxb_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
+err_r * sxb_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
   sxb_t * b = (sxb_t *) o;
   (void) g;
@@ -239,9 +466,15 @@ size_t sxb_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 
   b->last = b->root = NULL;
   b->cue = NULL;
-  b->stack = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t), 0);
+  {
+    e_void_t e = gc_new(g, &gc_stack_vtable, sizeof(gc_stack_t), 0);
+    if (e.err) {
+      return err_return(ERR_FAILURE, "gc_new() failed");
+    }
+    b->stack = e.value;
+  }
 
-  return 0;
+  return NULL;
 }
 
 static
@@ -277,37 +510,65 @@ gc_vtable_t sxb_vtable = {
 
 
 
-sxb_t * sxb_new(gc_global_t * g)
+e_sxb_t sxb_new(gc_global_t * g)
 {
-  return gc_new(g, &sxb_vtable, sizeof(sxb_t), 0);
+  e_void_t e = gc_new(g, &sxb_vtable, sizeof(sxb_t), 0);
+  if (e.err) {
+    return (e_sxb_t) {err_return(ERR_FAILURE, "gc_new() failed"), NULL};
+  }
+  return (e_sxb_t) {NULL, e.value};
 }
 
 inline static
-sx_t * new_list(gc_global_t * g)
+e_sx_t new_list(gc_global_t * g)
 {
-  sx_t * x = gc_new(g, &sx_vtable, sizeof(sx_t), 0);
+  e_void_t e = gc_new(g, &sx_vtable, sizeof(sx_t), 0);
+  if (e.err) {
+    return (e_sx_t) {err_return(ERR_FAILURE, "gc_new() failed"), NULL};
+  }
+  sx_t * x = e.value;
   x->kind = SX_LIST;
   x->lst = NULL;
-  return x;
+  return (e_sx_t) {NULL, x};
 }
 
 
 inline static
-sx_t * new_atom(gc_global_t * g, sxb_t * b)
+e_sx_t new_atom(gc_global_t * g, sxb_t * b)
 {
-  sx_t * x = gc_new(g, &sx_vtable, sizeof(sx_t), 0);
+  sx_t * x;
+  {
+    e_void_t e = gc_new(g, &sx_vtable, sizeof(sx_t), 0);
+    if (e.err) {
+      return (e_sx_t) {err_return(ERR_FAILURE, "gc_new() failed"), NULL};
+    }
+    x = e.value;
+  }
+
   if (b->at == SX_PLAIN) {
-    number_t * n = number_setstrc(g, NULL, b->ag.sp - b->ag.s, b->ag.s);
-    if (n) {
+    size_t len = b->ag.sp - b->ag.s;
+    char * str = b->ag.s;
+    if (len && *str >= '0' && *str <= '9') {
+      e_number_t e = number_setstrc(g, NULL, len, str);
+      if (e.err) {
+        return (e_sx_t) {err_return(ERR_FAILURE, "gc_new() failed"), NULL};
+      }
       x->kind = SX_NUM;
-      x->num = n;
-      return x;
+      x->num = e.number;
+      return (e_sx_t) {NULL, x};
     }
   }
 
   x->kind = b->at;
-  x->str = gc_new_str(g, b->ag.sp - b->ag.s, b->ag.s);
-  return x;
+
+  {
+    e_gc_str_t e = gc_new_str(g, b->ag.sp - b->ag.s, b->ag.s);
+    if (e.err) {
+      return (e_sx_t) {err_return(ERR_FAILURE, "gc_new_str() failed"), NULL};
+    }
+    x->str = e.gc_str;
+  }
+  return (e_sx_t) {NULL, x};
 }
 
 inline static
@@ -331,29 +592,35 @@ void ajoin(sxb_t * b, sx_t * x)
   }
 }
 
-int sxb_default_events(gc_global_t * g, sxb_t * b)
+err_r * sxb_default_events(gc_global_t * g, sxb_t * b)
 {
-  sx_t * top, * x;
-
   switch (b->s) {
     case SXBS_LIST_START: {
-      x = new_list(g);
-      ajoin(b, x);
-      gc_stack_push(g, b->stack, GC_HDR(x));
+      e_sx_t e = new_list(g);
+      if (e.err) {
+        return err_return(ERR_FAILURE, "new_list() failed");
+      }
+      ajoin(b, e.sx);
+      if (gc_stack_push(g, b->stack, GC_HDR(e.sx))) {
+        return err_return(ERR_FAILURE, "gc_stack_push() failed");
+      }
       b->cue = NULL;
     } break;
 
     case SXBS_LIST_END: {
-      top = (sx_t *) gc_stack_pop(b->stack);
+      sx_t * top = (sx_t *) gc_stack_pop(b->stack);
       assert(top && top->kind == SX_LIST);
       b->cue = top;
     } break;
     case SXBS_ATOM_START: {
     } break;
     case SXBS_ATOM_END: {
-      x = new_atom(g, b);
-      ajoin(b, x);
-      b->cue = x;
+      e_sx_t e = new_atom(g, b);
+      if (e.err) {
+        return err_return(ERR_FAILURE, "new_atom() failed");
+      }
+      ajoin(b, e.sx);
+      b->cue = e.sx;
 #if 0
       uint32_t s = 0, u = 0;
       uint8_t mb[8], l = 0;
@@ -421,9 +688,10 @@ int u_iswhite(uint32_t c)
   return 0;
 }
 
-int sxb_ev(gc_global_t * g, sxb_t * b, sxb_evfn_t * evfn)
+err_r * sxb_ev(gc_global_t * g, sxb_t * b, sxb_evfn_t * evfn)
 {
   uint32_t c;
+  err_r  * err = NULL;
 
 loop:
   while ((c = sxb_getc(b))) {
@@ -450,8 +718,15 @@ loop:
   } while (0)
 #define L(...) // fprintf(stderr, __VA_ARGS__);
 
+#define TE(_msg) \
+  do { \
+    err = err_return(ERR_IN_INVALID, (_msg)); \
+    b->s = SXBS_ERROR; \
+    goto trans; \
+  } while (0)
+
 trans:
-    switch (b->s) {
+    switch ((sxbs_t) b->s) {
       case SXBS_START: {
         L("### START: ['%c']\n", c);
         TA(SXBS_INTERMEDIATE);
@@ -471,20 +746,20 @@ trans:
       }
       case SXBS_LIST_START: {
         L("### LIST_START: ['%c']\n", c);
-        if (evfn(g, b))    { TA(SXBS_ERROR); } b->depth++;
+        if (evfn(g, b))    { TE("evfn(LIST_START) failed"); } b->depth++;
         TC(SXBS_INTERMEDIATE);
       }
       case SXBS_LIST_END: {
         L("### LIST_END: ['%c']\n", c);
-        if (b->depth == 0) { TA(SXBS_ERROR); } b->depth--;
-        if (evfn(g, b))    { TA(SXBS_ERROR); }
+        if (b->depth == 0) { TE("unmatcher parenthesis"); } b->depth--;
+        if (evfn(g, b))    { TE("evfn(LIST_END) failed"); }
         TC(SXBS_INTERMEDIATE);
       }
       case SXBS_ATOM_START: {
         L("### ATOM_START: ['%c']\n", c);
         b->ag.sp = b->ag.s;
         b->aline = b->line;
-        if (evfn(g, b))    { TA(SXBS_ERROR); }
+        if (evfn(g, b))    { TE("evfn(ATOM_START) failed"); }
         if (c == '"' || c == '\'') {
           b->sg.ss = c;
           b->at = (c == '"') ? SX_DQ : SX_SQ;
@@ -645,46 +920,62 @@ trans:
       /***********************************************************/
       case SXBS_ATOM_END: {
         L("### ATOM_END\n");
-        if (evfn(g, b))    { TA(SXBS_ERROR); }
+        if (evfn(g, b))    { TE("evfn(ATOM_END) failed"); }
         b->at = SX_NONE;
         TA(SXBS_INTERMEDIATE);
       }
-      case SXBS_ERROR: {
-        L("### ERROR: ['%c']\n", c);
-        assert(0);
-      }
       case SXBS_EOB: {
-        L("### EOB\n");
-        assert(0);
-        return 0;
+        TE("unexpected end of buffer");
+      }
+      case SXBS_ERROR: {
+        return err;
       }
     }
   }
 #undef TA
 #undef TC
-  return 0;
+#undef TE
+  return NULL;
 }
 
 inline static
-sx_t * sxb_read_len(gc_global_t * g, sxb_t * b, uint32_t len, const char str[len])
+err_r * sxb_read_len(gc_global_t * g, sxb_t * b, uint32_t len, const char str[len])
 {
   b->b = str;
   b->bp = str;
   b->be = str + len;
 
-  sxb_ev(g, b, sxb_default_events);
+  if(sxb_ev(g, b, sxb_default_events)) {
+    return err_return(ERR_FAILURE, "sxb_ev() failed");
+  }
+
+  return NULL;
+}
+
+inline static
+sx_t * sxb_sparate_root(sxb_t * b)
+{
   if (b->depth == 0) {
     sx_t * r = b->root;
     b->root = NULL;
     b->cue = NULL;
     return r;
   }
+
   return NULL;
 }
 
-sx_t * sxb_read(gc_global_t * g, sxb_t * b, gc_str_t * s)
+e_sx_t sxb_read(gc_global_t * g, sxb_t * b, gc_str_t * s)
 {
-  return sxb_read_len(g, b, gc_str_len(s), s->data);
+  if (sxb_read_len(g, b, gc_str_len(s), s->data)) {
+    return (e_sx_t) {err_return(ERR_PROGRESS, "sxb_read_len() failed"), NULL};
+  }
+  sx_t * x = sxb_sparate_root(b);
+  if (!x) {
+    return (e_sx_t) {err_return(ERR_PROGRESS, "buffer ended before anything was decoded"), NULL};
+  }
+
+  return (e_sx_t) {NULL, x};
 }
 #ifdef TEST
 /*▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢*/
@@ -727,9 +1018,13 @@ BT_SUITE_TEARDOWN_DEF(sx, objectref)
 BT_TEST_DEF(sx, plain, object, "simple tests")
 {
   gc_global_t * g = object;
-  sx_t * s;
 
-  sxb_t * b = sxb_new(g);
+  sxb_t * b;
+  {
+    e_sxb_t e = sxb_new(g);
+    bt_chkerr(e.err);
+    b = e.sxb;
+  }
 
 #define sxb_reads(_g, _b, _cstr) sxb_read((_g), (_b), gc_new_str(g, strlen(_cstr), _cstr))
 
@@ -749,10 +1044,12 @@ BT_TEST_DEF(sx, plain, object, "simple tests")
 
   while ((l = fread(buf, 1, 512, fp))) {
     for (char * p = buf, * pe = p + l; p < pe; p++) {
-      s = sxb_read_len(g, b, 1, p);
+      bt_chkerr(sxb_read_len(g, b, 1, p));
+      sx_t * s = sxb_sparate_root(b);
       if (s) {
-        gc_str_t * p = sx_dump(g, s);
-        bt_log("%s\n", p->data);
+        e_gc_str_t ee = sx_dump(g, s);
+        bt_chkerr(ee.err);
+        bt_log("%s\n", ee.gc_str->data);
       }
     }
   }
