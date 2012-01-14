@@ -1,3 +1,6 @@
+#ifndef _STORE_H
+#define _STORE_H
+
 #include "common/err.h"
 #include "trie/trie.h"
 #include "gc/gc.h"
@@ -77,6 +80,7 @@ struct spmap {
 };
 
 typedef struct sdrec {
+  err_r   * err;
   srid_t    id;   /* record id */
   uint16_t  size; /* record size */
   uint16_t  flag; /* record flags */
@@ -93,15 +97,17 @@ typedef struct spman {
   uint32_t  anum;    /* page to start seeking for free slots */
 } spman_t;
 
-spman_t * spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt);
+err_r *   spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt);
 int       spman_clear(spman_t * pm);
 
-spmap_t * spman_load(spman_t * pm, uint32_t pnum);
+/* tuple */ typedef struct { err_r * err; spmap_t * spmap; } e_spmap_t;
+e_spmap_t spman_load(spman_t * pm, uint32_t pnum);
 spmap_t * spman_ref(spman_t * pm, spmap_t * m);
 void      spman_unref(spman_t * pm, spmap_t * m);
 
-sdrec_t   spman_add(spman_t * pm, uint16_t size, uint16_t usage);
-sdrec_t   spman_get(spman_t * pm, srid_t id);
+/* tuple */ typedef struct { err_r * err; sdrec_t sdrec; } e_sdrec_t;
+e_sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage);
+e_sdrec_t spman_get(spman_t * pm, srid_t id);
 
 
 typedef enum skind {
@@ -159,13 +165,14 @@ typedef struct store {
 } store_t;
 
 
-store_t  * store_init(store_t * s, const char path[]);
-void       store_clear(store_t * s);
+err_r * store_init(store_t * s, const char path[]);
+void    store_clear(store_t * s);
 
 /* CLASS SLOT:  rec@cmeta u16@fcnt (kind@fkind rec@fmeta)[fcnt] */
 
-sclass_t * store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t flds[fcnt]);
-sclass_t * store_get_class(store_t * s, srid_t id);
+/* tuple */ typedef struct { err_r * err; sclass_t * sclass; } e_sclass_t;
+e_sclass_t store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t flds[fcnt]);
+e_sclass_t store_get_class(store_t * s, srid_t id);
 
 /* OBJECT SLOT: class@sc field<sc.fields[0].kind> ... field<sc.fields[sc.cnt].kind> */
 
@@ -174,5 +181,8 @@ sclass_t * store_get_class(store_t * s, srid_t id);
 /* field<OBJECT>: rec@value */
 /* field<CLASS>: class@value */
 
-smrec_t  * store_add_object(store_t * s, sclass_t * c, ...);
-smrec_t  * store_get_object(store_t * s, srid_t id);
+/* tuple */ typedef struct { err_r * err; smrec_t * smrec; } e_smrec_t;
+e_smrec_t store_add_object(store_t * s, sclass_t * c, ...);
+e_smrec_t store_get_object(store_t * s, srid_t id);
+
+#endif /* _STORE_H */

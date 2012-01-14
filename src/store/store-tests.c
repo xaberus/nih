@@ -68,7 +68,7 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
     }
   }
 
-  bt_assert_ptr_not_equal(spman_init(test->pm, test->fd, 0, test->num), NULL);
+  bt_chkerr(spman_init(test->pm, test->fd, 0, test->num));
 
   bt_log("[spman] initial store size is %u pages\n", test->pm->cnt);
 
@@ -83,12 +83,10 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 
   bt_log("[spman] page identity\n");
   {
-    spmap_t * m1 = spman_load(pm, test->num / 2);
-    void * p1 = m1->page;
-    spmap_t * m2 = spman_load(pm, test->num / 2);
-    void * p2 = m2->page;
-    bt_assert_ptr_equal(m1, m2);
-    bt_assert_ptr_equal(p1, p2);
+    e_spmap_t e1 = spman_load(pm, test->num / 2); bt_chkerr(e1.err);
+    e_spmap_t e2 = spman_load(pm, test->num / 2); bt_chkerr(e1.err);
+    bt_assert_ptr_equal(e1.spmap, e2.spmap);
+    bt_assert_ptr_equal(e1.spmap->page, e2.spmap->page);
   }
 
 #define chunk 60
@@ -98,15 +96,15 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 
   bt_log("[spman] allocate %u chunks %u bytes each\n", sgmo, chunk);
   for (uint32_t k = 0; k < sgmo; k++) {
-    sdrec_t r = spman_add(pm, chunk, 0);
-    bt_assert_int_not_equal(r.id, SRID_NIL);
-    bt_assert(r.size >= chunk);
-    bt_assert_ptr_not_equal(r.slot, NULL);
+    e_sdrec_t e = spman_add(pm, chunk, 0); bt_chkerr(e.err);
+    bt_assert_int_not_equal(e.sdrec.id, SRID_NIL);
+    bt_assert(e.sdrec.size >= chunk);
+    bt_assert_ptr_not_equal(e.sdrec.slot, NULL);
     /*bt_log("add id: %u %u, size:%u\n",
-      (r.id & STORE_PAGEMASK) >> STORE_SLOTBITS,
-      r.id & STORE_SLOTMASK, r.size);*/
-    memset(r.slot, k % 26 + 'a', r.size);
-    vel[k] = r.id;
+      (e.sdrec.id & STORE_PAGEMASK) >> STORE_SLOTBITS,
+      e.sdrec.id & STORE_SLOTMASK, e.sdrec.size);*/
+    memset(e.sdrec.slot, k % 26 + 'a', e.sdrec.size);
+    vel[k] = e.sdrec.id;
   }
 
 #ifdef TESTPROF
@@ -118,9 +116,9 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
     /*bt_log("get id: %u %u\n",
       (id & STORE_PAGEMASK) >> STORE_SLOTBITS,
       id & STORE_SLOTMASK);*/
-    sdrec_t r = spman_get(pm, id);
-    r.map->inuse = rand() % 1000;
-    bt_assert_int_equal(r.id, id);
+    e_sdrec_t e = spman_get(pm, id);
+    e.sdrec.map->inuse = rand() % 1000;
+    bt_assert_int_equal(e.sdrec.id, id);
   }
 #ifdef TESTPROF
   ProfilerStop();
@@ -156,7 +154,7 @@ BT_SUITE_SETUP_DEF(store, objectref)
   bt_assert_ptr_not_equal(test, NULL);
 
   unlink(store_test_path);
-  bt_assert_ptr_not_equal(store_init(test->s, store_test_path), NULL);
+  bt_chkerr(store_init(test->s, store_test_path));
 
   *objectref = test;
   return BT_RESULT_OK;
@@ -171,25 +169,23 @@ BT_TEST_DEF(store, type_i32, object, "type tests for the storage engine")
     {SKIND_INT32, NULL},
     {SKIND_INT32, NULL},
   };
-  sclass_t * ctuple = store_add_class(test->s, NULL, 3, v);
-  bt_assert_ptr_not_equal(ctuple, NULL);
+  e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
+  sclass_t * ctuple = e.sclass;
 
-  smrec_t * val0 = store_add_object(test->s, ctuple,
+  e_smrec_t val0 = store_add_object(test->s, ctuple,
     -559038737, -559038737, -559038737
   );
-  bt_assert_ptr_not_equal(val0, NULL);
+  bt_chkerr(val0.err);
 
-  smrec_t * val1 = store_add_object(test->s, ctuple,
+  e_smrec_t val1 = store_add_object(test->s, ctuple,
     -559038737, -559038737, -559038737
   );
-  bt_assert_ptr_not_equal(val1, NULL);
+  bt_chkerr(val1.err);
 
-  smrec_t * val2 = store_add_object(test->s, ctuple,
+  e_smrec_t val2 = store_add_object(test->s, ctuple,
     -559038737, -559038737, -559038737
   );
-  bt_assert_ptr_not_equal(val2, NULL);
-
-  sdrec_t r;
+  bt_chkerr(val2.err);
 
   const uint8_t ccmp[] =
     "\xff\xff\xff\xff" // meta = nil
@@ -199,10 +195,9 @@ BT_TEST_DEF(store, type_i32, object, "type tests for the storage engine")
     "\x00\x00" "\xff\xff\xff\xff" // (SKIND_INT32, nil)
   ;
 
-  r = spman_get(&test->s->pm, ctuple->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 24);
-  bt_assert(memcmp(r.slot, ccmp, 24) == 0);
+  e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 24);
+  bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -211,24 +206,22 @@ BT_TEST_DEF(store, type_i32, object, "type tests for the storage engine")
     "\xef\xbe\xad\xde"
   ;
 
-  r = spman_get(&test->s->pm, val0->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 16);
-  bt_assert(memcmp(r.slot, cmp, 16) == 0);
+  er = spman_get(&test->s->pm, val0.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 16);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 16) == 0);
 
-  r = spman_get(&test->s->pm, val1->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 16);
-  bt_assert(memcmp(r.slot, cmp, 16) == 0);
+  er = spman_get(&test->s->pm, val1.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 16);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 16) == 0);
 
-  r = spman_get(&test->s->pm, val2->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 16);
-  bt_assert(memcmp(r.slot, cmp, 16) == 0);
+  er = spman_get(&test->s->pm, val2.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 16);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 16) == 0);
 
   return BT_RESULT_OK;
 }
 
+#if 1
 BT_TEST_DEF(store, type_u32, object, "type tests for the storage engine")
 {
   struct store_test * test = object;
@@ -238,25 +231,23 @@ BT_TEST_DEF(store, type_u32, object, "type tests for the storage engine")
     {SKIND_UINT32, NULL},
     {SKIND_UINT32, NULL},
   };
-  sclass_t * ctuple = store_add_class(test->s, NULL, 3, v);
-  bt_assert_ptr_not_equal(ctuple, NULL);
+  e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
+  sclass_t * ctuple = e.sclass;
 
-  smrec_t * val0 = store_add_object(test->s, ctuple,
+  e_smrec_t val0 = store_add_object(test->s, ctuple,
     0xdeadbeef, 0xdeadbeef, 0xdeadbeef
   );
-  bt_assert_ptr_not_equal(val0, NULL);
+  bt_chkerr(val0.err);
 
-  smrec_t * val1 = store_add_object(test->s, ctuple,
+  e_smrec_t val1 = store_add_object(test->s, ctuple,
     0xdeadbeef, 0xdeadbeef, 0xdeadbeef
   );
-  bt_assert_ptr_not_equal(val1, NULL);
+  bt_chkerr(val1.err);
 
-  smrec_t * val2 = store_add_object(test->s, ctuple,
+  e_smrec_t val2 = store_add_object(test->s, ctuple,
     0xdeadbeef, 0xdeadbeef, 0xdeadbeef
   );
-  bt_assert_ptr_not_equal(val2, NULL);
-
-  sdrec_t r;
+  bt_chkerr(val2.err);
 
   const uint8_t ccmp[] =
     "\xff\xff\xff\xff" // meta = nil
@@ -266,10 +257,9 @@ BT_TEST_DEF(store, type_u32, object, "type tests for the storage engine")
     "\x02\x00" "\xff\xff\xff\xff" // (SKIND_UINT32, nil)
   ;
 
-  r = spman_get(&test->s->pm, ctuple->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 24);
-  bt_assert(memcmp(r.slot, ccmp, 24) == 0);
+  e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 24);
+  bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -278,20 +268,17 @@ BT_TEST_DEF(store, type_u32, object, "type tests for the storage engine")
     "\xef\xbe\xad\xde"
   ;
 
-  r = spman_get(&test->s->pm, val0->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 16);
-  bt_assert(memcmp(r.slot, cmp, 16) == 0);
+  er = spman_get(&test->s->pm, val0.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 16);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 16) == 0);
 
-  r = spman_get(&test->s->pm, val1->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 16);
-  bt_assert(memcmp(r.slot, cmp, 16) == 0);
+  er = spman_get(&test->s->pm, val1.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 16);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 16) == 0);
 
-  r = spman_get(&test->s->pm, val2->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 16);
-  bt_assert(memcmp(r.slot, cmp, 16) == 0);
+  er = spman_get(&test->s->pm, val2.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 16);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 16) == 0);
 
   return BT_RESULT_OK;
 }
@@ -305,25 +292,23 @@ BT_TEST_DEF(store, type_i64, object, "type tests for the storage engine")
     {SKIND_INT64, NULL},
     {SKIND_INT64, NULL},
   };
-  sclass_t * ctuple = store_add_class(test->s, NULL, 3, v);
-  bt_assert_ptr_not_equal(ctuple, NULL);
+  e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
+  sclass_t * ctuple = e.sclass;
 
-  smrec_t * val0 = store_add_object(test->s, ctuple,
+  e_smrec_t val0 = store_add_object(test->s, ctuple,
     -5764947276981223697, -5764947276981223697, -5764947276981223697
   );
-  bt_assert_ptr_not_equal(val0, NULL);
+  bt_chkerr(val0.err);
 
-  smrec_t * val1 = store_add_object(test->s, ctuple,
+  e_smrec_t val1 = store_add_object(test->s, ctuple,
     -5764947276981223697, -5764947276981223697, -5764947276981223697
   );
-  bt_assert_ptr_not_equal(val1, NULL);
+  bt_chkerr(val1.err);
 
-  smrec_t * val2 = store_add_object(test->s, ctuple,
+  e_smrec_t val2 = store_add_object(test->s, ctuple,
     -5764947276981223697, -5764947276981223697, -5764947276981223697
   );
-  bt_assert_ptr_not_equal(val2, NULL);
-
-  sdrec_t r;
+  bt_chkerr(val2.err);
 
   const uint8_t ccmp[] =
     "\xff\xff\xff\xff" // meta = nil
@@ -333,10 +318,9 @@ BT_TEST_DEF(store, type_i64, object, "type tests for the storage engine")
     "\x01\x00" "\xff\xff\xff\xff" // (SKIND_INT64, nil)
   ;
 
-  r = spman_get(&test->s->pm, ctuple->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 24);
-  bt_assert(memcmp(r.slot, ccmp, 24) == 0);
+  e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 24);
+  bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -345,20 +329,17 @@ BT_TEST_DEF(store, type_i64, object, "type tests for the storage engine")
     "\xef\xbe\xad\xde\xfe\xca\xfe\xaf"
   ;
 
-  r = spman_get(&test->s->pm, val0->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 28);
-  bt_assert(memcmp(r.slot, cmp, 28) == 0);
+  er = spman_get(&test->s->pm, val0.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 28);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 28) == 0);
 
-  r = spman_get(&test->s->pm, val1->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 28);
-  bt_assert(memcmp(r.slot, cmp, 28) == 0);
+  er = spman_get(&test->s->pm, val1.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 28);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 28) == 0);
 
-  r = spman_get(&test->s->pm, val2->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 28);
-  bt_assert(memcmp(r.slot, cmp, 28) == 0);
+  er = spman_get(&test->s->pm, val2.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 28);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 28) == 0);
 
   return BT_RESULT_OK;
 }
@@ -372,25 +353,23 @@ BT_TEST_DEF(store, type_u64, object, "type tests for the storage engine")
     {SKIND_UINT64, NULL},
     {SKIND_UINT64, NULL},
   };
-  sclass_t * ctuple = store_add_class(test->s, NULL, 3, v);
-  bt_assert_ptr_not_equal(ctuple, NULL);
+  e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
+  sclass_t * ctuple = e.sclass;
 
-  smrec_t * val0 = store_add_object(test->s, ctuple,
+  e_smrec_t val0 = store_add_object(test->s, ctuple,
     0xdeadbeefaffecafe, 0xdeadbeefaffecafe, 0xdeadbeefaffecafe
   );
-  bt_assert_ptr_not_equal(val0, NULL);
+  bt_chkerr(val0.err);
 
-  smrec_t * val1 = store_add_object(test->s, ctuple,
+  e_smrec_t val1 = store_add_object(test->s, ctuple,
     0xdeadbeefaffecafe, 0xdeadbeefaffecafe, 0xdeadbeefaffecafe
   );
-  bt_assert_ptr_not_equal(val1, NULL);
+  bt_chkerr(val1.err);
 
-  smrec_t * val2 = store_add_object(test->s, ctuple,
+  e_smrec_t val2 = store_add_object(test->s, ctuple,
     0xdeadbeefaffecafe, 0xdeadbeefaffecafe, 0xdeadbeefaffecafe
   );
-  bt_assert_ptr_not_equal(val2, NULL);
-
-  sdrec_t r;
+  bt_chkerr(val2.err);
 
   const uint8_t ccmp[] =
     "\xff\xff\xff\xff" // meta = nil
@@ -400,10 +379,9 @@ BT_TEST_DEF(store, type_u64, object, "type tests for the storage engine")
     "\x03\x00" "\xff\xff\xff\xff" // (SKIND_UINT64, nil)
   ;
 
-  r = spman_get(&test->s->pm, ctuple->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 24);
-  bt_assert(memcmp(r.slot, ccmp, 24) == 0);
+  e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 24);
+  bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -412,20 +390,17 @@ BT_TEST_DEF(store, type_u64, object, "type tests for the storage engine")
     "\xfe\xca\xfe\xaf\xef\xbe\xad\xde"
   ;
 
-  r = spman_get(&test->s->pm, val0->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 28);
-  bt_assert(memcmp(r.slot, cmp, 28) == 0);
+  er = spman_get(&test->s->pm, val0.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 28);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 28) == 0);
 
-  r = spman_get(&test->s->pm, val1->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 28);
-  bt_assert(memcmp(r.slot, cmp, 28) == 0);
+  er = spman_get(&test->s->pm, val1.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 28);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 28) == 0);
 
-  r = spman_get(&test->s->pm, val2->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 28);
-  bt_assert(memcmp(r.slot, cmp, 28) == 0);
+  er = spman_get(&test->s->pm, val2.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 28);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 28) == 0);
 
   return BT_RESULT_OK;
 }
@@ -439,31 +414,29 @@ BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
     {SKIND_STRING, NULL},
     {SKIND_STRING, NULL},
   };
-  sclass_t * ctuple = store_add_class(test->s, NULL, 3, v);
-  bt_assert_ptr_not_equal(ctuple, NULL);
+  e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
+  sclass_t * ctuple = e.sclass;
 
-  smrec_t * val0 = store_add_object(test->s, ctuple,
+  e_smrec_t val0 = store_add_object(test->s, ctuple,
     8, "AAAAAAAA",
     8, "BBBBBBBB",
     8, "CCCCCCCC"
   );
-  bt_assert_ptr_not_equal(val0, NULL);
+  bt_chkerr(val0.err);
 
-  smrec_t * val1 = store_add_object(test->s, ctuple,
+  e_smrec_t val1 = store_add_object(test->s, ctuple,
     8, "AAAAAAAA",
     8, "BBBBBBBB",
     8, "CCCCCCCC"
   );
-  bt_assert_ptr_not_equal(val1, NULL);
+  bt_chkerr(val1.err);
 
-  smrec_t * val2 = store_add_object(test->s, ctuple,
+  e_smrec_t val2 = store_add_object(test->s, ctuple,
     8, "AAAAAAAA",
     8, "BBBBBBBB",
     8, "CCCCCCCC"
   );
-  bt_assert_ptr_not_equal(val2, NULL);
-
-  sdrec_t r;
+  bt_chkerr(val2.err);
 
   const uint8_t ccmp[] =
     "\xff\xff\xff\xff" // meta = nil
@@ -473,10 +446,9 @@ BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
     "\x05\x00" "\xff\xff\xff\xff" // (SKIND_STRING, nil)
   ;
 
-  r = spman_get(&test->s->pm, ctuple->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 24);
-  bt_assert(memcmp(r.slot, ccmp, 24) == 0);
+  e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 24);
+  bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -485,23 +457,21 @@ BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
     "\x08\x00" "CCCCCCCC"
   ;
 
-  r = spman_get(&test->s->pm, val0->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 34);
-  bt_assert(memcmp(r.slot, cmp, 34) == 0);
+  er = spman_get(&test->s->pm, val0.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 34);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 34) == 0);
 
-  r = spman_get(&test->s->pm, val1->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 34);
-  bt_assert(memcmp(r.slot, cmp, 34) == 0);
+  er = spman_get(&test->s->pm, val1.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 34);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 34) == 0);
 
-  r = spman_get(&test->s->pm, val2->id);
-  bt_assert_int_not_equal(r.id, SRID_NIL);
-  bt_assert_int_equal(r.size, 34);
-  bt_assert(memcmp(r.slot, cmp, 34) == 0);
+  er = spman_get(&test->s->pm, val2.smrec->id);  bt_chkerr(er.err);
+  bt_assert_int_equal(er.sdrec.size, 34);
+  bt_assert(memcmp(er.sdrec.slot, cmp, 34) == 0);
 
   return BT_RESULT_OK;
 }
+#endif
 
 BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
 {
@@ -515,38 +485,33 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
         {SKIND_OBJECT, NULL},
         {SKIND_OBJECT, NULL},
       };
-      ctuple = store_add_class(test->s, NULL, 3, v);
+      e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
+      ctuple = e.sclass;
     }
-    bt_assert_ptr_not_equal(ctuple, NULL);
 
     sclass_t * cvalue;
     {
       scfld_t v[] = {
         {SKIND_UINT32, NULL},
       };
-      cvalue = store_add_class(test->s, NULL, 1, v);
+      e_sclass_t e = store_add_class(test->s, NULL, 1, v); bt_chkerr(e.err);
+      cvalue = e.sclass;
     }
-    bt_assert_ptr_not_equal(cvalue, NULL);
 
     srid_t v[100];
     for (uint16_t k = 0; k < 2; k++) {
-      smrec_t * v0 = store_add_object(test->s, cvalue, k);
-      bt_assert_ptr_not_equal(v0, NULL);
-      smrec_t * v1 = store_add_object(test->s, cvalue, k * 2);
-      bt_assert_ptr_not_equal(v1, NULL);
-      smrec_t * v2 = store_add_object(test->s, cvalue, k * 3);
-      bt_assert_ptr_not_equal(v2, NULL);
-      smrec_t * r = store_add_object(test->s, ctuple, v0, v1, v2);
-      bt_assert_ptr_not_equal(r, NULL);
-      v[k] = r->id;
+      e_smrec_t v0 = store_add_object(test->s, cvalue, k); bt_chkerr(v0.err);
+      e_smrec_t v1 = store_add_object(test->s, cvalue, k * 2); bt_chkerr(v1.err);
+      e_smrec_t v2 = store_add_object(test->s, cvalue, k * 3); bt_chkerr(v2.err);
+      e_smrec_t r = store_add_object(test->s, ctuple, v0, v1, v2); bt_chkerr(r.err);
+      v[k] = r.smrec->id;
     }
 
     bt_log("[store] force discard\n"); gc_collect(&test->s->g, 1);
 
     for (uint16_t k = 0; k < 2; k++) {
-      smrec_t * r = store_get_object(test->s, v[k]);
-      bt_assert_ptr_not_equal(r, NULL);
-      bt_assert_int_equal(v[k], r->id);
+      e_smrec_t e = store_get_object(test->s, v[k]); bt_chkerr(e.err);
+      bt_assert_int_equal(v[k], e.smrec->id);
     }
   }
 
@@ -559,23 +524,21 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
         {SKIND_UINT32, NULL},
         {SKIND_OBJECT, NULL},
       };
-      clist = store_add_class(test->s, NULL, 2, v);
+      e_sclass_t e = store_add_class(test->s, NULL, 2, v); bt_chkerr(e.err);
+      clist = e.sclass;
     }
-    bt_assert_ptr_not_equal(clist, NULL);
 
     smrec_t * head = NULL;
     for (uint16_t k = 0; k < 10; k++) {
-      smrec_t * r = store_add_object(test->s, clist, k, head);
-      bt_assert_ptr_not_equal(r, NULL);
-      head = r;
+      e_smrec_t e = store_add_object(test->s, clist, k, head); bt_chkerr(e.err);
+      head = e.smrec;
     }
 
     srid_t hid = head->id;
 
     bt_log("[store] force discard\n"); gc_collect(&test->s->g, 1);
-    head = store_get_object(test->s, hid);
-    bt_assert_ptr_not_equal(head, NULL);
-    bt_assert_int_equal(head->id, hid);
+    e_smrec_t e = store_get_object(test->s, hid); bt_chkerr(e.err);
+    bt_assert_int_equal(e.smrec->id, hid);
   }
 
   bt_log("[store] force discard\n"); gc_collect(&test->s->g, 1);
@@ -587,28 +550,26 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
         {SKIND_OBJECT, NULL},
         {SKIND_STRING, NULL},
       };
-      clist = store_add_class(test->s, NULL, 2, v);
+      e_sclass_t e = store_add_class(test->s, NULL, 2, v); bt_chkerr(e.err);
+      clist = e.sclass;
     }
-    bt_assert_ptr_not_equal(clist, NULL);
 
     smrec_t * head = NULL;
     char buf[128];
     for (uint16_t k = 0; k < 10; k++) {
       snprintf(buf, 128, "AAA %u", k);
-      smrec_t * r = store_add_object(test->s, clist, head, (int) strlen(buf), buf);
-      bt_assert_ptr_not_equal(r, NULL);
-      head = r;
+      e_smrec_t e = store_add_object(test->s, clist, head, (int) strlen(buf), buf); bt_chkerr(e.err);
+      head = e.smrec;
     }
 
     srid_t hid = head->id;
 
     bt_log("[store] reopen\n");
     store_clear(test->s);
-    bt_assert_ptr_not_equal(store_init(test->s, store_test_path), NULL);
+    bt_chkerr(store_init(test->s, store_test_path));
 
-    head = store_get_object(test->s, hid);
-    bt_assert_ptr_not_equal(head, NULL);
-    bt_assert_int_equal(head->id, hid);
+    e_smrec_t e = store_get_object(test->s, hid); bt_chkerr(e.err);
+    bt_assert_int_equal(e.smrec->id, hid);
   }
 
   return BT_RESULT_OK;
@@ -622,7 +583,7 @@ BT_SUITE_TEARDOWN_DEF(store, objectref)
 
   free(test);
 
-  unlink(store_test_path);
+  //unlink(store_test_path);
 
   return BT_RESULT_OK;
 }

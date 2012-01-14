@@ -57,7 +57,7 @@ add_library(nih SHARED
   ${libnih_SOURCE_DIR}/src/sx/sx.c
   ${libnih_SOURCE_DIR}/src/trie/pathman.c
   ${libnih_SOURCE_DIR}/src/trie/trie.c
-  #${libnih_SOURCE_DIR}/src/store/store.c
+  ${libnih_SOURCE_DIR}/src/store/store.c
 )
 
 #target_link_libraries(nih m profiler)

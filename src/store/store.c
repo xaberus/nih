@@ -120,10 +120,11 @@ uint8_t * sdisk_cls_write(uint8_t * dst, sclass_t * c)
 
 /*************************************************************************************************/
 
-spman_t * spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt)
+err_r * spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt)
 {
-  if (!pm || fd == -1)
-    return NULL;
+  if (fd == -1) {
+    return err_return(ERR_IN_INVALID, "invalid file descriptor passed");
+  }
 
   pm->fd = fd;
   pm->offset = offset;
@@ -132,7 +133,7 @@ spman_t * spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt)
   pm->maps = 0;
   memset(pm->map, 0, sizeof(spmap_t *) * STORE_LIVEPAGES);
 
-  return pm;
+  return NULL;
 }
 
 int spman_clear(spman_t * pm)
@@ -201,37 +202,37 @@ sdrec_t spmap_alloc(spmap_t * m, uint16_t ssize, uint16_t usage)
 
   }
 
-  if (m->scount < STORE_SLOTSMAX) {
-    uint16_t sid = m->scount;
-    uint32_t sz = ALIGN2(ssize);
-    uint32_t off;
-    if (!sid) {
-      off = SPAGE_HDRSIZE;
-    } else {
-      off = (uint8_t *) m->index[sid - 1].slot - (uint8_t *) m->page;
-      off += ALIGN2(m->index[sid - 1].size);
-    }
-    if (off + sz + SSLOT_HDRSIZE <= m->psize) {
-      void * p = (uint8_t *) m->page + off;
-      uint16_t sflag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
-      SSLOT_HDR_FLAG(p) = sflag;
-      SSLOT_HDR_SIZE(p) = ssize;
-      void * slot = SSLOT_HDR_SLOT(p);
-      // fprintf(stderr, "OFF %08u|%04u|%04u|%04u\n", off, sid, sflag| ssize);
-      sslot_t * s = &m->index[sid];
-      s->flag = sflag;
-      s->size = ssize;
-      s->slot = slot;
-      m->scount++;
-      return (sdrec_t) {
-        .id = (m->pnum << STORE_SLOTBITS) | sid,
-        .size = ssize,
-        .flag = sflag,
-        .slot = slot,
-        .map = m,
-      };
-    }
+  uint16_t sid = m->scount;
+  uint32_t sz = ALIGN2(ssize);
+  uint32_t off;
+  if (!sid) {
+    off = SPAGE_HDRSIZE;
+  } else {
+    off = (uint8_t *) m->index[sid - 1].slot - (uint8_t *) m->page;
+    off += ALIGN2(m->index[sid - 1].size);
   }
+  if (off + sz + SSLOT_HDRSIZE <= m->psize) {
+    void * p = (uint8_t *) m->page + off;
+    uint16_t sflag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
+    SSLOT_HDR_FLAG(p) = sflag;
+    SSLOT_HDR_SIZE(p) = ssize;
+    void * slot = SSLOT_HDR_SLOT(p);
+    // fprintf(stderr, "OFF %08u|%04u|%04u|%04u\n", off, sid, sflag| ssize);
+    sslot_t * s = &m->index[sid];
+    s->flag = sflag;
+    s->size = ssize;
+    s->slot = slot;
+    m->scount++;
+    return (sdrec_t) {
+      .err = NULL,
+      .id = (m->pnum << STORE_SLOTBITS) | sid,
+      .size = ssize,
+      .flag = sflag,
+      .slot = slot,
+      .map = m,
+    };
+  }
+
   return (sdrec_t) {
     .id = SRID_NIL,
     .size = 0,
@@ -242,11 +243,11 @@ sdrec_t spmap_alloc(spmap_t * m, uint16_t ssize, uint16_t usage)
 }
 
 
-spmap_t * spman_load(spman_t * pm, uint32_t pnum)
+e_spmap_t spman_load(spman_t * pm, uint32_t pnum)
 {
   if (pnum >= pm->cnt) {
     /* no page in file */
-    return NULL;
+    return (e_spmap_t) {err_return(ERR_OVERFLOW, "page number > pages managed"), NULL};
   }
 
   { /* try to find loaded page */
@@ -254,7 +255,7 @@ spmap_t * spman_load(spman_t * pm, uint32_t pnum)
     spmap_t * c = pm->map[hash];
     while (c) {
       if (c->pnum == pnum) {
-        return c;
+        return (e_spmap_t) {NULL, c};
       }
       c = c->next;
     }
@@ -299,10 +300,10 @@ spmap_t * spman_load(spman_t * pm, uint32_t pnum)
   uint16_t pn;
   for (uint32_t k = 0; k <= pnum; k++) {
     if (lseek(pm->fd, off, SEEK_SET) == (off_t) -1) {
-      return NULL;
+      return (e_spmap_t) {err_return(ERR_INVALID, "could not lseek to page start"), NULL};
     }
     if (read(pm->fd, &pn, sizeof(pn)) != sizeof(pn)) {
-      return NULL;
+      return (e_spmap_t) {err_return(ERR_INVALID, "could not read page header"), NULL};
     }
     if (k < pnum) {
       off += pn * STORE_DATACHUNK;
@@ -310,17 +311,17 @@ spmap_t * spman_load(spman_t * pm, uint32_t pnum)
   }
   uint16_t scount;
   if (read(pm->fd, &scount, sizeof(scount)) != sizeof(scount)) {
-    return NULL;
+    return (e_spmap_t) {err_return(ERR_INVALID, "could not read page header"), NULL};
   }
   uint32_t psize = pn * STORE_DATACHUNK;
   void * b = mmap(NULL, psize, PROT_READ | PROT_WRITE, MAP_SHARED, pm->fd, off);
   if (b == MAP_FAILED)
-    return NULL;
+    return (e_spmap_t) {err_return(ERR_INVALID, "could not map page"), NULL};
 
   spmap_t * m = malloc(sizeof(spmap_t));
   if (!m) {
     munmap(b, psize);
-    return NULL;
+    return (e_spmap_t) {err_return(ERR_MEM_ALLOC, "malloc() failed"), NULL};
   }
   m->pnum = pnum;
   m->inuse = 0;
@@ -354,7 +355,7 @@ spmap_t * spman_load(spman_t * pm, uint32_t pnum)
 
   pm->maps++;
 
-  return spman_ref(pm, m);;
+  return (e_spmap_t) {NULL, spman_ref(pm, m)};
 }
 
 void spman_unload(spman_t * pm, spmap_t * m)
@@ -391,16 +392,21 @@ void spman_unref(spman_t * pm, spmap_t * m)
   }
 }
 
-sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
+e_sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
 {
-  spmap_t * m;
+  e_spmap_t e;
+  err_r * err = NULL;
 
-  while ((m = spman_load(pm, pm->anum))) {
-    sdrec_t r = spmap_alloc(m, size, usage);
-    if (r.id != SRID_NIL) {
-      return r;
+  for (uint32_t p = pm->anum; p < pm->cnt; p++) {
+    e = spman_load(pm, p);
+    if (e.err) {
+      err = err_return(ERR_CORRUPTION, "could not load page");  goto out;
     }
-    pm->anum++;
+    sdrec_t r = spmap_alloc(e.spmap, size, usage);
+    if (r.id != SRID_NIL) {
+      pm->anum = p;
+      return (e_sdrec_t) {NULL, r};
+    }
   }
 
 #if VERBOSEDEBUG > 2
@@ -411,48 +417,68 @@ sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
   /* no free slots found till now, so get offset from last page and append a new */
   off_t off = (off_t) -1;
   if (pm->cnt) {
-    m = spman_load(pm, pm->cnt - 1);
-    off = m->poff + m->psize;
+    e = spman_load(pm, pm->cnt - 1);
+    if (e.err) {
+      err = err_return(ERR_INVALID, "could not load last page");  goto out;
+    }
+    off = e.spmap->poff + e.spmap->psize;
   } else {
     off = pm->offset;
   }
-  if (off != (off_t) -1) {
-    uint16_t pn = 16;
-    uint32_t psize = (pn * STORE_DATACHUNK);
-    if (!ftruncate(pm->fd, off + psize)) {
+  if (off == (off_t) -1) {
+    err = err_return(ERR_CORRUPTION, "invalid append offset calculated");  goto out;
+  }
+  uint16_t pn = 16;
+  uint32_t psize = (pn * STORE_DATACHUNK);
+  if (ftruncate(pm->fd, off + psize)) {
+    err = err_return(ERR_FAILURE, "could not ftruncate space for new page");  goto out;
+  }
 #if VERBOSEDEBUG > 2
-      fprintf(stderr, "[P] appended %u bytes to store\n", psize);
+  fprintf(stderr, "[P] appended %u bytes to store\n", psize);
 #endif
-      if (lseek(pm->fd, off, SEEK_SET) != (off_t) -1) {
-        uint16_t nil = pn;
-        if (write(pm->fd, &nil, sizeof(nil)) == sizeof(nil)) {
-          nil = 0;
-          if (write(pm->fd, &nil, sizeof(nil)) == sizeof(nil)) {
-            pm->cnt++;
-            if ((m = spman_load(pm, pm->anum))) {
-              return spmap_alloc(m, size, usage);
-            }
-          }
-        }
-      }
-    }
+  if (lseek(pm->fd, off, SEEK_SET) == (off_t) -1) {
+    err = err_return(ERR_FAILURE, "could not lseek to start of new page");  goto out;
+  }
+  uint16_t word = pn;
+  if (write(pm->fd, &word, sizeof(word)) != sizeof(word)) {
+    err = err_return(ERR_FAILURE, "could not write page header");  goto out;
+  }
+  word = 0;
+  if (write(pm->fd, &word, sizeof(word)) != sizeof(word)) {
+    err = err_return(ERR_FAILURE, "could not write page header");  goto out;
+  }
+  pm->anum = pm->cnt++;
+  e = spman_load(pm, pm->anum);
+  if (e.err) {
+    err = err_return(ERR_INVALID, "could not load new page");  goto out;
+  }
+  sdrec_t r = spmap_alloc(e.spmap, size, usage);
+  if (r.id == SRID_NIL) {
+    err = err_return(ERR_CORRUPTION, "slot allocation failed");  goto out;
   }
 
-  return (sdrec_t) {
-    .id = SRID_NIL,
-    .size = 0,
-    .flag = 0,
-    .slot = NULL,
-    .map = NULL,
+  return (e_sdrec_t) {NULL, r};
+
+out:
+  return (e_sdrec_t) {
+    .err = err,
+    .sdrec = {
+      .id = SRID_NIL,
+      .size = 0,
+      .flag = 0,
+      .slot = NULL,
+      .map = NULL,
+    },
   };
 }
 
-sdrec_t spman_get(spman_t * pm, srid_t id)
+e_sdrec_t spman_get(spman_t * pm, srid_t id)
 {
-  uint32_t  pnum = SRID_TO_PAGE(id);
-  uint16_t  snum = SRID_TO_SLOT(id);
-  uint32_t  hash = hash32(pnum) & STORE_LIVEMASK;
+  uint32_t pnum = SRID_TO_PAGE(id);
+  uint16_t snum = SRID_TO_SLOT(id);
+  uint32_t hash = hash32(pnum) & STORE_LIVEMASK;
   spmap_t * m = pm->map[hash];
+  err_r * err = NULL;
 
   while (m) {
     if (m->pnum == pnum) {
@@ -462,34 +488,45 @@ sdrec_t spman_get(spman_t * pm, srid_t id)
   }
 
   if (!m) {
-    m = spman_load(pm, pnum);
-  }
-
-  if (m) {
-    if (m->index[snum].flag & SSLOT_FLAG_DATA) {
-      return (sdrec_t) {
-        .id = id,
-        .size = m->index[snum].size,
-        .flag = m->index[snum].flag,
-        .slot = m->index[snum].slot,
-        .map = m,
-      };
+    e_spmap_t e = spman_load(pm, pnum);
+    if (e.err) {
+      err = err_return(ERR_CORRUPTION, "could not load page");  goto out;
     }
+    m = e.spmap;
   }
 
-  return (sdrec_t) {
-    .id = SRID_NIL,
-    .size = 0,
-    .flag = 0,
-    .slot = NULL,
-    .map = NULL,
-    };
+  if (!(m->index[snum].flag & SSLOT_FLAG_DATA)) {
+    err = err_return(ERR_INVALID, "requested slot is not initialized");  goto out;
+  }
+
+  return (e_sdrec_t) {
+    .err = err,
+    .sdrec = {
+      .id = id,
+      .size = m->index[snum].size,
+      .flag = m->index[snum].flag,
+      .slot = m->index[snum].slot,
+      .map = m,
+    },
+  };
+
+out:
+  return (e_sdrec_t) {
+    .err = err,
+    .sdrec = {
+      .id = SRID_NIL,
+      .size = 0,
+      .flag = 0,
+      .slot = NULL,
+      .map = NULL,
+    },
+  };
 }
 
 /*************************************************************************************************/
 
 inline static
-err_t srid_insert(trie_t * t, srid_t id, void * p, bool rep)
+err_r * srid_insert(trie_t * t, srid_t id, void * p, bool rep)
 {
   union {
     srid_t  id;
@@ -500,38 +537,43 @@ err_t srid_insert(trie_t * t, srid_t id, void * p, bool rep)
 }
 
 inline static
-err_t srid_delete(trie_t * t, srid_t id)
+void srid_delete(trie_t * t, srid_t id)
 {
   union {
     srid_t  id;
     uint8_t b[sizeof(srid_t)];
   } key = {.id = id};
-  return trie_delete(t, sizeof(key.b), key.b);
+  if (trie_delete(t, sizeof(key.b), key.b)) {
+    err_reset(); // should never happen...
+    assert(0);
+  }
 }
 
 inline static
-err_t srid_find(trie_t * t, srid_t id, void ** p)
+e_void_t srid_find(trie_t * t, srid_t id)
 {
   union {
     srid_t  id;
     uint8_t b[sizeof(srid_t)];
   } key = {.id = id};
-  uint64_t value;
-  err_t err = trie_find(t, sizeof(key.b), key.b, &value);
-  *p = (void *) value;
-  return err;
+  e_uint64_t e = trie_find(t, sizeof(key.b), key.b);
+  if (e.err) {
+    err_reset();
+    return (e_void_t) {err_return(ERR_FAILURE, "id not found"), NULL};
+  }
+   return (e_void_t) {NULL, (void *) e.uint64};
 }
 
 /*************************************************************************************************/
 
 static
-size_t sclass_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
+err_r * sclass_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
   store_t  * s = (store_t *) g;
   sclass_t * c = (sclass_t *) o;
 
   if (argc != 4) {
-    gc_error(g, "sclass: init without arguments");
+    return err_return(ERR_IN_INVALID, "not enough arguments to initialize sclass");
   }
 
   c->id = va_arg(ap, srid_t);
@@ -543,20 +585,27 @@ size_t sclass_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   for (uint16_t k = 0; k < c->fcnt; k++) {
     c->flds[k].kind = ELEMENT(uint16_t, p);
     p += sizeof(uint16_t);
-    c->flds[k].meta = store_get_object(s, ELEMENT(srid_t, p));
-    p += sizeof(srid_t);
+    srid_t mid = ELEMENT(srid_t, p); p += sizeof(srid_t);
+    if (mid != SRID_NIL) {
+      e_smrec_t e = store_get_object(s, mid);
+      if (e.err) {
+        return err_return(ERR_CORRUPTION, "could not retreive referred field meta record");
+      }
+      c->flds[k].meta = e.smrec;
+    } else {
+      c->flds[k].meta = NULL;
+    }
   }
 
-  err_t err = srid_insert(&s->i2r, c->id, c, 0);
-  if (err) {
-    gc_error(g, "sclass: attempted to replace id %u", (unsigned) c->id);
+  if (srid_insert(&s->i2r, c->id, c, 0)) {
+    return err_return(ERR_FAILURE, "could not add id to live objects map");
   }
 
-  spmap_t * m = spman_load(&s->pm, SRID_TO_PAGE(c->id));
-  if (!m) {
-    gc_error(g, "sclass: could not load page %u", (unsigned) SRID_TO_PAGE(c->id));
+  e_spmap_t e = spman_load(&s->pm, SRID_TO_PAGE(c->id));
+  if (e.err) {
+    return err_return(ERR_CORRUPTION, "could not load page");
   }
-  m->inuse++;
+  e.spmap->inuse++;
 
   return 0;
 }
@@ -567,16 +616,15 @@ size_t sclass_clear(gc_global_t * g, gc_hdr_t * o)
   store_t  * s = (store_t *) g;
   sclass_t * c = (sclass_t *) o;
 
-  err_t err = srid_delete(&s->i2r, c->id);
-  if (err) {
-    gc_error(g, "smrec: attempted to delete non-existent id %u", (unsigned) c->id);
-  }
+  srid_delete(&s->i2r, c->id);
 
-  spmap_t * m = spman_load(&s->pm, SRID_TO_PAGE(c->id));
-  if (!m) {
-    gc_error(g, "sclass: could not load page %u", (unsigned) SRID_TO_PAGE(c->id));
+  e_spmap_t e = spman_load(&s->pm, SRID_TO_PAGE(c->id));
+  if (e.err) {
+    err_reset();
+    assert(0); /* should never happen */
+  } else {
+    e.spmap->inuse--;
   }
-  m->inuse--;
 
   return 0;
 }
@@ -607,26 +655,44 @@ gc_vtable_t sclass_vtable = {
   .gc_propagate = sclass_propagate,
 };
 
-sclass_t * store_get_class(store_t * s, srid_t id)
+e_sclass_t store_get_class(store_t * s, srid_t id)
 {
-  sdrec_t r = spman_get(&s->pm, id);
-  if (r.id == SRID_NIL) {
-    return NULL;
+  e_sdrec_t e = spman_get(&s->pm, id);
+  if (e.err) {
+    return (e_sclass_t) {err_return(ERR_IN_INVALID, "could not retreive slot"), NULL};
   }
 
-  void * c = NULL;
-  if ((r.flag & SSLOT_USAGEMASK) == SSLOT_USAGE_CLASS) {
-    if (srid_find(&s->i2r, r.id, &c)) {
-      uint8_t * p = r.slot;
-      smrec_t * meta = store_get_object(s, ELEMENT(srid_t, p)); p += sizeof(srid_t);
-      uint16_t fcnt = ELEMENT(uint16_t, p); p += sizeof(uint16_t);
-      spman_ref(&s->pm, r.map);
-      c = gc_new(&s->g, &sclass_vtable, sizeof(sclass_t) + sizeof(scfld_t) * fcnt,
-            4, id, meta, fcnt, p);
-      spman_unref(&s->pm, r.map);
-    }
+  if ((e.sdrec.flag & SSLOT_USAGEMASK) != SSLOT_USAGE_CLASS) {
+    return (e_sclass_t) {err_return(ERR_IN_INVALID, "slot s not a class"), NULL};
   }
-  return c;
+
+  e_void_t ee = srid_find(&s->i2r, e.sdrec.id);
+  if (ee.err) {
+    err_reset();
+
+    uint8_t * p = e.sdrec.slot;
+    smrec_t * meta = NULL;
+    srid_t mid = ELEMENT(srid_t, p); p += sizeof(srid_t);
+    uint16_t fcnt = ELEMENT(uint16_t, p); p += sizeof(uint16_t);
+
+    if (mid != SRID_NIL) {
+      e_smrec_t eee = store_get_object(s, mid);
+      if (eee.err) {
+        return (e_sclass_t) {err_return(ERR_CORRUPTION, "could not retreive referred class meta record"), NULL};
+      }
+      meta = eee.smrec;
+    }
+    spman_ref(&s->pm, e.sdrec.map);
+    ee = gc_new(&s->g, &sclass_vtable, sizeof(sclass_t) + sizeof(scfld_t) * fcnt,
+                     4, id, meta, fcnt, p);
+    if (ee.err) {
+      spman_unref(&s->pm, e.sdrec.map);
+      return (e_sclass_t) {err_return(ERR_CORRUPTION, "could not unpack class"), NULL};
+    }
+    spman_unref(&s->pm, e.sdrec.map);
+  }
+
+  return (e_sclass_t) {NULL, ee.value};
 }
 
 inline static
@@ -721,13 +787,14 @@ size_t sclass_walk_propagate(store_t * s, sclass_t * c, void * p)
 #endif
 
 static
-size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
+err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
   store_t * s = (store_t *) g;
   smrec_t * r = (smrec_t *) o;
+  err_r * err = NULL;
 
   if (argc != 3) {
-    gc_error(g, "smrec: init without arguments");
+    return err_return(ERR_IN_INVALID, "not enough arguments to initialize record");
   }
 
   r->sc = va_arg(ap, sclass_t *);
@@ -738,6 +805,9 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   uint8_t * slot = va_arg(ap, uint8_t *);
 
   r->ptr = malloc(r->sz);
+  if (!r->ptr) {
+    return err_return(ERR_MEM_ALLOC, "could not allocate memory to unpack");
+  }
 
 #if VERBOSEDEBUG
   fprintf(stderr, "{M} object <"PTR_FMT":"SRID_FMT"> of class <"PTR_FMT":"CLASS_FMT">\n",
@@ -761,57 +831,75 @@ size_t smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
       case SKIND_STRING: {
         uint16_t l = ELEMENT(uint16_t, sp);
         sp += sizeof(uint16_t);
-        gc_str_t * str = gc_new_str(&s->g, l, (char *) sp);
-        ELEMENT(gc_str_t *, dp) = str;
+        e_gc_str_t e = gc_new_str(&s->g, l, (char *) sp);
+        if (e.err) {
+          err = err_return(ERR_FAILURE, "could not allocate unpacked string"); goto out;
+        }
+        ELEMENT(gc_str_t *, dp) = e.gc_str;
 #if VERBOSEDEBUG
         fprintf(stderr, "    element of <%p:%u> (string) <%.*s>\n",
-          (void *) r, r->id, gc_str_len(str), str->data);
+          (void *) r, r->id, gc_str_len(e.gc_str), e.gc_str->data);
 #endif
         sp += ALIGN2(l);
         dp += sizeof(gc_str_t *);
         break;
       }
       case SKIND_OBJECT: {
-        smrec_t * val = store_get_object(s, ELEMENT(srid_t, sp));
-        sp += sizeof(srid_t);
-        ELEMENT(smrec_t *, dp) =  val;
-        dp += sizeof(smrec_t *);
+        srid_t rid = ELEMENT(srid_t, sp); sp += sizeof(srid_t);
+        if (rid != SRID_NIL) {
+          e_smrec_t e = store_get_object(s, rid);
+          if (e.err) {
+            err = err_return(ERR_FAILURE, "could not retreive referred record"); goto out;
+          }
+          ELEMENT(smrec_t *, dp) =  e.smrec;
 #if VERBOSEDEBUG
-        if (val) {
           fprintf(stderr, "    element of <%p:%u> (object) <"PTR_FMT":"SRID_FMT":"CLASS_FMT">\n",
-            (void *) r, r->id, (void *) val, val->id, val->sc->id);
-        } else {
-          fprintf(stderr, "    element of <%p:%u> (object) <"PTR_FMT">\n",
-            (void *) r, r->id, (void *) val);
-        }
+            (void *) r, r->id, (void *) e.smrec, e.smrec->id, e.smrec->sc->id);
 #endif
+        } else {
+          ELEMENT(smrec_t *, dp) =  NULL;
+#if VERBOSEDEBUG
+          fprintf(stderr, "    element of <%p:%u> (object) <"PTR_FMT">\n",
+            (void *) r, r->id, NULL);
+#endif
+        }
+        dp += sizeof(smrec_t *);
         break;
       }
       case SKIND_CLASS: {
-        sclass_t * val = store_get_class(s, ELEMENT(srid_t, sp));
-        sp += sizeof(srid_t);
-        ELEMENT(sclass_t *, dp) = val;
-        dp += sizeof(sclass_t *);
+        srid_t cid = ELEMENT(srid_t, sp); sp += sizeof(srid_t);
+        if (cid != SRID_NIL) {
+          e_sclass_t e = store_get_class(s, cid);
+          if (e.err) {
+            err = err_return(ERR_FAILURE, "could not retreive referred class"); goto out;
+          }
+          ELEMENT(sclass_t *, dp) = e.sclass;
 #if VERBOSEDEBUG
-        if (ELEMENT(sclass_t *, dp)) {
           fprintf(stderr, "    element of <%p:%u> (class) <"PTR_FMT":"CLASS_FMT">\n",
-            (void *) r, r->id, (void *) val, val->id);
-        } else {
-          fprintf(stderr, "    element of <%p:%u> (class) <"PTR_FMT">\n",
-            (void *) r, r->id, (void *) val);
-        }
+            (void *) r, r->id, (void *) e.sclass, e.sclass->id);
 #endif
+        } else {
+          ELEMENT(sclass_t *, dp) = NULL;
+#if VERBOSEDEBUG
+          fprintf(stderr, "    element of <%p:%u> (class) <"PTR_FMT">\n",
+            (void *) r, r->id, NULL);
+#endif
+        }
+        dp += sizeof(sclass_t *);
         break;
       }
     }
   }
 
-  err_t err = srid_insert(&s->i2r, r->id, r, 0);
-  if (err) {
-    gc_error(g, "smrec: attempted to replace id %u", (unsigned) r->id);
+  if(srid_insert(&s->i2r, r->id, r, 0)) {
+    err = err_return(ERR_FAILURE, "could not add id to live objects map"); goto out;
   }
 
-  return 0;
+  return NULL;
+
+out:
+  free(r->ptr);
+  return err;
 }
 
 static
@@ -820,10 +908,7 @@ size_t smrec_clear(gc_global_t * g, gc_hdr_t * o)
   store_t * s = (store_t *) g;
   smrec_t * r = (smrec_t *) o;
 
-  err_t err = srid_delete(&s->i2r, r->id);
-  if (err) {
-    gc_error(g, "smrec: attempted to delete non-existent id %u", (unsigned) r->id);
-  }
+  srid_delete(&s->i2r, r->id);
 
   free(r->ptr);
 
@@ -854,35 +939,47 @@ gc_vtable_t smrec_vtable = {
   .gc_propagate = smrec_propagate,
 };
 
-smrec_t * store_get_object(store_t * s, srid_t id)
+e_smrec_t store_get_object(store_t * s, srid_t id)
 {
-  sdrec_t r = spman_get(&s->pm, id);
-  if (r.id == SRID_NIL) {
-    return NULL;
+  e_sdrec_t e = spman_get(&s->pm, id);
+  if (e.err) {
+    return (e_smrec_t) {err_return(ERR_IN_INVALID, "could not retreive slot"), NULL};
   }
-  smrec_t * rec = NULL;
-  if ((r.flag & SSLOT_USAGEMASK) == SSLOT_USAGE_OBJECT) {
-    if (srid_find(&s->i2r, r.id, (void **) &rec)) {
-      sclass_t * c = store_get_class(s, *((srid_t *) r.slot));
-      if (c) {
-        /* pin the page (map) so it does not vanish in the heat of the moment */
-        spman_ref(&s->pm, r.map);
-        rec = gc_new(&s->g, &smrec_vtable, sizeof(smrec_t), 3, c, id, r.slot + sizeof(srid_t));
-        spman_unref(&s->pm, r.map);
-      }
+
+  if ((e.sdrec.flag & SSLOT_USAGEMASK) != SSLOT_USAGE_OBJECT) {
+    return (e_smrec_t) {err_return(ERR_IN_INVALID, "slot s not a record"), NULL};
+  }
+
+  e_void_t ee = srid_find(&s->i2r, e.sdrec.id);
+  if (ee.err) {
+    err_reset();
+
+    e_sclass_t eee = store_get_class(s, *((srid_t *) e.sdrec.slot));
+    if (eee.err) {
+      return (e_smrec_t) {err_return(ERR_CORRUPTION, "could not retreive record class"), NULL};
     }
+
+    /* pin the page (map) so it does not vanish in the heat of the moment */
+    spman_ref(&s->pm, e.sdrec.map);
+    ee = gc_new(&s->g, &smrec_vtable, sizeof(smrec_t), 3, eee.sclass, id, e.sdrec.slot + sizeof(srid_t));
+    if (ee.err) {
+      spman_unref(&s->pm, e.sdrec.map);
+      return (e_smrec_t) {err_return(ERR_FAILURE, "could not unpack record"), NULL};
+    }
+    spman_unref(&s->pm, e.sdrec.map);
   }
-  return rec;
+
+  return (e_smrec_t) {NULL, ee.value};
 }
 
 /*************************************************************************************************/
 
 #define HEADER_STR0 "STORE000"
 
-store_t * store_init(store_t * s, const char path[])
+err_r * store_init(store_t * s, const char path[])
 {
-  if (!s || !path) {
-    return NULL;
+  if (!path) {
+    return err_return(ERR_IN_INVALID, "no path to store given");
   }
 
   s->hdr = NULL;
@@ -891,18 +988,18 @@ store_t * store_init(store_t * s, const char path[])
   if (fd == -1) {
     fd = open(path, O_CREAT | O_RDWR, S_IRWXU);
     if (fd == -1) {
-      return NULL;
+      return err_return(ERR_FAILURE, "could not create store file");
     }
     if (ftruncate(fd, 4096)) {
       close(fd);
       unlink(path);
-      return NULL;
+      return err_return(ERR_FAILURE, "could not create store header");
     }
     s->hdr = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (s->hdr == MAP_FAILED) {
       close(fd);
       unlink(path);
-      return NULL;
+      return err_return(ERR_FAILURE, "could not map store header");
     }
     memset(s->hdr, 0, 4096);
     memcpy(s->hdr, HEADER_STR0, 8);
@@ -912,34 +1009,40 @@ store_t * store_init(store_t * s, const char path[])
     s->hdr = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (s->hdr == MAP_FAILED) {
       close(fd);
-      return NULL;
+      return err_return(ERR_FAILURE, "could not map store header");
     }
   }
 
   if (memcmp(s->hdr, HEADER_STR0, 8) != 0) {
     munmap(s->hdr, 4096);
     close(fd);
-    return NULL;
+    return err_return(ERR_FAILURE, "file is not a store");
   }
 
-  if (!spman_init(&s->pm, fd, 4096, s->hdr->cnt)) {
+  if (spman_init(&s->pm, fd, 4096, s->hdr->cnt)) {
     munmap(s->hdr, 4096);
     close(fd);
-    return NULL;
+    return err_return(ERR_FAILURE, "could not initialize page manager");
   }
 
-  gc_init(&s->g);
+  if (gc_init(&s->g)) {
+    spman_clear(&s->pm);
+    munmap(s->hdr, 4096);
+    close(fd);
+    return err_return(ERR_FAILURE, "could not initialize garbage collector");
+  }
 
-  if (!trie_init(&s->i2r, 8)) {
+  if (trie_init(&s->i2r, 8)) {
     gc_clear(&s->g);
+    spman_clear(&s->pm);
     munmap(s->hdr, 4096);
     close(fd);
-    return NULL;
+    return err_return(ERR_FAILURE, "could not initialize trie");
   }
 
   s->limbs = NULL;
 
-  return s;
+  return NULL;
 }
 
 void store_clear(store_t * s)
@@ -956,23 +1059,23 @@ void store_clear(store_t * s)
   close(fd);
 }
 
-sclass_t * store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t flds[fcnt])
+e_sclass_t store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t flds[fcnt])
 {
   uint32_t sz = sizeof(srid_t) + sizeof(uint16_t) + fcnt * (sizeof(uint16_t) + sizeof(srid_t));
   if (sz >= STORE_DATASIZE) {
-    gc_error(&s->g, "store: attempted to create a class lager than DATASIZE!");
+    return (e_sclass_t) {err_return(ERR_OVERFLOW, "attempted to create a class lager than DATASIZE"), NULL};
   }
 
-  sdrec_t r = spman_add(&s->pm, sz, SSLOT_USAGE_CLASS);
-  if (r.id == SRID_NIL) {
-    return NULL;
+  e_sdrec_t e = spman_add(&s->pm, sz, SSLOT_USAGE_CLASS);
+  if (e.err) {
+    return (e_sclass_t) {err_return(ERR_MEM_ALLOC, "could not add new slot"), NULL};
   }
 
-  uint8_t * p = r.slot;
+  uint8_t * p = e.sdrec.slot;
 
 #if VERBOSEDEBUG
   fprintf(stderr, "[D] writing class [1;35m%u[0;m of %u elements {%u bytes}\n",
-    r.id, fcnt, sz);
+    e.sdrec.id, fcnt, sz);
 #endif
 
   p = sdisk_obj_write(p, meta);
@@ -983,14 +1086,12 @@ sclass_t * store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t f
     p = sdisk_obj_write(p, flds[k].meta);
   }
 
-  return store_get_class(s, r.id);
+  return store_get_class(s, e.sdrec.id);
 }
 
-smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
+e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
 {
   va_list ap;
-  /*va_start(ap, c);
-  va_end(ap);*/
 
   uint32_t sz = sizeof(srid_t);
 
@@ -1035,15 +1136,15 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
   va_end(ap);
 
   if (sz >= STORE_DATASIZE) {
-    gc_error(&s->g, "store: attempted to create an object lager than DATASIZE!");
+    return (e_smrec_t) {err_return(ERR_OVERFLOW, "attempted to create a record lager than DATASIZE"), NULL};
   }
 
-  sdrec_t r = spman_add(&s->pm, sz, SSLOT_USAGE_OBJECT);
-  if (r.id == SRID_NIL) {
-    return NULL;
+  e_sdrec_t e = spman_add(&s->pm, sz, SSLOT_USAGE_OBJECT);
+  if (e.err) {
+    return (e_smrec_t) {err_return(ERR_MEM_ALLOC, "could not add new slot"), NULL};
   }
 
-  uint8_t * p = r.slot;
+  uint8_t * p = e.sdrec.slot;
 
 #if VERBOSEDEBUG
   fprintf(stderr, "{D} writing object of class %u with {%u elements, %u bytes}\n", c->id, c->fcnt, sz);
@@ -1074,5 +1175,5 @@ smrec_t * store_add_object(store_t * s, sclass_t * c, ...)
     }
   }
 
-  return store_get_object(s, r.id);
+  return store_get_object(s, e.sdrec.id);
 }

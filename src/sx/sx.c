@@ -65,7 +65,7 @@ uint32_t iabs(int32_t i)
 inline static
 uint32_t atom_len(sx_t * a)
 {
-  assert(a->kind & SX_ATOM);
+  assert(a->kind & (SX_ATOM | SX_NUM));
   uint32_t l = 0;
   switch (a->kind) {
     case SX_SQ:
@@ -75,9 +75,9 @@ uint32_t atom_len(sx_t * a)
       l += gc_str_len(a->str);
       break;
       return l;
-    case SX_NUM:
+    /*case SX_NUM:
       l += iabs(a->num->s) * 9;
-      return l;
+      return l;*/
   }
   return l;
 }
@@ -93,7 +93,7 @@ uint32_t istail(sx_t * x)
     l += atom_len(x);
     c++;
   }
-  return (l < 40) ? c: 0;
+  return (l < 10) ? c: 0;
 }
 
 
@@ -103,14 +103,14 @@ uint32_t isshortlist(sx_t * x)
   assert(x->kind & SX_LIST);
   uint32_t c = 0, l = 0;
   for (sx_t * s = x->lst; s; s = s->next) {
-    if (!(s->kind & SX_ATOM)) {
+    if (!(s->kind & (SX_ATOM | SX_NUM))) {
       if ((s->kind & SX_LIST)) {
         if (s->lst == NULL) {
           l += 2;
           c++;
           continue;
         } else if(!s->lst->next) {
-          l += 5;
+          l += 20;
           c++;
           continue;
         }
@@ -120,12 +120,12 @@ uint32_t isshortlist(sx_t * x)
     l += atom_len(s);
     c++;
   }
-  if (l > 100) {
+  if (l > 80) {
     return 0;
   }
 
   if (c >= 2) {
-    return (l < 80) ? c : 1;
+    return (l < 40) ? c : 1;
   } else {
     return (l < 30) ? 1 : 0;
   }
@@ -201,6 +201,7 @@ err_r * sx_writer(gc_global_t * g, gc_stack_t * st, sx_t * x, wrec_t * wr)
         lwrite_lit("\""); indent++;
         break;
       case SX_NUM: {
+        lastindent = indent;
         e_gc_str_t e = number_getdec(g, x->num);
         if (e.err) {
           err = err_return(ERR_FAILURE, "number_getdec() failed");
@@ -224,9 +225,9 @@ err_r * sx_writer(gc_global_t * g, gc_stack_t * st, sx_t * x, wrec_t * wr)
             }
             lvv = tmp;
           }
+          lastindent = indent;
           lvv[lvl].sx = x; lvv[lvl].indent = indent; lvv[lvl].shortlist = shortlist; lvl++;
           lwrite_lit("("); indent++;
-          lastindent = indent;
           shortlist = isshortlist(x);
           x = x->lst;
           continue;
@@ -250,14 +251,16 @@ err_r * sx_writer(gc_global_t * g, gc_stack_t * st, sx_t * x, wrec_t * wr)
         lwrite_indent(indent);
       }
     } else {
+      uint32_t locindent = 0;
       while (!x && lvl) {
-        lvl--; x = lvv[lvl].sx->next; indent = lvv[lvl].indent - 1; shortlist = lvv[lvl].shortlist;
+        lvl--; x = lvv[lvl].sx->next; locindent = lvv[lvl].indent; shortlist = lvv[lvl].shortlist;
         lwrite_lit(")"); indent++;
       }
       if (shortlist) {
         shortlist--;
         lwrite_lit(" "); indent++;
       } else {
+        lastindent = indent = locindent;
         lwrite_lit("\n");
         lwrite_indent(indent);
       }
@@ -751,7 +754,7 @@ trans:
       }
       case SXBS_LIST_END: {
         L("### LIST_END: ['%c']\n", c);
-        if (b->depth == 0) { TE("unmatcher parenthesis"); } b->depth--;
+        if (b->depth == 0) { TE("unmatched parenthesis"); } b->depth--;
         if (evfn(g, b))    { TE("evfn(LIST_END) failed"); }
         TC(SXBS_INTERMEDIATE);
       }
