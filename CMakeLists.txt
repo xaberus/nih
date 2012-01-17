@@ -14,41 +14,40 @@ include_directories(
   ${libnih_SOURCE_DIR}/src/
 )
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wextra")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pedantic")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g3")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-gnu")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-inline")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O1")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ftest-coverage")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fcatch-undefined-behavior")
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ftrapv")
+set(CFLAGS_LIST
+  "-std=gnu99"
+  "-Wall"
+  "-Wextra"
+  "-pedantic"
+  "-ggdb"
+  "-O0"
+  "-fno-inline"
+  "-fPIC"
+  #"-O1"
+  #"-O3"
+  #"-Werror"
+  #"-fprofile-arcs"
+  #"-ftest-coverage"
+  #"-fcatch-undefined-behavior"
+  #"-ftrapv"
+)
 
 add_definitions(-DTEST)
 add_definitions(-D_XOPEN_SOURCE=700)
+add_definitions(-D_GNU_SOURCE)
 #add_definitions(-DTESTPROF="cpuprof")
 add_definitions(-DBROOT="${CMAKE_CURRENT_SOURCE_DIR}")
 
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fpic")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--warn-unresolved-symbols")
-#set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -v")
-
-#RAGEL_TARGET(sx-parser-sq-machine sx-parser-sq-machine.rl
-#  ${CMAKE_CURRENT_BINARY_DIR}/sx-parser-sq-machine.c)
-#RAGEL_TARGET(sx-parser-dq-machine sx-parser-dq-machine.rl
-#  ${CMAKE_CURRENT_BINARY_DIR}/sx-parser-dq-machine.c)
-#RAGEL_TARGET(sx-parser-plain-machine sx-parser-plain-machine.rl
-#  ${CMAKE_CURRENT_BINARY_DIR}/sx-parser-plain-machine.c)
+set(LFLAGS_LIST
+  "-Wl,--no-undefined"
+  "-Wl,--warn-unresolved-symbols"
+  "-pthread"
+)
 
 include_directories(${libnih_SOURCE_DIR})
 
+string (REPLACE ";" " " CFLAGS "${CFLAGS_LIST}")
+string (REPLACE ";" " " LFLAGS "${LFLAGS_LIST}")
 add_library(nih SHARED
   ${libnih_SOURCE_DIR}/src/common/err.c
   ${libnih_SOURCE_DIR}/src/gc/gc.c
@@ -59,9 +58,10 @@ add_library(nih SHARED
   ${libnih_SOURCE_DIR}/src/trie/trie.c
   ${libnih_SOURCE_DIR}/src/store/store.c
 )
-
+set_target_properties(nih PROPERTIES COMPILE_FLAGS ${CFLAGS})
+set_target_properties(bexec PROPERTIES LINK_FLAGS ${LFLAGS})
 #target_link_libraries(nih m profiler)
-target_link_libraries(nih m)
+#target_link_libraries(nih m)
 
 add_custom_target(chop
   $<TARGET_FILE:butcher> $<TARGET_FILE:nih> --bexec $<TARGET_FILE:bexec> $(BFLAGS)

@@ -39,6 +39,7 @@ uint32_t hash32(uint32_t M)
 /*************************************************************************************************/
 
 #define ALIGN2(_size) (((_size) + 1L) & ~1L)
+#define ALIGNDATA(_size) (((_size) + (STORE_DATACHUNK-1)) & ~(STORE_DATACHUNK-1))
 
 /* on disk format */
 
@@ -196,7 +197,7 @@ void spmap_gen_index(spmap_t * m)
 }
 
 static
-sdrec_t spmap_alloc(spmap_t * m, uint16_t ssize, uint16_t usage)
+sdrec_t spmap_alloc(spman_t * pm, spmap_t * m, uint16_t ssize, uint16_t usage)
 {
   if (m->sfree) {
     // TODO: implement freelists and deletion
@@ -205,40 +206,54 @@ sdrec_t spmap_alloc(spmap_t * m, uint16_t ssize, uint16_t usage)
   uint16_t sid = m->scount;
   uint32_t sz = ALIGN2(ssize);
   uint32_t off;
+  void * p, * slot;
+  uint16_t sflag, * wp;
   if (!sid) {
     off = SPAGE_HDRSIZE;
   } else {
     off = (uint8_t *) m->index[sid - 1].slot - (uint8_t *) m->page;
     off += ALIGN2(m->index[sid - 1].size);
   }
-  if (off + sz + SSLOT_HDRSIZE <= m->psize) {
-    void * p = (uint8_t *) m->page + off;
-    uint16_t sflag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
-    SSLOT_HDR_FLAG(p) = sflag;
-    SSLOT_HDR_SIZE(p) = ssize;
-    void * slot = SSLOT_HDR_SLOT(p);
-    // fprintf(stderr, "OFF %08u|%04u|%04u|%04u\n", off, sid, sflag| ssize);
-    sslot_t * s = &m->index[sid];
-    s->flag = sflag;
-    s->size = ssize;
-    s->slot = slot;
-    m->scount++;
+  uint32_t needed = sz + SSLOT_HDRSIZE;
+  if (off + needed > m->psize) {
+    uint32_t npsize = off + needed;
+    /* check for overflow */
+    if (npsize > m->psize) {
+      if (spman_truncate(pm, m, npsize)) {
+        err_reset();
+      }
+      if (off + sz + SSLOT_HDRSIZE <= m->psize) {
+        goto do_alloc;
+      }
+    }
     return (sdrec_t) {
-      .err = NULL,
-      .id = (m->pnum << STORE_SLOTBITS) | sid,
-      .size = ssize,
-      .flag = sflag,
-      .slot = slot,
-      .map = m,
+      .id = SRID_NIL,
+      .size = 0,
+      .flag = 0,
+      .slot = NULL,
+      .map = NULL,
     };
   }
-
+do_alloc:
+  p = (uint8_t *) m->page + off;
+  sflag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
+  SSLOT_HDR_FLAG(p) = sflag;
+  SSLOT_HDR_SIZE(p) = ssize;
+  slot = SSLOT_HDR_SLOT(p);
+  // fprintf(stderr, "OFF %08u|%04u|%04u|%04u\n", off, sid, sflag| ssize);
+  sslot_t * s = &m->index[sid];
+  s->flag = sflag;
+  s->size = ssize;
+  s->slot = slot;
+  m->scount++;
+  wp = m->page; wp++;
+  *wp = m->scount;
   return (sdrec_t) {
-    .id = SRID_NIL,
-    .size = 0,
-    .flag = 0,
-    .slot = NULL,
-    .map = NULL,
+    .id = (m->pnum << STORE_SLOTBITS) | sid,
+    .size = ssize,
+    .flag = sflag,
+    .slot = slot,
+    .map = m,
   };
 }
 
@@ -316,7 +331,7 @@ e_spmap_t spman_load(spman_t * pm, uint32_t pnum)
   uint32_t psize = pn * STORE_DATACHUNK;
   void * b = mmap(NULL, psize, PROT_READ | PROT_WRITE, MAP_SHARED, pm->fd, off);
   if (b == MAP_FAILED)
-    return (e_spmap_t) {err_return(ERR_INVALID, "could not map page"), NULL};
+    return (e_spmap_t) {err_return(ERR_INVALID, "could not mmap() page"), NULL};
 
   spmap_t * m = malloc(sizeof(spmap_t));
   if (!m) {
@@ -364,9 +379,6 @@ void spman_unload(spman_t * pm, spmap_t * m)
     if (m->next) {
       m->next->rev = m->rev;
     }
-    uint16_t * p = m->page;
-    *p = m->psize / STORE_DATACHUNK; p++;
-    *p = m->scount;
 #if VERBOSEDEBUG > 0
     fprintf(stderr, "{P} unloading page "PTR_FMT":"PAGE_FMT" (%u slots) {%u bytes}\n",
       (void *) m->page, m->pnum, m->scount, m->psize);
@@ -374,6 +386,35 @@ void spman_unload(spman_t * pm, spmap_t * m)
     munmap(m->page, m->psize);
     free(m);
     pm->maps--;
+}
+
+err_r * spman_truncate(spman_t * pm, spmap_t * m, uint32_t psize)
+{
+  if (pm->cnt) {
+    if (pm->cnt - 1 == m->pnum) {
+      if (psize > m->psize) {
+        uint32_t npsize = ALIGNDATA(psize);
+        uint32_t npn = npsize / STORE_DATACHUNK;
+        off_t poff = m->poff;
+        if (m->scount < STORE_SLOTSMAX) {
+          if (ftruncate(pm->fd, poff + npsize)) {
+            return err_return(ERR_FAILURE, "could not ftruncate space for new page");
+          }
+          void * b = mremap(m->page, m->psize, npsize, MREMAP_MAYMOVE, MAP_SHARED);
+          if (b == MAP_FAILED) {
+            return err_return(ERR_INVALID, "could not mmap() page");
+          }
+          uint16_t * wp = b;
+          *wp = npn;
+          m->page = b;
+          m->psize = npsize;
+          spmap_gen_index(m);
+          return NULL;
+        }
+      }
+    }
+  }
+  return err_return(ERR_FAILURE, "page truncation failed");
 }
 
 spmap_t * spman_ref(spman_t * pm, spmap_t * m)
@@ -402,7 +443,7 @@ e_sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
     if (e.err) {
       err = err_return(ERR_CORRUPTION, "could not load page");  goto out;
     }
-    sdrec_t r = spmap_alloc(e.spmap, size, usage);
+    sdrec_t r = spmap_alloc(pm, e.spmap, size, usage);
     if (r.id != SRID_NIL) {
       pm->anum = p;
       return (e_sdrec_t) {NULL, r};
@@ -428,7 +469,7 @@ e_sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
   if (off == (off_t) -1) {
     err = err_return(ERR_CORRUPTION, "invalid append offset calculated");  goto out;
   }
-  uint16_t pn = 16;
+  uint16_t pn = STORE_NEWPN;
   uint32_t psize = (pn * STORE_DATACHUNK);
   if (ftruncate(pm->fd, off + psize)) {
     err = err_return(ERR_FAILURE, "could not ftruncate space for new page");  goto out;
@@ -452,7 +493,7 @@ e_sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
   if (e.err) {
     err = err_return(ERR_INVALID, "could not load new page");  goto out;
   }
-  sdrec_t r = spmap_alloc(e.spmap, size, usage);
+  sdrec_t r = spmap_alloc(pm, e.spmap, size, usage);
   if (r.id == SRID_NIL) {
     err = err_return(ERR_CORRUPTION, "slot allocation failed");  goto out;
   }
@@ -1001,8 +1042,9 @@ err_r * store_init(store_t * s, const char path[])
       unlink(path);
       return err_return(ERR_FAILURE, "could not map store header");
     }
-    memset(s->hdr, 0, 4096);
+    memset(s->hdr, 0xff, 4096);
     memcpy(s->hdr, HEADER_STR0, 8);
+    s->hdr->cnt = 0;
   }
 
   if (!s->hdr) {
@@ -1016,6 +1058,7 @@ err_r * store_init(store_t * s, const char path[])
   if (memcmp(s->hdr, HEADER_STR0, 8) != 0) {
     munmap(s->hdr, 4096);
     close(fd);
+    s->hdr = NULL;
     return err_return(ERR_FAILURE, "file is not a store");
   }
 
@@ -1051,18 +1094,21 @@ void store_clear(store_t * s)
   trie_clear(&s->i2r);
   s->limbs = NULL;
 
-  s->hdr->cnt = s->pm.cnt;
-  munmap(s->hdr, 4096);
+  if (s->hdr) {
+    s->hdr->cnt = s->pm.cnt;
+    munmap(s->hdr, 4096);
+  }
 
   int fd = spman_clear(&s->pm);
-
-  close(fd);
+  if (fd != -1) {
+    close(fd);
+  }
 }
 
 e_sclass_t store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t flds[fcnt])
 {
   uint32_t sz = sizeof(srid_t) + sizeof(uint16_t) + fcnt * (sizeof(uint16_t) + sizeof(srid_t));
-  if (sz >= STORE_DATASIZE) {
+  if (sz >= STORE_DATAMAX) {
     return (e_sclass_t) {err_return(ERR_OVERFLOW, "attempted to create a class lager than DATASIZE"), NULL};
   }
 
@@ -1135,7 +1181,7 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
   }
   va_end(ap);
 
-  if (sz >= STORE_DATASIZE) {
+  if (sz >= STORE_DATAMAX) {
     return (e_smrec_t) {err_return(ERR_OVERFLOW, "attempted to create a record lager than DATASIZE"), NULL};
   }
 

@@ -15,21 +15,24 @@ typedef uint32_t srid_t;
 #define SRID_NIL ~((srid_t) 0)
 
 /* namespace partition in small pages */
-#define STORE_SLOTBITS 12
+#define STORE_SLOTBITS 8 /*12*/
 #define STORE_PAGEBITS (sizeof(srid_t) * 8 - STORE_SLOTBITS)
 
 /* data size must fit into uint16_t */
-#define STORE_DATABITS 16
-#define STORE_DATASIZE (1 << STORE_DATABITS)
+#define STORE_DATAMAX ((1 << 16) - 1)
 
 /* page size must be multiple of this */
-#define STORE_DATACHUNK 4096
+//#define STORE_DATACHUNK 4096ul
+#define STORE_DATACHUNK 4096u
+
+/* allocate NEWPN data chunks for new pages */
+#define STORE_NEWPN 1
 
 #define STORE_PAGEMASK (~((srid_t) 0) << STORE_SLOTBITS)
 #define STORE_SLOTMASK (~((srid_t) 0) >> STORE_PAGEBITS)
 
 /* maximal slots per page */
-#define STORE_SLOTSMAX (1 << STORE_SLOTBITS)
+#define STORE_SLOTSMAX ((1 << STORE_SLOTBITS) - 1)
 
 /* maximal amount of pges to keep alive */
 #define STORE_LIVEPAGES 16
@@ -79,8 +82,8 @@ struct spmap {
   uint16_t   sfhdr;   /* first free slot if sfree == 1 */
 };
 
+/* volatile record data tuple */
 typedef struct sdrec {
-  err_r   * err;
   srid_t    id;   /* record id */
   uint16_t  size; /* record size */
   uint16_t  flag; /* record flags */
@@ -104,6 +107,7 @@ int       spman_clear(spman_t * pm);
 e_spmap_t spman_load(spman_t * pm, uint32_t pnum);
 spmap_t * spman_ref(spman_t * pm, spmap_t * m);
 void      spman_unref(spman_t * pm, spmap_t * m);
+err_r   * spman_truncate(spman_t * pm, spmap_t * m, uint32_t psize);
 
 /* tuple */ typedef struct { err_r * err; sdrec_t sdrec; } e_sdrec_t;
 e_sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage);

@@ -42,12 +42,12 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 
   test->num = 16;
 
-  off_t size = STORE_DATASIZE * test->num;
+  /*off_t size = STORE_DATASIZE * test->num;
 
   if (ftruncate(test->fd, size)) {
     bt_log("could not resize '%s'\n", path);
     return BT_RESULT_IGNORE;
-  }
+  }*/
 
   unsigned long ps = sysconf(_SC_PAGE_SIZE);
 
@@ -55,8 +55,11 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
   size_t check = STORE_DATACHUNK % (1 << 12);
   bt_assert(check == 0);
 
+  bt_log("[spman] STORE_SLOTSMAX is %u, new pages size is %u\n",
+    STORE_SLOTSMAX, STORE_DATACHUNK * STORE_NEWPN);
+
   /* format */
-  {
+  /*{
     for (uint32_t n = 0; n < test->num; n++) {
       size_t off = STORE_DATASIZE * n;
       uint16_t * p = mmap(NULL, STORE_DATASIZE, PROT_READ  | PROT_WRITE, MAP_SHARED, test->fd, off);
@@ -66,31 +69,17 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
       *p = STORE_DATASIZE / STORE_DATACHUNK;
       munmap(p, STORE_DATASIZE);
     }
-  }
+  }*/
 
-  bt_chkerr(spman_init(test->pm, test->fd, 0, test->num));
-
-  bt_log("[spman] initial store size is %u pages\n", test->pm->cnt);
-
-  // test here...
-
+  bt_chkerr(spman_init(test->pm, test->fd, 0, 0));
   spman_t * pm = test->pm;
 
-  bt_log("[spman] page load\n");
-  for (uint32_t n = 0; n < test->num; n++) {
-    spman_load(pm, n);
-  }
-
-  bt_log("[spman] page identity\n");
-  {
-    e_spmap_t e1 = spman_load(pm, test->num / 2); bt_chkerr(e1.err);
-    e_spmap_t e2 = spman_load(pm, test->num / 2); bt_chkerr(e1.err);
-    bt_assert_ptr_equal(e1.spmap, e2.spmap);
-    bt_assert_ptr_equal(e1.spmap->page, e2.spmap->page);
-  }
-
 #define chunk 60
-#define sgmo (STORE_SLOTSMAX * test->num)
+#define sgmo ((STORE_SLOTSMAX * test->num) - 1)
+
+  bt_log("[spman] initial store size is %u pages\n", pm->cnt);
+
+  // test here...
 
   srid_t * vel = malloc(sizeof(srid_t) * sgmo);
 
@@ -105,6 +94,14 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
       e.sdrec.id & STORE_SLOTMASK, e.sdrec.size);*/
     memset(e.sdrec.slot, k % 26 + 'a', e.sdrec.size);
     vel[k] = e.sdrec.id;
+  }
+
+  bt_log("[spman] page identity\n");
+  {
+    e_spmap_t e1 = spman_load(pm, test->num / 2); bt_chkerr(e1.err);
+    e_spmap_t e2 = spman_load(pm, test->num / 2); bt_chkerr(e1.err);
+    bt_assert_ptr_equal(e1.spmap, e2.spmap);
+    bt_assert_ptr_equal(e1.spmap->page, e2.spmap->page);
   }
 
 #ifdef TESTPROF
