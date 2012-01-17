@@ -17,8 +17,6 @@ typedef struct {
 static pthread_key_t __err_key;
 static int __err_initialized = 0;
 
-//static __thread errorstack_t * estack = NULL;
-
 static
 void __err_clear(void * estack)
 {
@@ -232,6 +230,7 @@ BT_TEST_DEF_PLAIN(error, plain, "simple tests")
   bt_log("[err] resetting error status\n");
   err_reset();
   bt_log("[err] checking that reset worked\n");
+  bt_assert_ptr_equal(err_pop(), NULL);
   bt_assert_ptr_equal(err_pop(), NULL);
 
   return BT_RESULT_OK;
