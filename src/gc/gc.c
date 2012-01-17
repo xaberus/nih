@@ -211,8 +211,10 @@ void gc_free_all(gc_global_t * g)
 {
   g->white = GC_FLAG_WHITES | GC_FLAG_SFIXED;
 
-  strings_prepare(&g->strings);
-  sweep_strings(g, &g->strings, SIZE_MAX);
+  if (g->strings.buckets.data) {
+    strings_prepare(&g->strings);
+    sweep_strings(g, &g->strings, SIZE_MAX);
+  }
 
   gc_head_prepare(&g->headers);
   sweep_headers(g, &g->headers, SIZE_MAX);
