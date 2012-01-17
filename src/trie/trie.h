@@ -1,7 +1,7 @@
 #ifndef _TRIE_H
 #define _TRIE_H
 
-#include <malloc.h>
+#include <stdlib.h>
 
 #include "common/err.h"
 

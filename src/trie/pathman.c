@@ -1,6 +1,7 @@
 #include "pathman.h"
 
 #include <string.h>
+#include <stdio.h>
 
 #include "pathman-private.h"
 
