@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
+#include <pthread.h>
 
 #include "common/err.h"
 
@@ -13,7 +14,32 @@ typedef struct {
   err_r   buf[ERR_MAXSTACK];
 } errorstack_t;
 
-static __thread errorstack_t * estack = NULL;
+static pthread_key_t __err_key;
+static int __err_initialized = 0;
+
+//static __thread errorstack_t * estack = NULL;
+
+static
+void __err_clear(void * estack)
+{
+  free(estack);
+}
+
+
+static __attribute__((constructor))
+void __err_init() {
+  if (pthread_key_create(&__err_key, __err_clear)) {
+    exit(-1);
+  }
+  pthread_setspecific(__err_key, NULL);
+  __err_initialized = 1;
+}
+
+static __attribute__((destructor))
+void __err_finish() {
+  pthread_key_delete(__err_key);
+  __err_initialized = 0;
+}
 
 static
 err_r internal_err_mem_alloc = {
@@ -37,6 +63,9 @@ err_r internal_err_overflow = {
 
 err_r * err_push(err_t err, const char * fi, int li, const char * fn, const char * m)
 {
+  assert(__err_initialized);
+  assert(fi && fn && m);
+  errorstack_t * estack = pthread_getspecific(__err_key);
   if (!estack) {
     estack = malloc(sizeof(errorstack_t));
     if (!estack) {
@@ -44,6 +73,7 @@ err_r * err_push(err_t err, const char * fi, int li, const char * fn, const char
       return &internal_err_mem_alloc;
     }
     memset(estack, 0, sizeof(errorstack_t));
+    pthread_setspecific(__err_key, estack);
   }
   if (estack->used >= ERR_MAXSTACK) {
     err_report(STDERR_FILENO);
@@ -65,41 +95,53 @@ err_r * err_push(err_t err, const char * fi, int li, const char * fn, const char
 
 void err_reset()
 {
-  free(estack);
-  estack = NULL;
+  assert(__err_initialized);
+  errorstack_t * estack = pthread_getspecific(__err_key);
+  if (estack) {
+    free(estack);
+    pthread_setspecific(__err_key, NULL);
+  }
 }
 
 err_r * err_pop()
 {
-  if (estack && estack->used > 0) {
-    estack->used--;
-    return &estack->buf[estack->used];
-  } else {
-    free(estack);
-    estack = NULL;
+  assert(__err_initialized);
+  errorstack_t * estack = pthread_getspecific(__err_key);
+  if (estack) {
+    if (estack->used > 0) {
+      estack->used--;
+      return &estack->buf[estack->used];
+    } else {
+      free(estack);
+      pthread_setspecific(__err_key, NULL);
+    }
   }
   return NULL;
 }
 
 void err_report(int fd)
 {
-  int df = dup(fd);
-  uint8_t used = estack->used;
-  if (df != -1) {
-    FILE * st = fdopen(df, "w");
-    if (st) {
-      fprintf(st, "Error report (depth: %u)\n", used);
-      for (unsigned k = 0; k < used; k++) {
-        err_r * e = &estack->buf[k];
-        fprintf(st, "  %s() @ %s:%d\n    %s\n", e->fun, e->file, e->line, e->msg);
-      }
-      fclose(st);
-    } else {
-      fprintf(stderr, "Error report(could not open fd)\n");
-      while (used) {
-        err_r * e = &estack->buf[used - 1];
-        fprintf(stderr, "  %s() @ %s:%d\n    %s\n", e->fun, e->file, e->line, e->msg);
-        used--;
+  assert(__err_initialized);
+  errorstack_t * estack = pthread_getspecific(__err_key);
+  if (estack) {
+    int df = dup(fd);
+    uint8_t used = estack->used;
+    if (df != -1) {
+      FILE * st = fdopen(df, "w");
+      if (st) {
+        fprintf(st, "Error report (depth: %u)\n", used);
+        for (unsigned k = 0; k < used; k++) {
+          err_r * e = &estack->buf[k];
+          fprintf(st, "  %s() @ %s:%d\n    %s\n", e->fun, e->file, e->line, e->msg);
+        }
+        fclose(st);
+      } else {
+        fprintf(stderr, "Error report(could not open fd)\n");
+        while (used) {
+          err_r * e = &estack->buf[used - 1];
+          fprintf(stderr, "  %s() @ %s:%d\n    %s\n", e->fun, e->file, e->line, e->msg);
+          used--;
+        }
       }
     }
   }
