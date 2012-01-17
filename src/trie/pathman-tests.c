@@ -191,6 +191,8 @@ BT_SUITE_TEARDOWN_DEF(pathman, objectref)
 
   free(test);
 
+  bt_chkerr(err_pop());
+
   return BT_RESULT_OK;
 }
 

@@ -1059,6 +1059,8 @@ BT_TEST_DEF(sx, plain, object, "simple tests")
 
   fclose(fp);
 
+  bt_chkerr(err_pop());
+
   return BT_RESULT_OK;
 }
 #endif /* TEST */

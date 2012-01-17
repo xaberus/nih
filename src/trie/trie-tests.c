@@ -410,6 +410,8 @@ BT_SUITE_TEARDOWN_DEF(trie, objectref)
 
   free(test);
 
+  bt_chkerr(err_pop());
+
   return BT_RESULT_OK;
 }
 

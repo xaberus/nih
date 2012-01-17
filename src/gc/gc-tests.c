@@ -94,6 +94,8 @@ BT_SUITE_TEARDOWN_DEF(gc, objectref)
 
   free(test);
 
+  bt_chkerr(err_pop());
+
   return BT_RESULT_OK;
 }
 
@@ -342,6 +344,7 @@ BT_TEST_DEF(gc, general, object, "tests generalized behaviour")
   gc_collect(g, 1);
   bt_assert_int_equal(g->total, 0);
   bt_log("[GC] total: %zu\n", g->total);
+
   return BT_RESULT_OK;
 }
 

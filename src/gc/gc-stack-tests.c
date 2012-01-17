@@ -238,6 +238,8 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 
   gc_clear(g);
 
+  bt_chkerr(err_pop());
+
   return BT_RESULT_OK;
 }
 

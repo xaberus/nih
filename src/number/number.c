@@ -1061,6 +1061,8 @@ BT_TEST_DEF(number, plain, object, "simple tests")
   bt_assert_ptr_not_equal((s = number_gethex(g, n)), NULL);
   bt_assert_str_equal(s->data, "0x0");*/
 
+  bt_chkerr(err_pop());
+
   return BT_RESULT_OK;
 }
 

@@ -68,6 +68,7 @@ typedef struct err_r {
   int          line;
   const char * fun;
   const char * msg;
+  int          eno;
 } err_r;
 
 #define err_return(_err, _msg) err_push((_err), __FILE__, __LINE__, __FUNCTION__, (_msg))

@@ -199,7 +199,7 @@ static
 sdrec_t spmap_alloc(spmap_t * m, uint16_t ssize, uint16_t usage)
 {
   if (m->sfree) {
-
+    // TODO: implement freelists and deletion
   }
 
   uint16_t sid = m->scount;

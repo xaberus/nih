@@ -135,6 +135,8 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 
   unlink(path);
 
+  bt_chkerr(err_pop());
+
   return BT_RESULT_OK;
 }
 
@@ -584,6 +586,8 @@ BT_SUITE_TEARDOWN_DEF(store, objectref)
   free(test);
 
   //unlink(store_test_path);
+
+  bt_chkerr(err_pop());
 
   return BT_RESULT_OK;
 }
