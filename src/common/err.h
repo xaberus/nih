@@ -63,14 +63,16 @@ enum err_type {
   ERR_SX_ATOM_END_GARBAGE,
 };
 
-typedef struct err_r {
+typedef struct err_r err_r;
+struct err_r {
   err_t        err;
   const char * file;
   int          line;
   const char * fun;
   const char * msg;
   int          eno;
-} err_r;
+  err_r      * next;
+};
 
 #define err_return(_err, _msg) err_push((_err), __FILE__, __LINE__, __FUNCTION__, (_msg))
 err_r * err_push(err_t, const char *, int, const char *, const char *);

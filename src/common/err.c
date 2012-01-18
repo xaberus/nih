@@ -9,18 +9,25 @@
 
 #define ERR_MAXSTACK 128
 
-typedef struct {
-  uint8_t used;
-  err_r   buf[ERR_MAXSTACK];
-} errorstack_t;
-
 static pthread_key_t __err_key;
 static int __err_initialized = 0;
 
+typedef struct errlist {
+  err_r * list;
+  err_r * orphan;
+} errlist_t;
+
 static
-void __err_clear(void * estack)
+void __err_clear(void * e)
 {
-  free(estack);
+  errlist_t * elist = e;
+  for (err_r * p = elist->list, * n = p ? p->next : NULL; p; p = n, n = p ? p->next : NULL) {
+    free(p);
+  }
+  for (err_r * p = elist->orphan, * n = p ? p->next : NULL; p; p = n, n = p ? p->next : NULL) {
+    free(p);
+  }
+  free(elist);
 }
 
 
@@ -29,56 +36,53 @@ void __err_init() {
   if (pthread_key_create(&__err_key, __err_clear)) {
     exit(-1);
   }
-  pthread_setspecific(__err_key, NULL);
+  errlist_t * elist = malloc(sizeof(errlist_t));
+  if (!elist) {
+    exit(-1);
+  }
+  elist->list = NULL;
+  elist->orphan = NULL;
+  pthread_setspecific(__err_key, elist);
   __err_initialized = 1;
 }
 
 static __attribute__((destructor))
 void __err_finish() {
+  errlist_t * elist = pthread_getspecific(__err_key);
+  pthread_setspecific(__err_key, NULL);
   pthread_key_delete(__err_key);
   __err_initialized = 0;
+  __err_clear(elist);
 }
 
 static
 err_r internal_err_mem_alloc = {
   .err = ERR_MEM_ALLOC,
-  .file = 0,
-  .line = 0,
-  .fun = 0,
+  .file = __FILE__,
+  .line = __LINE__,
+  .fun = "err_push()",
   .msg = "could not allocate error stack",
   .eno = 0,
-};
-
-static
-err_r internal_err_overflow = {
-  .err = ERR_MEM_ALLOC,
-  .file = 0,
-  .line = 0,
-  .fun = 0,
-  .msg = "error stack overflow",
-  .eno = 0,
+  .next = NULL,
 };
 
 err_r * err_push(err_t err, const char * fi, int li, const char * fn, const char * m)
 {
   assert(__err_initialized);
   assert(fi && fn && m);
-  errorstack_t * estack = pthread_getspecific(__err_key);
-  if (!estack) {
-    estack = malloc(sizeof(errorstack_t));
-    if (!estack) {
+  errlist_t * elist = pthread_getspecific(__err_key);
+  assert(elist);
+  err_r * r = NULL;
+  if (elist->orphan) {
+    r = elist->orphan;
+    elist->orphan = r->next;
+  } else {
+    r = malloc(sizeof(err_r));
+    if (!r) {
       assert(0);
       return &internal_err_mem_alloc;
     }
-    memset(estack, 0, sizeof(errorstack_t));
-    pthread_setspecific(__err_key, estack);
   }
-  if (estack->used >= ERR_MAXSTACK) {
-    err_report(STDERR_FILENO);
-    assert(0);
-    return &internal_err_overflow;
-  }
-  err_r * r = &estack->buf[estack->used++];
   *r = (err_r) {
     .err = err,
     .file = fi,
@@ -86,7 +90,9 @@ err_r * err_push(err_t err, const char * fi, int li, const char * fn, const char
     .fun = fn,
     .msg = m,
     .eno = errno,
+    .next = elist->list,
   };
+  elist->list = r;
   errno = 0;
   return r;
 }
@@ -94,51 +100,51 @@ err_r * err_push(err_t err, const char * fi, int li, const char * fn, const char
 void err_reset()
 {
   assert(__err_initialized);
-  errorstack_t * estack = pthread_getspecific(__err_key);
-  if (estack) {
-    free(estack);
-    pthread_setspecific(__err_key, NULL);
+  errlist_t * elist = pthread_getspecific(__err_key);
+  assert(elist);
+  for (err_r * p = elist->list, * n = p ? p->next : NULL; p; p = n, n = p ? p->next : NULL) {
+    elist->list = p->next;
+    p->next = elist->orphan;
+    elist->orphan = p;
   }
 }
 
 err_r * err_pop()
 {
   assert(__err_initialized);
-  errorstack_t * estack = pthread_getspecific(__err_key);
-  if (estack) {
-    if (estack->used > 0) {
-      estack->used--;
-      return &estack->buf[estack->used];
-    } else {
-      free(estack);
-      pthread_setspecific(__err_key, NULL);
-    }
+  errlist_t * elist = pthread_getspecific(__err_key);
+  assert(elist);
+  err_r * r = elist->list;
+  if (r) {
+    elist->list = r->next;
+    r->next = elist->orphan;
+    elist->orphan = r;
   }
-  return NULL;
+  return r;
 }
 
 void err_report(int fd)
 {
   assert(__err_initialized);
-  errorstack_t * estack = pthread_getspecific(__err_key);
-  if (estack) {
+  errlist_t * elist = pthread_getspecific(__err_key);
+  assert(elist);
+  err_r * r = elist->list;
+  if (r) {
     int df = dup(fd);
-    uint8_t used = estack->used;
     if (df != -1) {
       FILE * st = fdopen(df, "w");
       if (st) {
-        fprintf(st, "Error report (depth: %u)\n", used);
-        for (unsigned k = 0; k < used; k++) {
-          err_r * e = &estack->buf[k];
-          fprintf(st, "  %s() @ %s:%d\n    %s\n", e->fun, e->file, e->line, e->msg);
+        fprintf(st, "Error report\n");
+        while(r) {
+          fprintf(st, "  %s() @ %s:%d\n    %s\n", r->fun, r->file, r->line, r->msg);
+          r = r->next;
         }
         fclose(st);
       } else {
         fprintf(stderr, "Error report(could not open fd)\n");
-        while (used) {
-          err_r * e = &estack->buf[used - 1];
-          fprintf(stderr, "  %s() @ %s:%d\n    %s\n", e->fun, e->file, e->line, e->msg);
-          used--;
+        while(r) {
+          fprintf(st, "  %s() @ %s:%d\n    %s\n", r->fun, r->file, r->line, r->msg);
+          r = r->next;
         }
       }
     }
