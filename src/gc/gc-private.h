@@ -327,9 +327,6 @@ void __attribute__((format(printf, 2, 3))) log(unsigned N, const char * fmt, ...
     GC_HDR(_y)->flag & GC_FLAG_BLACK ? "b" : "", \
     obj_size(_y))
 
-#define rot(x, k) \
-  (((x) << (k)) | ((x) >> (32 - (k))))
-
 inline static
 void intern_obj(gc_global_t * g, gc_obj_t * o, uint32_t size)
 {
