@@ -29,7 +29,7 @@ err_r * testobj_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   (void) g;
   (void) argc;
   (void) ap;
-  // bt_log("[testobj:%p] init\n", o);
+  // printf("[testobj:%p] init\n", o);
   testobj_t * t = (testobj_t *) o;
   for (unsigned k = 0; k < 20; k++)
     t->arr[k] = NULL;
@@ -43,7 +43,7 @@ static
 size_t testobj_clear(gc_global_t * g, gc_hdr_t * o)
 {
   (void) g;
-  // bt_log("[testobj:%p] clear\n", o);
+  // printf("[testobj:%p] clear\n", o);
   testobj_t * t = (testobj_t *) o;
 
   t->flag = 0;
@@ -56,7 +56,7 @@ size_t testobj_propagate(gc_global_t * g, gc_obj_t * o)
   (void) g;
   testobj_t * t = (testobj_t *) o;
   for (unsigned k = 0; k < t->count; k++) {
-    // bt_log("[testobj:%p] propagate child %p\n", o, t->arr[k]);
+    // printf("[testobj:%p] propagate child %p\n", o, t->arr[k]);
     gc_mark_obj(g, (gc_obj_t *) t->arr[k]);
   }
 
@@ -113,7 +113,7 @@ BT_TEST_DEF(gc, str, object, "string tests")
     bt_assert_ptr_equal(__e.gc_str, (_s)); \
   } while(0)
 
-  bt_log("[gc:str] hash size: %u\n", g->strings.mask + 1);
+  printf("[gc:str] hash size: %u\n", g->strings.mask + 1);
 
   e_gc_str_t e = gc_new_str(g, 3, "abc");
 
@@ -128,14 +128,14 @@ BT_TEST_DEF(gc, str, object, "string tests")
 #undef checknstr
 
   bt_assert_int_equal(g->strings.count, 1);
-  bt_log("[gc:str] alignment ok\n");
+  printf("[gc:str] alignment ok\n");
 
   {
     FILE * fp;
     char   buf[512];
 
     if (!(fp = fopen(BROOT "/src/trie/trie-tests.txt", "r"))) {
-      bt_log("could not open test file for reading!\n");
+      printf("could not open test file for reading!\n");
       return BT_RESULT_IGNORE;
     }
 
@@ -144,11 +144,11 @@ BT_TEST_DEF(gc, str, object, "string tests")
       bt_chkerr(e.err);
     }
     fclose(fp);
-    bt_log("[gc:str] hash size: %u (%zu strings)\n", g->strings.mask + 1, g->strings.count);
+    printf("[gc:str] hash size: %u (%zu strings)\n", g->strings.mask + 1, g->strings.count);
   }
 
   gc_collect(g, 1);
-  bt_log("[gc:str] hash size: %u (%zu strings)\n", g->strings.mask + 1, g->strings.count);
+  printf("[gc:str] hash size: %u (%zu strings)\n", g->strings.mask + 1, g->strings.count);
 
   return BT_RESULT_OK;
 }
@@ -162,8 +162,8 @@ BT_TEST_DEF(gc, pressure, object, "tests behaviour unter collect pressure")
   testobj_t      * o;
   e_void_t         e;
 
-  bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
-  bt_log("[GC] total: %zu\n", g->total);
+  printf("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
+  printf("[GC] total: %zu\n", g->total);
 
   e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); o = e.value;
   bt_chkerr(gc_add_root(g, &o->gco));
@@ -197,11 +197,11 @@ BT_TEST_DEF(gc, pressure, object, "tests behaviour unter collect pressure")
   }
 
   gc_del_root(g, &o->gco);
-  bt_log("[GC] total: %zu\n", g->total);
+  printf("[GC] total: %zu\n", g->total);
   gc_collect(g, 1);
   gc_collect(g, 1);
   bt_assert_int_equal(g->total, 0);
-  bt_log("[GC] total: %zu\n", g->total);
+  printf("[GC] total: %zu\n", g->total);
   return BT_RESULT_OK;
 }
 
@@ -237,8 +237,8 @@ BT_TEST_DEF(gc, misuse, object, "tests behaviour under collection misuse")
   testobj_t      * o, * lj, * lk;
   e_void_t         e;
 
-  bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
-  bt_log("[GC] total: %zu\n", g->total);
+  printf("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
+  printf("[GC] total: %zu\n", g->total);
 
   e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); o = e.value;
   gc_add_root(g, &o->gco);
@@ -259,10 +259,10 @@ BT_TEST_DEF(gc, misuse, object, "tests behaviour under collection misuse")
 
   gc_del_root(g, &o->gco);
 
-  bt_log("[GC] total: %zu\n", g->total);
+  printf("[GC] total: %zu\n", g->total);
   gc_collect(g, 1);
   gc_collect(g, 1);
-  bt_log("[GC] total: %zu\n", g->total);
+  printf("[GC] total: %zu\n", g->total);
   return BT_RESULT_OK;
 }
 
@@ -272,7 +272,7 @@ size_t testobj_genpropagate(gc_global_t * g, gc_obj_t * o)
   (void) g;
   testobj_t * t = (testobj_t *) o;
   for (unsigned k = 0; k < t->count; k++) {
-    // bt_log("[testobj:%p] propagate child %p\n", o, t->arr[k]);
+    // printf("[testobj:%p] propagate child %p\n", o, t->arr[k]);
     gc_mark(g, t->arr[k]);
   }
 
@@ -297,8 +297,8 @@ BT_TEST_DEF(gc, general, object, "tests generalized behaviour")
   e_void_t         e;
   e_gc_str_t       ee;
 
-  bt_log("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
-  bt_log("[GC] total: %zu\n", g->total);
+  printf("{GC test with sizeof(testobj) = %zu}\n", sizeof(testobj_t));
+  printf("[GC] total: %zu\n", g->total);
 
   e = gc_new(g, &testobj_vtable, sizeof(testobj_t), 0); bt_chkerr(e.err); o = e.value;
   gc_add_root(g, &o->gco);
@@ -339,11 +339,11 @@ BT_TEST_DEF(gc, general, object, "tests generalized behaviour")
   }
 
   gc_del_root(g, &o->gco);
-  bt_log("[GC] total: %zu\n", g->total);
+  printf("[GC] total: %zu\n", g->total);
   gc_collect(g, 1);
   gc_collect(g, 1);
   bt_assert_int_equal(g->total, 0);
-  bt_log("[GC] total: %zu\n", g->total);
+  printf("[GC] total: %zu\n", g->total);
 
   return BT_RESULT_OK;
 }

@@ -319,12 +319,12 @@ err_t sr_tester(sx_t * sx)
     if (err)
       return err;
 
-    bt_log("(");
+    printf("(");
     sx_test_print(cal, 0, 0, 0, 0);
-    bt_log(") == (");
+    printf(") == (");
     sx_test_print(res, 0, 0, 0, 0);
-    bt_log(") <=> ");
-    bt_log("%d/%u == %d/%u\n",
+    printf(") <=> ");
+    printf("%d/%u == %d/%u\n",
       act->num, act->den, exp->num, exp->den);
 
     if (act->num != exp->num || act->den != exp->den)
@@ -350,13 +350,13 @@ BT_TEST_DEF_PLAIN(rational, sr, "sr")
   const char * file = "tests/rational-sr-tests.txt";
 
   if (stat(file, &sb)) {
-    bt_log("could not find %s: %s\n", file, strerror(errno));
+    printf("could not find %s: %s\n", file, strerror(errno));
     return BT_RESULT_IGNORE;
   }
 
   fd = open(file, O_RDONLY);
   if (fd == -1) {
-    bt_log("could not open %s: %s\n", file, strerror(errno));
+    printf("could not open %s: %s\n", file, strerror(errno));
     return BT_RESULT_FAIL;
   }
 
@@ -365,10 +365,10 @@ BT_TEST_DEF_PLAIN(rational, sr, "sr")
   while ((rd = read(fd, t, 512))) {
     err = sx_parser_read(parser, t, rd);
     if (err) {
-      bt_log("parser error: %s at line %u\n", sx_parser_strerror(parser), parser->line);
+      printf("parser error: %s at line %u\n", sx_parser_strerror(parser), parser->line);
       chunk = sx_strgen_get(parser->gen);
       if (chunk) {
-        bt_log("last chunk was: >>%.*s<<\n", chunk->used, chunk->buffer);
+        printf("last chunk was: >>%.*s<<\n", chunk->used, chunk->buffer);
         free(chunk);
         goto out;
       }
@@ -391,7 +391,7 @@ out:
   bt_chkerr(sr_set(b, -1, 2));
   bt_chkerr(sr_add(a, b, c));
 
-  bt_log("c: %d/%u\n", c->num, c->den);*/
+  printf("c: %d/%u\n", c->num, c->den);*/
 
   return BT_RESULT_OK;
 }

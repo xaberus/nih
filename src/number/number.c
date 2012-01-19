@@ -918,7 +918,7 @@ BT_TEST_DEF(number, plain, object, "simple tests")
     e_gc_str_t ee = number_gethex(g, e.number); \
     bt_chkerr(ee.err); \
     bt_assert_str_equal(ee.gc_str->data, (_B)); \
-    bt_log("number_setstrc: %s OK\n", (_A)); \
+    printf("number_setstrc: %s OK\n", (_A)); \
     gc_collect(g, 1); \
   } while (0)
 
@@ -962,7 +962,7 @@ BT_TEST_DEF(number, plain, object, "simple tests")
     e_gc_str_t ee = number_getdec(g, e.number); \
     bt_chkerr(ee.err); \
     bt_assert_str_equal(ee.gc_str->data, (_B)); \
-    bt_log("number_setstrc: %s OK\n", (_A)); \
+    printf("number_setstrc: %s OK\n", (_A)); \
     gc_collect(g, 1); \
   } while (0)
 
@@ -1003,7 +1003,7 @@ BT_TEST_DEF(number, plain, object, "simple tests")
     es = number_gethex(g, eb.number); bt_chkerr(es.err); bt_assert_str_equal(es.gc_str->data, (_B)); \
     e_number_t ec = _OP(g, ea.number, eb.number); bt_chkerr(ec.err); \
     es = number_gethex(g, ec.number); bt_chkerr(es.err); bt_assert_str_equal(es.gc_str->data, (_C)); \
-    bt_log("%s: %s == %s, OK\n", # _OP, es.gc_str->data, (_C)); \
+    printf("%s: %s == %s, OK\n", # _OP, es.gc_str->data, (_C)); \
     gc_collect(g, 1); \
   } while (0)
 
@@ -1040,7 +1040,7 @@ BT_TEST_DEF(number, plain, object, "simple tests")
     e_gc_str_t es = number_gethex(g, ea.number); bt_chkerr(es.err); bt_assert_str_equal(es.gc_str->data, (_A)); \
     e_number_t ec = _OP(g, ea.number, (_B)); bt_chkerr(ec.err); \
     es = number_gethex(g, ec.number); bt_chkerr(es.err); bt_assert_str_equal(es.gc_str->data, (_C)); \
-    bt_log("%s: %s == %s, OK\n", # _OP, es.gc_str->data, (_C)); \
+    printf("%s: %s == %s, OK\n", # _OP, es.gc_str->data, (_C)); \
     gc_collect(g, 1); \
   } while (0)
 

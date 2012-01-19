@@ -38,7 +38,7 @@ BT_SUITE_SETUP_DEF(trie, objectref)
 
   n = 0;
   if (!(fp = fopen(BROOT "/src/trie/trie-tests.txt", "r"))) {
-    bt_log("could not open test file for reading!\n");
+    printf("could not open test file for reading!\n");
     return BT_RESULT_IGNORE;
   }
 
@@ -78,7 +78,7 @@ BT_SUITE_SETUP_DEF(trie, objectref)
 
   bt_assert_ptr_equal(trie_init(test->trie, 8), NULL);
 
-  bt_log("[trie:init] bank size is %u (masks are 0x%x 0x%x)\n",
+  printf("[trie:init] bank size is %u (masks are 0x%x 0x%x)\n",
     test->trie->banksize, test->trie->addrmask, test->trie->nodemask);
 
   *objectref = test;
@@ -98,18 +98,18 @@ BT_TEST_DEF(trie, str, object, "str mode")
     eppoit = _trie_insert_decide(trie, tuple, strlen(_str), (const uint8_t *) (_str), 1); \
     bt_chkerr(eppoit.err); \
     if (eppoit.act == TRIE_INSERT_SPLIT_0_SET) \
-      bt_log("'%s' -> ACT: %u, ~ {%.*s}\n", _str, eppoit.act, \
+      printf("'%s' -> ACT: %u, ~ {%.*s}\n", _str, eppoit.act, \
           eppoit.tuple.node->strlen, eppoit.tuple.node->str); \
     else if (eppoit.act == TRIE_INSERT_SPLIT_N_CHILD) \
-      bt_log("'%s' -> ACT: %u, N: %d ~ [%c] {%.*s}\n", _str, eppoit.act, \
+      printf("'%s' -> ACT: %u, N: %d ~ [%c] {%.*s}\n", _str, eppoit.act, \
           eppoit.n, *(eppoit.tuple.node->str + eppoit.n), \
           eppoit.tuple.node->strlen - eppoit.n - 1, eppoit.tuple.node->str + eppoit.n + 1); \
     else if (eppoit.act == TRIE_INSERT_SPLIT_N_NEXT) \
-      bt_log("'%s' -> ACT: %u, N: %d ~ {%.*s}\n", _str, eppoit.act, \
+      printf("'%s' -> ACT: %u, N: %d ~ {%.*s}\n", _str, eppoit.act, \
           eppoit.n, \
           eppoit.tuple.node->strlen - eppoit.n, eppoit.tuple.node->str + eppoit.n); \
     else \
-      bt_log("'%s' -> ACT: %u\n", _str, eppoit.act); \
+      printf("'%s' -> ACT: %u\n", _str, eppoit.act); \
     bt_assert_int_equal(eppoit.act, _res); \
     bt_chkerr(trie_insert(trie, strlen(_str), (const uint8_t *) (_str), (_val), 1)); \
   } while(0)
@@ -229,7 +229,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
       {
         err_r * e = trie_insert(trie, strlen(str), (const uint8_t *) str, j, 0);
         if (e) {
-          bt_log("FAIL:  '%.*s %zu/%zu'\n", (int) strlen(str), str, j, num);
+          printf("FAIL:  '%.*s %zu/%zu'\n", (int) strlen(str), str, j, num);
           trie_print(trie, 4);
         }
         bt_chkerr(e);
@@ -237,7 +237,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
       {
         e_uint64_t e = trie_find(trie, strlen(str), (const uint8_t *) str);
         if (e.err) {
-          bt_log("FAIL:  '%.*s %zu/%zu'\n", (int) strlen(str), str, j, num);
+          printf("FAIL:  '%.*s %zu/%zu'\n", (int) strlen(str), str, j, num);
           trie_print(trie, 4);
         }
         bt_chkerr(e.err);
@@ -245,7 +245,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
       }
     }
   }
-  bt_log("[trie] %u strings inserted\n", (unsigned) num);
+  printf("[trie] %u strings inserted\n", (unsigned) num);
 
   // trie_print(trie, 4);
 
@@ -255,7 +255,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
     if (str) {
       e_uint64_t e = trie_find(trie, strlen(str), (const uint8_t *) str);
       if (e.err) {
-        bt_log("FAIL: %s not found\n", str);
+        printf("FAIL: %s not found\n", str);
         trie_print(trie, 4);
       }
       bt_chkerr(e.err);
@@ -276,7 +276,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
 
     err_r * err = trie_delete(trie, strlen(str), (const uint8_t *) str);
     if (err) {
-      bt_log("FAIL: %s not deleted (%lu)\n", str, i);
+      printf("FAIL: %s not deleted (%lu)\n", str, i);
       trie_print(trie, 3);
       bt_chkerr(err);
     }
@@ -288,7 +288,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
         str = strv[j];
         e_uint64_t e = trie_find(trie, strlen(str), (const uint8_t *) str);
         if (e.err) {
-          bt_log("FAIL: %s not found (%s,%lu)\n", str, strv[n], i);
+          printf("FAIL: %s not found (%s,%lu)\n", str, strv[n], i);
           trie_print(trie, 4);
         }
         bt_chkerr(e.err);
@@ -318,7 +318,7 @@ BT_TEST_DEF(trie, insert_delete_insert, object, "insert delete insert")
       bt_chkerr(trie_insert(trie, strlen(str), (const uint8_t *) str, j, 0));
     }
   }
-  bt_log("[trie] %u strings inserted\n", (unsigned) num);
+  printf("[trie] %u strings inserted\n", (unsigned) num);
 
   for (size_t j = 0; j < num; j++) {
     char * str = strv[j];

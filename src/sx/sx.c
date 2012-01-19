@@ -1041,7 +1041,7 @@ BT_TEST_DEF(sx, plain, object, "simple tests")
   uint32_t l;
 
   if (!(fp = fopen(BROOT "/src/sx/sx-tests.txt", "rb"))) {
-    bt_log("could not open test file for reading!\n");
+    printf("could not open test file for reading!\n");
     return BT_RESULT_IGNORE;
   }
 
@@ -1052,7 +1052,7 @@ BT_TEST_DEF(sx, plain, object, "simple tests")
       if (s) {
         e_gc_str_t ee = sx_dump(g, s);
         bt_chkerr(ee.err);
-        bt_log("%s\n", ee.gc_str->data);
+        printf("%s\n", ee.gc_str->data);
       }
     }
   }

@@ -36,7 +36,7 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
   char path[] = BROOT "/src/store/spman-tests.txt";
   test->fd = open(path, O_CREAT| O_RDWR, S_IRWXU);
   if (test->fd == -1) {
-    bt_log("could not open '%s'\n", path);
+    printf("could not open '%s'\n", path);
     return BT_RESULT_IGNORE;
   }
 
@@ -45,17 +45,17 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
   /*off_t size = STORE_DATASIZE * test->num;
 
   if (ftruncate(test->fd, size)) {
-    bt_log("could not resize '%s'\n", path);
+    printf("could not resize '%s'\n", path);
     return BT_RESULT_IGNORE;
   }*/
 
   unsigned long ps = sysconf(_SC_PAGE_SIZE);
 
-  bt_log("[spman] STORE_DATACHUNK is %lu, memory page size is %lu\n", (long unsigned) STORE_DATACHUNK, ps);
+  printf("[spman] STORE_DATACHUNK is %lu, memory page size is %lu\n", (long unsigned) STORE_DATACHUNK, ps);
   size_t check = STORE_DATACHUNK % (1 << 12);
   bt_assert(check == 0);
 
-  bt_log("[spman] STORE_SLOTSMAX is %u, new pages size is %u\n",
+  printf("[spman] STORE_SLOTSMAX is %u, new pages size is %u\n",
     STORE_SLOTSMAX, STORE_DATACHUNK * STORE_NEWPN);
 
   /* format */
@@ -63,7 +63,7 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
     for (uint32_t n = 0; n < test->num; n++) {
       size_t off = STORE_DATASIZE * n;
       uint16_t * p = mmap(NULL, STORE_DATASIZE, PROT_READ  | PROT_WRITE, MAP_SHARED, test->fd, off);
-      // bt_log("format page %u (mapped at %p)\n", n, (void *) p);
+      // printf("format page %u (mapped at %p)\n", n, (void *) p);
       bt_assert_ptr_not_equal(p, MAP_FAILED);
       memset(p, 0, STORE_DATASIZE);
       *p = STORE_DATASIZE / STORE_DATACHUNK;
@@ -77,26 +77,26 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 #define chunk 60
 #define sgmo ((STORE_SLOTSMAX * test->num) - 1)
 
-  bt_log("[spman] initial store size is %u pages\n", pm->cnt);
+  printf("[spman] initial store size is %u pages\n", pm->cnt);
 
   // test here...
 
   srid_t * vel = malloc(sizeof(srid_t) * sgmo);
 
-  bt_log("[spman] allocate %u chunks %u bytes each\n", sgmo, chunk);
+  printf("[spman] allocate %u chunks %u bytes each\n", sgmo, chunk);
   for (uint32_t k = 0; k < sgmo; k++) {
     e_sdrec_t e = spman_add(pm, chunk, 0); bt_chkerr(e.err);
     bt_assert_int_not_equal(e.sdrec.id, SRID_NIL);
     bt_assert(e.sdrec.size >= chunk);
     bt_assert_ptr_not_equal(e.sdrec.slot, NULL);
-    /*bt_log("add id: %u %u, size:%u\n",
+    /*printf("add id: %u %u, size:%u\n",
       (e.sdrec.id & STORE_PAGEMASK) >> STORE_SLOTBITS,
       e.sdrec.id & STORE_SLOTMASK, e.sdrec.size);*/
     memset(e.sdrec.slot, k % 26 + 'a', e.sdrec.size);
     vel[k] = e.sdrec.id;
   }
 
-  bt_log("[spman] page identity\n");
+  printf("[spman] page identity\n");
   {
     e_spmap_t e1 = spman_load(pm, test->num / 2); bt_chkerr(e1.err);
     e_spmap_t e2 = spman_load(pm, test->num / 2); bt_chkerr(e1.err);
@@ -107,10 +107,10 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 #ifdef TESTPROF
   ProfilerStart(TESTPROF);
 #endif
-  bt_log("[spman] burst!\n");
+  printf("[spman] burst!\n");
   for (uint32_t k = 0; k < sgmo; k++) {
     srid_t id = vel[k];
-    /*bt_log("get id: %u %u\n",
+    /*printf("get id: %u %u\n",
       (id & STORE_PAGEMASK) >> STORE_SLOTBITS,
       id & STORE_SLOTMASK);*/
     e_sdrec_t e = spman_get(pm, id);
@@ -123,7 +123,7 @@ BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
 
   free(vel);
 
-  bt_log("[spman] final store size is %u pages\n", test->pm->cnt);
+  printf("[spman] final store size is %u pages\n", test->pm->cnt);
 
   spman_clear(test->pm);
 
@@ -506,7 +506,7 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
       v[k] = r.smrec->id;
     }
 
-    bt_log("[store] force discard\n"); gc_collect(&test->s->g, 1);
+    printf("[store] force discard\n"); gc_collect(&test->s->g, 1);
 
     for (uint16_t k = 0; k < 2; k++) {
       e_smrec_t e = store_get_object(test->s, v[k]); bt_chkerr(e.err);
@@ -514,7 +514,7 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
     }
   }
 
-  bt_log("[store] force discard\n"); gc_collect(&test->s->g, 1);
+  printf("[store] force discard\n"); gc_collect(&test->s->g, 1);
 
   {
     sclass_t * clist;
@@ -535,12 +535,12 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
 
     srid_t hid = head->id;
 
-    bt_log("[store] force discard\n"); gc_collect(&test->s->g, 1);
+    printf("[store] force discard\n"); gc_collect(&test->s->g, 1);
     e_smrec_t e = store_get_object(test->s, hid); bt_chkerr(e.err);
     bt_assert_int_equal(e.smrec->id, hid);
   }
 
-  bt_log("[store] force discard\n"); gc_collect(&test->s->g, 1);
+  printf("[store] force discard\n"); gc_collect(&test->s->g, 1);
 
   {
     sclass_t * clist;
@@ -563,7 +563,7 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
 
     srid_t hid = head->id;
 
-    bt_log("[store] reopen\n");
+    printf("[store] reopen\n");
     store_clear(test->s);
     bt_chkerr(store_init(test->s, store_test_path));
 

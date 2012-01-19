@@ -134,7 +134,7 @@ static inline
 void _blop_dump_level(unsigned int level)
 {
   for (unsigned int i = 0; i < level; i++)
-    bt_log("  ");
+    printf("  ");
 }
 
 #if 0
@@ -153,38 +153,38 @@ void _blob_dumper(blob_t * blob, unsigned int level, const char * rep, const cha
   if (blob->flags.pool && !rep)
     rep = "pool";
 
-  _blop_dump_level(level); bt_log("%s %s ", brk[0], rep ? rep : "blob");
+  _blop_dump_level(level); printf("%s %s ", brk[0], rep ? rep : "blob");
 
   {
-    bt_log("[%4zu]{",
+    printf("[%4zu]{",
         blob->flags.pool ? (blob->size - sizeof(pool_t)) : (blob->size - sizeof(blob_t)));
     if (blob->flags.first)
-      bt_log("\\");
+      printf("\\");
     else
-      bt_log("»");
-    if (blob->flags.poolmem) bt_log("m");
-    if (blob->flags.free) bt_log("f");
-    bt_log("} ");
+      printf("»");
+    if (blob->flags.poolmem) printf("m");
+    if (blob->flags.free) printf("f");
+    printf("} ");
   }
 
 
-  bt_log("[[ %8s ]]  ", blob->name);
+  printf("[[ %8s ]]  ", blob->name);
 
   if (blob->flags.first) {
     if (blob->rev)
-      bt_log("parent='%s'  ", blob->rev->name);
+      printf("parent='%s'  ", blob->rev->name);
   } else {
     if (blob->rev)
-      bt_log("prev='%s'  ", blob->rev->name);
+      printf("prev='%s'  ", blob->rev->name);
   }
   if (blob->next)
-    bt_log("next='%s'  ", blob->next->name);
+    printf("next='%s'  ", blob->next->name);
   if (blob->child)
-    bt_log("child='%s'  ", blob->child->name);
+    printf("child='%s'  ", blob->child->name);
   if (blob->flags.poolmem)
-    bt_log("pool='%s'  ", blob->pool->name);
+    printf("pool='%s'  ", blob->pool->name);
 
-  bt_log("%s\n", brk[1]);
+  printf("%s\n", brk[1]);
 }
 
 static
@@ -479,7 +479,7 @@ BT_TEST_DEF(blob, realloc, object, "what happens on reallocation")
       0);
 
 
-  bt_log(">> realloc p1\n");
+  printf(">> realloc p1\n");
   bt_assert_ptr_not_equal(
       (p1 = blob_test_realloc(NULL, p1, 28, null, "impossible")),
       NULL);
@@ -496,21 +496,21 @@ BT_TEST_DEF(blob, realloc, object, "what happens on reallocation")
       0);
 
 
-  bt_log(">> alloc x1\n");
+  printf(">> alloc x1\n");
   bt_assert_ptr_not_equal(
       (blob_test_alloc(p1, 7, "x1")),
       NULL);
 
-  bt_log(">> alloc p2 on p1\n");
+  printf(">> alloc p2 on p1\n");
   bt_assert_ptr_not_equal(
       (p2 = blob_test_realloc(p1, NULL, 30, null, "p2")),
       NULL);
 
-  bt_log(">> alloc x2 on p1\n");
+  printf(">> alloc x2 on p1\n");
   bt_assert_ptr_not_equal(
       (blob_test_alloc(p1, 1, "x2")),
       NULL);
-  bt_log(">> alloc x3 on p2\n");
+  printf(">> alloc x3 on p2\n");
   bt_assert_ptr_not_equal(
       (blob_test_alloc(p2, 3, "x3")),
       NULL);
@@ -531,7 +531,7 @@ BT_TEST_DEF(blob, realloc, object, "what happens on reallocation")
       0);
 
 
-  bt_log(">> realloc p2\n");
+  printf(">> realloc p2\n");
   bt_assert_ptr_not_equal(
       (p2 = blob_test_realloc(p1, p2, 40, null, 0)),
       NULL);
@@ -556,7 +556,7 @@ BT_TEST_DEF(blob, realloc, object, "what happens on reallocation")
   bt_assert_int_equal(blob_total_size(root), sizeof(blob_t) * 6 + 79);
   bt_assert_int_equal(blob_total_blobs(p1), 5);
 
-  bt_log(">> realloc p1\n");
+  printf(">> realloc p1\n");
   bt_assert_ptr_not_equal(
       (p1 = blob_test_realloc(NULL, p1, 22, null, 0)),
       NULL);
@@ -578,7 +578,7 @@ BT_TEST_DEF(blob, realloc, object, "what happens on reallocation")
       0);
 
 
-  bt_log(">> realloc p2\n");
+  printf(">> realloc p2\n");
   bt_assert_ptr_not_equal(
       (blob_test_realloc(NULL, p2, 5, null, 0)),
       NULL);
@@ -600,7 +600,7 @@ BT_TEST_DEF(blob, realloc, object, "what happens on reallocation")
       0);
 
 
-  bt_log(">> realloc free p2\n");
+  printf(">> realloc free p2\n");
   bt_assert_ptr_equal(
       (blob_test_realloc(NULL, p2, 0, null, 0)),
       NULL);
@@ -620,7 +620,7 @@ BT_TEST_DEF(blob, realloc, object, "what happens on reallocation")
 
   bt_assert_int_equal(blob_total_blobs(p1), 3);
 
-  bt_log(">> realloc free p1\n");
+  printf(">> realloc free p1\n");
   bt_assert_ptr_equal(
       (blob_test_realloc(NULL, p1, 0, null, 0)),
       NULL);
@@ -782,7 +782,7 @@ BT_TEST_DEF(blob, pool, object, "does our scapegoat (double free) 'pool' behave 
 
   blob_dump(root);
 
-  bt_log(">> realloc p3\n");
+  printf(">> realloc p3\n");
   bt_assert_ptr_not_equal(
       (p3 = blob_test_realloc((blob_t *) pool, p3, 90, null, 0)),
       NULL);

@@ -24,7 +24,7 @@ err_r * testobj_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   (void) g;
   (void) argc;
   (void) ap;
-  // bt_log("[testobj:%p] init\n", o);
+  // printf("[testobj:%p] init\n", o);
   testobj_t * t = (testobj_t *) o;
 
   for (unsigned k = 0; k < sizeof(t->objv)/sizeof(t->objv[0]); k++) {
@@ -44,7 +44,7 @@ static
 size_t testobj_clear(gc_global_t * g, gc_hdr_t * o)
 {
   (void) g;
-  // bt_log("[testobj:%p] clear\n", o);
+  // printf("[testobj:%p] clear\n", o);
   testobj_t * t = (testobj_t *) o;
 
   for (unsigned k = 0; k < sizeof(t->objv)/sizeof(t->objv[0]); k++) {
@@ -66,11 +66,11 @@ size_t testobj_propagate(gc_global_t * g, gc_obj_t * o)
   (void) g;
   testobj_t * t = (testobj_t *) o;
   for (unsigned k = 0; k < t->ocount; k++) {
-    // bt_log("[testobj:%p] propagate child %p\n", o, t->arr[k]);
+    // printf("[testobj:%p] propagate child %p\n", o, t->arr[k]);
     gc_mark_obj(g, &t->objv[k]->gco);
   }
   for (unsigned k = 0; k < t->scount; k++) {
-    // bt_log("[testobj:%p] propagate child %p\n", o, t->arr[k]);
+    // printf("[testobj:%p] propagate child %p\n", o, t->arr[k]);
     gc_mark_str(g, t->strv[k]);
   }
 
@@ -149,7 +149,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
   gc_collect(g, 0);
   gc_collect(g, 1);
 
-  bt_log("[GC] total = %zu\n", g->total);
+  printf("[GC] total = %zu\n", g->total);
 
   gc_stack_set(st, 20); bt_assert((st->de - st->d) >= 20);
   gc_stack_set(st, 4); bt_assert((st->dp - st->d) == 4);
@@ -159,10 +159,10 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
 
   for (gc_hdr_t ** c = st->d; c && c < st->dp; c++) {
     if ((t = TESTOBJ(*c))) {
-      bt_log("%% %+4ld testobj:%p\n", (c-st->d), (void *) t);
+      printf("%% %+4ld testobj:%p\n", (c-st->d), (void *) t);
       for (unsigned l = 0; l < t->scount; l++) {
         gc_str_t * s = t->strv[l];
-        bt_log("%%%% %+4d str:%p = '%.*s'\n", l, (void *) s, gc_str_len(s), s->data);
+        printf("%%%% %+4d str:%p = '%.*s'\n", l, (void *) s, gc_str_len(s), s->data);
       }
     } else {
       bt_assert(0);
@@ -175,7 +175,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
   gc_collect(g, 0);
   gc_collect(g, 1);
 
-  bt_log("[GC] total = %zu\n", g->total);
+  printf("[GC] total = %zu\n", g->total);
 
   gc_stack_set(st, 0); bt_assert_ptr_equal(gc_stack_top(st), NULL);
   bt_assert_int_equal(gc_stack_size(st), 0);
@@ -234,7 +234,7 @@ BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
   gc_del_root(g, &st->gco);
   gc_collect(g, 1);
 
-  bt_log("[GC] total = %zu\n", g->total);
+  printf("[GC] total = %zu\n", g->total);
 
   gc_clear(g);
 

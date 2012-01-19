@@ -223,19 +223,19 @@ err_r * test_function_1()
 
 BT_TEST_DEF_PLAIN(error, plain, "simple tests")
 {
-  bt_log("[err] calling failing functions\n");
+  printf("[err] calling failing functions\n");
   err_r * e = test_function_1();
   bt_assert_ptr_not_equal(e, NULL);
-  bt_log("[err] printing error report\n");
+  printf("[err] printing error report\n");
   err_report(STDOUT_FILENO);
   err_reset();
 
-  bt_log("[err] calling failing function\n");
+  printf("[err] calling failing function\n");
   e = test_function_1();
   bt_assert_ptr_not_equal(e, NULL);
-  bt_log("[err] resetting error status\n");
+  printf("[err] resetting error status\n");
   err_reset();
-  bt_log("[err] checking that reset worked\n");
+  printf("[err] checking that reset worked\n");
   bt_assert_ptr_equal(err_pop(), NULL);
   bt_assert_ptr_equal(err_pop(), NULL);
 

@@ -38,7 +38,7 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
 
   n = 0;
   if (!(fp = fopen(BROOT "/src/trie/pathman-tests.txt", "r"))) {
-    bt_log("could not open test file for reading!\n");
+    printf("could not open test file for reading!\n");
     return BT_RESULT_IGNORE;
   }
 
@@ -72,8 +72,8 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
 
   bt_chkerr(pathman_init(test->pman));
 
-  bt_log("[pathman:init] file bank size is %u\n", PDIR_BANKSIZE);
-  bt_log("[pathman:init] dir bank size is %u\n", PFILE_BANKSIZE);
+  printf("[pathman:init] file bank size is %u\n", PDIR_BANKSIZE);
+  printf("[pathman:init] dir bank size is %u\n", PFILE_BANKSIZE);
 
   *objectref = test;
 
@@ -106,10 +106,10 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
 
   for (uint32_t k = 0; k < test->num; k++) {
     if (test->flag[k] == 1) {
-      // bt_log("DIR '%s'\n", test->strv[k]);
+      // printf("DIR '%s'\n", test->strv[k]);
       dlup = pathman_add_dir(test->pman, test->strv[k], 0);
       if (dlup.err) {
-        bt_log("FAIL dir '%s'\n", test->strv[k]);
+        printf("FAIL dir '%s'\n", test->strv[k]);
         bt_chkerr(dlup.err);
       }
       bt_assert_ptr_not_equal(dlup.dir, NULL);
@@ -117,10 +117,10 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
       dlup.dir->rid = k;
       dnum++;
     } else if (test->flag[k] == 2 && dlup.dir) {
-      // bt_log("FILE '%s'\n", basename(test->strv[k]));
+      // printf("FILE '%s'\n", basename(test->strv[k]));
       flup = pathman_add_file(test->pman, dlup.dir, basename(test->strv[k]), 0);
       if (flup.err) {
-        bt_log("FAIL file '%s'\n", basename(test->strv[k]));
+        printf("FAIL file '%s'\n", basename(test->strv[k]));
         bt_chkerr(flup.err);
       }
       flup.file->rid = k;
@@ -140,11 +140,11 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
       }
       buf[dl] = '\0';
 
-      // bt_log("D %s\n", buf);
+      // printf("D %s\n", buf);
 
       dlup = pathman_get_dir(test->pman, buf);
       if (dlup.err) {
-        bt_log("FAIL dir '%s'\n", test->strv[k]);
+        printf("FAIL dir '%s'\n", test->strv[k]);
         bt_chkerr(dlup.err);
       }
       bt_assert_ptr_not_equal(dlup.dir, NULL);
@@ -154,11 +154,11 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
       memcpy(buf + dl, s, fl);
       buf[dl + fl++] = '\0';
 
-      // bt_log("F %s\n", buf);
+      // printf("F %s\n", buf);
 
       flup = pathman_get_file(test->pman, buf);
       if (flup.err) {
-        bt_log("FAIL file '%s'\n", basename(test->strv[k]));
+        printf("FAIL file '%s'\n", basename(test->strv[k]));
         bt_chkerr(flup.err);
       }
       bt_assert_ptr_not_equal(flup.file, NULL);
@@ -166,10 +166,10 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
     }
   }
 
-  bt_log("[pathman] %u file(s) in %u dir(s)\n", fnum, dnum);
-  bt_log("[pathman] %u trie bank(s)\n", test->pman->trie->banks);
-  bt_log("[pathman] %u dir bank(s)\n", test->pman->dbanks);
-  bt_log("[pathman] %u file bank(s)\n", test->pman->fbanks);
+  printf("[pathman] %u file(s) in %u dir(s)\n", fnum, dnum);
+  printf("[pathman] %u trie bank(s)\n", test->pman->trie->banks);
+  printf("[pathman] %u dir bank(s)\n", test->pman->dbanks);
+  printf("[pathman] %u file bank(s)\n", test->pman->fbanks);
 
   // trie_print(test->pman->trie, 4);
   // pathman_print(test->pman, 4);
