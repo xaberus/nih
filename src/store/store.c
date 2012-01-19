@@ -42,7 +42,7 @@ uint32_t ihash32(uint32_t a)
 #define SRID_TO_PAGE(_srid) (((_srid) & STORE_PAGEMASK) >> STORE_SLOTBITS)
 #define SRID_TO_SLOT(_srid) ((_srid) & STORE_SLOTMASK)
 
-#define VERBOSEDEBUG 0
+#define VERBOSEDEBUG 1
 
 #define CLASS_FMT "[1;35m%u[0;m"
 #define PTR_FMT "[1;33m%p[0;m"
@@ -286,7 +286,7 @@ void spmap_gen_index(spmap_t * m)
   for (uint32_t sid = 0; sid < m->scount; sid++) {
     uint16_t sflag = sdisk_u16_read(&p);
     uint16_t ssize = sdisk_u16_read(&p);
-    // fprintf(stderr, "IDX %08u|%04u|%04u|%04u|%p\n", p - m->page, sid, sflag, ALIGN2(ssize), slot);
+    // fprintf(stdout, "IDX %08u|%04u|%04u|%04u|%p\n", p - m->page, sid, sflag, ALIGN2(ssize), slot);
     if (sid < STORE_SLOTSMAX) {
       sslot_t * s = &m->index[sid];
       s->flag = sflag;
@@ -344,7 +344,7 @@ do_alloc:
   sflag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
   p = sdisk_u16_write(p, sflag);
   p = sdisk_u16_write(p, ssize);
-  // fprintf(stderr, "OFF %08u|%04u|%04u|%04u\n", off, sid, sflag| ssize);
+  // fprintf(stdout, "OFF %08u|%04u|%04u|%04u\n", off, sid, sflag| ssize);
   sslot_t * s = &m->index[sid];
   s->flag = sflag;
   s->size = ssize;
@@ -453,7 +453,7 @@ e_spmap_t spman_load(spman_t * pm, uint32_t pnum)
   m->sfhdr = 0;
 
 #if VERBOSEDEBUG > 0
-  fprintf(stderr, "[P] loaded page "PTR_FMT":"PAGE_FMT" (%u slots) {%u bytes}\n",
+  fprintf(stdout, "[P] loaded page "PTR_FMT":"PAGE_FMT" (%u slots) {%u bytes}\n",
     (void *) m->page, pnum, scount, psize);
 #endif
 
@@ -484,7 +484,7 @@ void spman_unload(spman_t * pm, spmap_t * m)
       m->next->rev = m->rev;
     }
 #if VERBOSEDEBUG > 0
-    fprintf(stderr, "{P} unloading page "PTR_FMT":"PAGE_FMT" (%u slots) {%u bytes}\n",
+    fprintf(stdout, "{P} unloading page "PTR_FMT":"PAGE_FMT" (%u slots) {%u bytes}\n",
       (void *) m->page, m->pnum, m->scount, m->psize);
 #endif
     munmap(m->page, m->psize);
@@ -554,7 +554,7 @@ e_sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
   }
 
 #if VERBOSEDEBUG > 2
-      fprintf(stderr, "[P] resizing store to %u pages (anum was "PAGE_FMT")\n",
+      fprintf(stdout, "[P] resizing store to %u pages (anum was "PAGE_FMT")\n",
         pm->cnt + 1, pm->anum);
 #endif
 
@@ -578,7 +578,7 @@ e_sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
     err = err_return(ERR_FAILURE, "could not ftruncate space for new page");  goto out;
   }
 #if VERBOSEDEBUG > 2
-  fprintf(stderr, "[P] appended %u bytes to store\n", psize);
+  fprintf(stdout, "[P] appended %u bytes to store\n", psize);
 #endif
   if (lseek(pm->fd, off, SEEK_SET) == (off_t) -1) {
     err = err_return(ERR_FAILURE, "could not lseek to start of new page");  goto out;
@@ -936,7 +936,7 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   }
 
 #if VERBOSEDEBUG
-  fprintf(stderr, "{M} object <"PTR_FMT":"SRID_FMT"> of class <"PTR_FMT":"CLASS_FMT">\n",
+  fprintf(stdout, "{M} object <"PTR_FMT":"SRID_FMT"> of class <"PTR_FMT":"CLASS_FMT">\n",
     (void *) r, r->id, (void *) r->sc, r->sc->id);
 #endif
 
@@ -963,7 +963,7 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         sp += ALIGN2(l);
         dp = smem_ptr_write(dp, e.gc_str);
 #if VERBOSEDEBUG
-        fprintf(stderr, "    element of <%p:%u> (string) <%.*s>\n",
+        fprintf(stdout, "    element of <%p:%u> (string) <%.*s>\n",
           (void *) r, r->id, gc_str_len(e.gc_str), e.gc_str->data);
 #endif
         break;
@@ -977,13 +977,13 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
           }
           dp = smem_ptr_write(dp, e.smrec);
 #if VERBOSEDEBUG
-          fprintf(stderr, "    element of <%p:%u> (object) <"PTR_FMT":"SRID_FMT":"CLASS_FMT">\n",
+          fprintf(stdout, "    element of <%p:%u> (object) <"PTR_FMT":"SRID_FMT":"CLASS_FMT">\n",
             (void *) r, r->id, (void *) e.smrec, e.smrec->id, e.smrec->sc->id);
 #endif
         } else {
           dp = smem_ptr_write(dp, NULL);
 #if VERBOSEDEBUG
-          fprintf(stderr, "    element of <%p:%u> (object) <"PTR_FMT">\n",
+          fprintf(stdout, "    element of <%p:%u> (object) <"PTR_FMT">\n",
             (void *) r, r->id, NULL);
 #endif
         }
@@ -998,13 +998,13 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
           }
           dp = smem_ptr_write(dp, e.sclass);
 #if VERBOSEDEBUG
-          fprintf(stderr, "    element of <%p:%u> (class) <"PTR_FMT":"CLASS_FMT">\n",
+          fprintf(stdout, "    element of <%p:%u> (class) <"PTR_FMT":"CLASS_FMT">\n",
             (void *) r, r->id, (void *) e.sclass, e.sclass->id);
 #endif
         } else {
           dp = smem_ptr_write(dp, NULL);
 #if VERBOSEDEBUG
-          fprintf(stderr, "    element of <%p:%u> (class) <"PTR_FMT">\n",
+          fprintf(stdout, "    element of <%p:%u> (class) <"PTR_FMT">\n",
             (void *) r, r->id, NULL);
 #endif
         }
@@ -1202,7 +1202,7 @@ e_sclass_t store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t f
   uint8_t * p = e.sdrec.slot;
 
 #if VERBOSEDEBUG
-  fprintf(stderr, "[D] writing class [1;35m%u[0;m of %u elements {%u bytes}\n",
+  fprintf(stdout, "[D] writing class [1;35m%u[0;m of %u elements {%u bytes}\n",
     e.sdrec.id, fcnt, sz);
 #endif
 
@@ -1275,7 +1275,7 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
   uint8_t * p = e.sdrec.slot;
 
 #if VERBOSEDEBUG
-  fprintf(stderr, "{D} writing object of class %u with {%u elements, %u bytes}\n", c->id, c->fcnt, sz);
+  fprintf(stdout, "{D} writing object of class %u with {%u elements, %u bytes}\n", c->id, c->fcnt, sz);
 #endif
 
   /* write class reference first */
