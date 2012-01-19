@@ -155,17 +155,12 @@ struct smrec {
   uint16_t   sz;    /* size of unpacked data */
 };
 
-typedef struct sfile {
-  uint8_t  str0[8];
-  uint32_t cnt;
-} sfile_t;
-
 typedef struct store {
   gc_global_t  g;      /* gc must go first for upcasts to work! */
   spman_t      pm;     /* page manager */
   gc_stack_t * limbs;  /* allocated array of limbs */
   trie_t       i2r;    /* map of ids to corresponding unpacked representation */
-  sfile_t    * hdr;    /* mapped header of store */
+  uint8_t    * hdr;    /* mapped header of store */
 } store_t;
 
 

@@ -7,6 +7,36 @@
 
 #include "store.h"
 
+/*
+  this is almost Jenkins reversible 32bit hash mix function
+  from http://burtleburtle.net/bob/hash/integer.html
+  (I could not find the inverse operation to the original 4th assignment)
+*/
+uint32_t hash32(uint32_t a)
+{
+  a = (a + (a << 12)) + 0x7ed55d16; /* a+a<<12 = a*4097 */
+  a = (a^0xc761c23c)  ^ (a>>19);
+  a = (a + (a << 5))  + 0x165667b1; /* a+a<<5 = a*33 */
+  a = (a + (a << 9))  ^ 0xd3a2646c; /* a+a<<9 = a*513 */
+  a = (a + (a << 3))  + 0xfd7046c5; /* a+a<<3 = a*9 */
+  a = (a^0xb55a4f09)  ^ (a>>16);
+
+  return a;
+}
+
+/* this is the corresponding inverse hash mix function */
+uint32_t ihash32(uint32_t a)
+{
+  a ^= 0xb55a4f09; a ^= (a>>16);
+  a -= 0xfd7046c5; a *= 0x38e38e39;  /* modinv32(9) == 0x38e38e39 */
+  a ^= 0xd3a2646c; a *= 0xf803fe01;  /* modinv32(513) == 0xf803fe01 */
+  a -= 0x165667b1; a *= 0x3e0f83e1;  /* modinv32(33) == 0x3e0f83e1 */
+  a ^= 0xc761c23c; a ^= (a>>19);
+  a -= 0x7ed55d16; a *= 0xfff001;    /* modinv32(4097) == 0xfff001 */
+
+  return a;
+}
+
 #include "store-tests.c"
 
 #define SRID_TO_PAGE(_srid) (((_srid) & STORE_PAGEMASK) >> STORE_SLOTBITS)
@@ -25,17 +55,6 @@
 
 #define ELEMENT(_t, _p) (*((_t *) (_p)))
 
-uint32_t hash32(uint32_t M)
-{
-  M = (M + 0x7ed55d16) + (M << 12);
-  M = (M ^ 0xc761c23c) ^ (M >> 19);
-  M = (M + 0x165667b1) + (M << 5);
-  M = (M + 0xd3a2646c) ^ (M << 9);
-  M = (M + 0xfd7046c5) + (M << 3);
-  M = (M ^ 0xb55a4f09) ^ (M >> 16);
-  return M;
-}
-
 /*************************************************************************************************/
 
 #define ALIGN2(_size) (((_size) + 1L) & ~1L)
@@ -51,10 +70,26 @@ uint8_t * sdisk_u16_write(uint8_t * dst, uint16_t value)
 }
 
 inline static
+uint16_t sdisk_u16_read(uint8_t ** dstp)
+{
+  uint16_t value = *((uint16_t *) *dstp);
+  *dstp += sizeof(uint16_t);
+  return value;
+}
+
+inline static
 uint8_t * sdisk_i32_write(uint8_t * dst, int32_t value)
 {
   *((int32_t *) dst) = value;
   return dst + sizeof(int32_t);
+}
+
+inline static
+int32_t sdisk_i32_read(uint8_t ** dstp)
+{
+  int32_t value = *((int32_t *) *dstp);
+  *dstp += sizeof(int32_t);
+  return value;
 }
 
 inline static
@@ -65,10 +100,26 @@ uint8_t * sdisk_u32_write(uint8_t * dst, uint32_t value)
 }
 
 inline static
+uint32_t sdisk_u32_read(uint8_t ** dstp)
+{
+  uint32_t value = *((uint32_t *) *dstp);
+  *dstp += sizeof(uint32_t);
+  return value;
+}
+
+inline static
 uint8_t * sdisk_i64_write(uint8_t * dst, int64_t value)
 {
   *((int64_t *) dst) = value;
   return dst + sizeof(int64_t);
+}
+
+inline static
+int64_t sdisk_i64_read(uint8_t ** dstp)
+{
+  int64_t value = *((int64_t *) *dstp);
+  *dstp += sizeof(int64_t);
+  return value;
 }
 
 inline static
@@ -79,10 +130,26 @@ uint8_t * sdisk_u64_write(uint8_t * dst, uint64_t value)
 }
 
 inline static
+uint64_t sdisk_u64_read(uint8_t ** dstp)
+{
+  uint64_t value = *((uint64_t *) *dstp);
+  *dstp += sizeof(uint64_t);
+  return value;
+}
+
+inline static
 uint8_t * sdisk_dbl_write(uint8_t * dst, double value)
 {
   *((double *) dst) = value;
   return dst + sizeof(double);
+}
+
+inline static
+double sdisk_dbl_read(uint8_t ** dstp)
+{
+  double value = *((double *) *dstp);
+  *dstp += sizeof(double);
+  return value;
 }
 
 inline static
@@ -118,6 +185,49 @@ uint8_t * sdisk_cls_write(uint8_t * dst, sclass_t * c)
   }
 }
 
+/*************************************************************************************************/
+
+inline static
+uint8_t * smem_i32_write(uint8_t * dst, int32_t value)
+{
+  *((int32_t *) dst) = value;
+  return dst + sizeof(int32_t);
+}
+
+inline static
+uint8_t * smem_u32_write(uint8_t * dst, uint32_t value)
+{
+  *((uint32_t *) dst) = value;
+  return dst + sizeof(uint32_t);
+}
+
+inline static
+uint8_t * smem_i64_write(uint8_t * dst, int64_t value)
+{
+  *((int64_t *) dst) = value;
+  return dst + sizeof(int64_t);
+}
+
+inline static
+uint8_t * smem_u64_write(uint8_t * dst, uint64_t value)
+{
+  *((uint64_t *) dst) = value;
+  return dst + sizeof(uint64_t);
+}
+
+inline static
+uint8_t * smem_dbl_write(uint8_t * dst, double value)
+{
+  *((double *) dst) = value;
+  return dst + sizeof(double);
+}
+
+inline static
+uint8_t * smem_ptr_write(uint8_t * dst, void * value)
+{
+  *((void **) dst) = value;
+  return dst + sizeof(void *);
+}
 
 /*************************************************************************************************/
 
@@ -161,38 +271,33 @@ int spman_clear(spman_t * pm)
 
 #define SPAGE_HDRWORDS 2
 #define SPAGE_HDRSIZE (sizeof(uint16_t) * SPAGE_HDRWORDS)
-#define SPAGE_HDR_PN(_p) (*((uint16_t *) (_p)))
-#define SPAGE_HDR_SCOUNT(_p) (*((uint16_t *) (_p) + 1))
-#define SPAGE_HDR_DATA(_p) ((void *)(((uint16_t *) (_p) + SPAGE_HDRWORDS)))
 
 #define SSLOT_HDRWORDS 2
 #define SSLOT_HDRSIZE (sizeof(uint16_t) * SSLOT_HDRWORDS)
-#define SSLOT_HDR_FLAG(_p) (*((uint16_t *) (_p)))
-#define SSLOT_HDR_SIZE(_p) (*((uint16_t *) (_p) + 1))
-#define SSLOT_HDR_SLOT(_p) ((void *)(((uint16_t *) (_p) + SSLOT_HDRWORDS)))
-#define SSLOT_HDR_NEXT(_p, _size) ((uint8_t *) SSLOT_HDR_SLOT(_p) + ALIGN2(_size))
+
 
 static
 void spmap_gen_index(spmap_t * m)
 {
   memset(m->index, 0, sizeof(m->index));
-  void * p = SPAGE_HDR_DATA(m->page);
+  uint8_t * p = m->page;
+  sdisk_u16_read(&p); /* pn */
+  sdisk_u16_read(&p); /* scount */
   for (uint32_t sid = 0; sid < m->scount; sid++) {
-    uint16_t sflag = SSLOT_HDR_FLAG(p);
-    uint16_t ssize = SSLOT_HDR_SIZE(p);
-    void * slot = SSLOT_HDR_SLOT(p);
+    uint16_t sflag = sdisk_u16_read(&p);
+    uint16_t ssize = sdisk_u16_read(&p);
     // fprintf(stderr, "IDX %08u|%04u|%04u|%04u|%p\n", p - m->page, sid, sflag, ALIGN2(ssize), slot);
     if (sid < STORE_SLOTSMAX) {
       sslot_t * s = &m->index[sid];
       s->flag = sflag;
       s->size = ssize;
-      s->slot = slot;
+      s->slot = p;
       if (sflag & SSLOT_FLAG_FLST) {
         m->sfree = 1;
         m->sfhdr = sid;
       }
     }
-    p = SSLOT_HDR_NEXT(p, ssize);
+    p += ssize;
   }
 }
 
@@ -206,7 +311,7 @@ sdrec_t spmap_alloc(spman_t * pm, spmap_t * m, uint16_t ssize, uint16_t usage)
   uint16_t sid = m->scount;
   uint32_t sz = ALIGN2(ssize);
   uint32_t off;
-  void * p, * slot;
+  void * p;
   uint16_t sflag, * wp;
   if (!sid) {
     off = SPAGE_HDRSIZE;
@@ -237,14 +342,13 @@ sdrec_t spmap_alloc(spman_t * pm, spmap_t * m, uint16_t ssize, uint16_t usage)
 do_alloc:
   p = (uint8_t *) m->page + off;
   sflag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
-  SSLOT_HDR_FLAG(p) = sflag;
-  SSLOT_HDR_SIZE(p) = ssize;
-  slot = SSLOT_HDR_SLOT(p);
+  p = sdisk_u16_write(p, sflag);
+  p = sdisk_u16_write(p, ssize);
   // fprintf(stderr, "OFF %08u|%04u|%04u|%04u\n", off, sid, sflag| ssize);
   sslot_t * s = &m->index[sid];
   s->flag = sflag;
   s->size = ssize;
-  s->slot = slot;
+  s->slot = p;
   m->scount++;
   wp = m->page; wp++;
   *wp = m->scount;
@@ -252,7 +356,7 @@ do_alloc:
     .id = (m->pnum << STORE_SLOTBITS) | sid,
     .size = ssize,
     .flag = sflag,
-    .slot = slot,
+    .slot = p,
     .map = m,
   };
 }
@@ -312,22 +416,22 @@ e_spmap_t spman_load(spman_t * pm, uint32_t pnum)
 
   /* going to load page now! */
   off_t off = pm->offset;
+  uint8_t phdr[SPAGE_HDRSIZE], * h;
   uint16_t pn;
   for (uint32_t k = 0; k <= pnum; k++) {
     if (lseek(pm->fd, off, SEEK_SET) == (off_t) -1) {
       return (e_spmap_t) {err_return(ERR_INVALID, "could not lseek to page start"), NULL};
     }
-    if (read(pm->fd, &pn, sizeof(pn)) != sizeof(pn)) {
+    if (read(pm->fd, phdr, sizeof(phdr)) != sizeof(phdr)) {
       return (e_spmap_t) {err_return(ERR_INVALID, "could not read page header"), NULL};
     }
+    h = phdr;
+    pn = sdisk_u16_read(&h);
     if (k < pnum) {
       off += pn * STORE_DATACHUNK;
     }
   }
-  uint16_t scount;
-  if (read(pm->fd, &scount, sizeof(scount)) != sizeof(scount)) {
-    return (e_spmap_t) {err_return(ERR_INVALID, "could not read page header"), NULL};
-  }
+  uint16_t scount = sdisk_u16_read(&h);
   uint32_t psize = pn * STORE_DATACHUNK;
   void * b = mmap(NULL, psize, PROT_READ | PROT_WRITE, MAP_SHARED, pm->fd, off);
   if (b == MAP_FAILED)
@@ -336,7 +440,7 @@ e_spmap_t spman_load(spman_t * pm, uint32_t pnum)
   spmap_t * m = malloc(sizeof(spmap_t));
   if (!m) {
     munmap(b, psize);
-    return (e_spmap_t) {err_return(ERR_MEM_ALLOC, "malloc() failed"), NULL};
+    return (e_spmap_t) {err_return(ERR_MEM_ALLOC, "could not allocate index for page"), NULL};
   }
   m->pnum = pnum;
   m->inuse = 0;
@@ -404,8 +508,7 @@ err_r * spman_truncate(spman_t * pm, spmap_t * m, uint32_t psize)
           if (b == MAP_FAILED) {
             return err_return(ERR_INVALID, "could not mmap() page");
           }
-          uint16_t * wp = b;
-          *wp = npn;
+          sdisk_u16_write(b, npn);
           m->page = b;
           m->psize = npsize;
           spmap_gen_index(m);
@@ -480,12 +583,10 @@ e_sdrec_t spman_add(spman_t * pm, uint16_t size, uint16_t usage)
   if (lseek(pm->fd, off, SEEK_SET) == (off_t) -1) {
     err = err_return(ERR_FAILURE, "could not lseek to start of new page");  goto out;
   }
-  uint16_t word = pn;
-  if (write(pm->fd, &word, sizeof(word)) != sizeof(word)) {
-    err = err_return(ERR_FAILURE, "could not write page header");  goto out;
-  }
-  word = 0;
-  if (write(pm->fd, &word, sizeof(word)) != sizeof(word)) {
+  uint8_t phdr[SPAGE_HDRSIZE], * h = phdr;
+  h = sdisk_u16_write(h, pn);
+  h = sdisk_u16_write(h, 0);
+  if (write(pm->fd, phdr, sizeof(phdr)) != sizeof(phdr)) {
     err = err_return(ERR_FAILURE, "could not write page header");  goto out;
   }
   pm->anum = pm->cnt++;
@@ -624,9 +725,8 @@ err_r * sclass_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   uint8_t * p = va_arg(ap, uint8_t *);
 
   for (uint16_t k = 0; k < c->fcnt; k++) {
-    c->flds[k].kind = ELEMENT(uint16_t, p);
-    p += sizeof(uint16_t);
-    srid_t mid = ELEMENT(srid_t, p); p += sizeof(srid_t);
+    c->flds[k].kind = sdisk_u16_read(&p);
+    srid_t mid = sdisk_u32_read(&p);
     if (mid != SRID_NIL) {
       e_smrec_t e = store_get_object(s, mid);
       if (e.err) {
@@ -713,8 +813,9 @@ e_sclass_t store_get_class(store_t * s, srid_t id)
 
     uint8_t * p = e.sdrec.slot;
     smrec_t * meta = NULL;
-    srid_t mid = ELEMENT(srid_t, p); p += sizeof(srid_t);
-    uint16_t fcnt = ELEMENT(uint16_t, p); p += sizeof(uint16_t);
+
+    srid_t mid = sdisk_u32_read(&p);
+    uint16_t fcnt = sdisk_u16_read(&p);
 
     if (mid != SRID_NIL) {
       e_smrec_t eee = store_get_object(s, mid);
@@ -811,22 +912,6 @@ size_t sclass_walk_propagate(store_t * s, sclass_t * c, void * p)
 
 /*************************************************************************************************/
 
-#if VERBOSEDEBUG
-#define MCOPYP(_t, _d, _s, _f, _r) \
-  do { \
-    _t val = ELEMENT(_t, _s); (_s) += sizeof(_t); \
-    ELEMENT(_t, _d) = val; (_d) += sizeof(_t); \
-    fprintf(stderr, "    element of <%p:%u> (" #_t ") " _f "\n", \
-      (void *) r, r ? r->id : SRID_NIL, val);\
-  } while(0)
-#else
-#define MCOPYP(_t, _d, _s, _f, _r) \
-  do { \
-    _t val = ELEMENT(_t, _s); (_s) += sizeof(_t); \
-    ELEMENT(_t, _d) = val; (_d) += sizeof(_t); \
-  } while(0)
-#endif
-
 static
 err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 {
@@ -860,73 +945,69 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   for (uint16_t k = 0; k < r->sc->fcnt; k++) {
     switch (r->sc->flds[k].kind) {
       case SKIND_INT32:
-        MCOPYP(int32_t, dp, sp, INT32_FMT, r); break;
+        dp = smem_i32_write(dp, sdisk_i32_read(&sp)); break;
       case SKIND_UINT32:
-        MCOPYP(uint32_t, dp, sp, UINT32_FMT, r); break;
+        dp = smem_u32_write(dp, sdisk_u32_read(&sp)); break;
       case SKIND_INT64:
-        MCOPYP(int64_t, dp, sp, INT64_FMT, r); break;
+        dp = smem_i64_write(dp, sdisk_i64_read(&sp)); break;
       case SKIND_UINT64:
-        MCOPYP(uint64_t, dp, sp, UINT64_FMT, r); break;
+        dp = smem_u64_write(dp, sdisk_u64_read(&sp)); break;
       case SKIND_DOUBLE:
-        MCOPYP(double, dp, sp, "%g", r); break;
+        dp = smem_dbl_write(dp, sdisk_dbl_read(&sp)); break;
       case SKIND_STRING: {
-        uint16_t l = ELEMENT(uint16_t, sp);
-        sp += sizeof(uint16_t);
+        uint16_t l = sdisk_u16_read(&sp);
         e_gc_str_t e = gc_new_str(&s->g, l, (char *) sp);
         if (e.err) {
           err = err_return(ERR_FAILURE, "could not allocate unpacked string"); goto out;
         }
-        ELEMENT(gc_str_t *, dp) = e.gc_str;
+        sp += ALIGN2(l);
+        dp = smem_ptr_write(dp, e.gc_str);
 #if VERBOSEDEBUG
         fprintf(stderr, "    element of <%p:%u> (string) <%.*s>\n",
           (void *) r, r->id, gc_str_len(e.gc_str), e.gc_str->data);
 #endif
-        sp += ALIGN2(l);
-        dp += sizeof(gc_str_t *);
         break;
       }
       case SKIND_OBJECT: {
-        srid_t rid = ELEMENT(srid_t, sp); sp += sizeof(srid_t);
+        srid_t rid = sdisk_u32_read(&sp);
         if (rid != SRID_NIL) {
           e_smrec_t e = store_get_object(s, rid);
           if (e.err) {
             err = err_return(ERR_FAILURE, "could not retreive referred record"); goto out;
           }
-          ELEMENT(smrec_t *, dp) =  e.smrec;
+          dp = smem_ptr_write(dp, e.smrec);
 #if VERBOSEDEBUG
           fprintf(stderr, "    element of <%p:%u> (object) <"PTR_FMT":"SRID_FMT":"CLASS_FMT">\n",
             (void *) r, r->id, (void *) e.smrec, e.smrec->id, e.smrec->sc->id);
 #endif
         } else {
-          ELEMENT(smrec_t *, dp) =  NULL;
+          dp = smem_ptr_write(dp, NULL);
 #if VERBOSEDEBUG
           fprintf(stderr, "    element of <%p:%u> (object) <"PTR_FMT">\n",
             (void *) r, r->id, NULL);
 #endif
         }
-        dp += sizeof(smrec_t *);
         break;
       }
       case SKIND_CLASS: {
-        srid_t cid = ELEMENT(srid_t, sp); sp += sizeof(srid_t);
+        srid_t cid = sdisk_u32_read(&sp);
         if (cid != SRID_NIL) {
           e_sclass_t e = store_get_class(s, cid);
           if (e.err) {
             err = err_return(ERR_FAILURE, "could not retreive referred class"); goto out;
           }
-          ELEMENT(sclass_t *, dp) = e.sclass;
+          dp = smem_ptr_write(dp, e.sclass);
 #if VERBOSEDEBUG
           fprintf(stderr, "    element of <%p:%u> (class) <"PTR_FMT":"CLASS_FMT">\n",
             (void *) r, r->id, (void *) e.sclass, e.sclass->id);
 #endif
         } else {
-          ELEMENT(sclass_t *, dp) = NULL;
+          dp = smem_ptr_write(dp, NULL);
 #if VERBOSEDEBUG
           fprintf(stderr, "    element of <%p:%u> (class) <"PTR_FMT">\n",
             (void *) r, r->id, NULL);
 #endif
         }
-        dp += sizeof(sclass_t *);
         break;
       }
     }
@@ -1044,7 +1125,7 @@ err_r * store_init(store_t * s, const char path[])
     }
     memset(s->hdr, 0xff, 4096);
     memcpy(s->hdr, HEADER_STR0, 8);
-    s->hdr->cnt = 0;
+    sdisk_u32_write(s->hdr + 8, 0);
   }
 
   if (!s->hdr) {
@@ -1062,7 +1143,8 @@ err_r * store_init(store_t * s, const char path[])
     return err_return(ERR_FAILURE, "file is not a store");
   }
 
-  if (spman_init(&s->pm, fd, 4096, s->hdr->cnt)) {
+  uint8_t * h = s->hdr + 8;
+  if (spman_init(&s->pm, fd, 4096, sdisk_u32_read(&h))) {
     munmap(s->hdr, 4096);
     close(fd);
     return err_return(ERR_FAILURE, "could not initialize page manager");
@@ -1095,7 +1177,7 @@ void store_clear(store_t * s)
   s->limbs = NULL;
 
   if (s->hdr) {
-    s->hdr->cnt = s->pm.cnt;
+    sdisk_u32_write(s->hdr + 8, s->pm.cnt);
     munmap(s->hdr, 4096);
   }
 
