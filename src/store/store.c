@@ -66,14 +66,14 @@ inline static
 uint8_t * sdisk_u16_write(uint8_t * dst, uint16_t value)
 {
   *((uint16_t *) dst) = value;
-  return dst + sizeof(uint16_t);
+  return dst + 2;
 }
 
 inline static
 uint16_t sdisk_u16_read(uint8_t ** dstp)
 {
   uint16_t value = *((uint16_t *) *dstp);
-  *dstp += sizeof(uint16_t);
+  *dstp += 2;
   return value;
 }
 
@@ -81,14 +81,14 @@ inline static
 uint8_t * sdisk_i32_write(uint8_t * dst, int32_t value)
 {
   *((int32_t *) dst) = value;
-  return dst + sizeof(int32_t);
+  return dst + 4;
 }
 
 inline static
 int32_t sdisk_i32_read(uint8_t ** dstp)
 {
   int32_t value = *((int32_t *) *dstp);
-  *dstp += sizeof(int32_t);
+  *dstp += 4;
   return value;
 }
 
@@ -96,14 +96,14 @@ inline static
 uint8_t * sdisk_u32_write(uint8_t * dst, uint32_t value)
 {
   *((uint32_t *) dst) = value;
-  return dst + sizeof(uint32_t);
+  return dst + 4;
 }
 
 inline static
 uint32_t sdisk_u32_read(uint8_t ** dstp)
 {
   uint32_t value = *((uint32_t *) *dstp);
-  *dstp += sizeof(uint32_t);
+  *dstp += 4;
   return value;
 }
 
@@ -111,14 +111,14 @@ inline static
 uint8_t * sdisk_i64_write(uint8_t * dst, int64_t value)
 {
   *((int64_t *) dst) = value;
-  return dst + sizeof(int64_t);
+  return dst + 8;
 }
 
 inline static
 int64_t sdisk_i64_read(uint8_t ** dstp)
 {
   int64_t value = *((int64_t *) *dstp);
-  *dstp += sizeof(int64_t);
+  *dstp += 8;
   return value;
 }
 
@@ -126,14 +126,14 @@ inline static
 uint8_t * sdisk_u64_write(uint8_t * dst, uint64_t value)
 {
   *((uint64_t *) dst) = value;
-  return dst + sizeof(uint64_t);
+  return dst + 8;
 }
 
 inline static
 uint64_t sdisk_u64_read(uint8_t ** dstp)
 {
   uint64_t value = *((uint64_t *) *dstp);
-  *dstp += sizeof(uint64_t);
+  *dstp += 8;
   return value;
 }
 
@@ -141,14 +141,14 @@ inline static
 uint8_t * sdisk_dbl_write(uint8_t * dst, double value)
 {
   *((double *) dst) = value;
-  return dst + sizeof(double);
+  return dst + 8;
 }
 
 inline static
 double sdisk_dbl_read(uint8_t ** dstp)
 {
   double value = *((double *) *dstp);
-  *dstp += sizeof(double);
+  *dstp += 8;
   return value;
 }
 
@@ -183,6 +183,24 @@ uint8_t * sdisk_cls_write(uint8_t * dst, sclass_t * c)
   } else {
     return sdisk_u32_write(dst, SRID_NIL);
   }
+}
+
+inline static
+uint16_t sdisk_size(skind_t kind)
+{
+  switch (kind) {
+    case SKIND_NONE: return 0; break;
+    case SKIND_INT32: return 4; break;
+    case SKIND_UINT32: return 4; break;
+    case SKIND_INT64: return 8; break;
+    case SKIND_UINT64: return 8; break;
+    case SKIND_DOUBLE: return 8; break;
+    case SKIND_STRING: return 2; break;
+    case SKIND_OBJECT: return 4; break;
+    case SKIND_ODREF: return 4; break;
+    case SKIND_CLASS: return 4; break;
+  }
+  return 0;
 }
 
 /*************************************************************************************************/
@@ -227,6 +245,24 @@ uint8_t * smem_ptr_write(uint8_t * dst, void * value)
 {
   *((void **) dst) = value;
   return dst + sizeof(void *);
+}
+
+inline static
+uint16_t smem_size(skind_t kind)
+{
+  switch (kind) {
+    case SKIND_NONE: return 0;
+    case SKIND_INT32: return sizeof(int32_t); break;
+    case SKIND_UINT32: return sizeof(uint32_t); break;
+    case SKIND_INT64: return sizeof(int64_t); break;
+    case SKIND_UINT64: return sizeof(uint64_t); break;
+    case SKIND_DOUBLE: return sizeof(double); break;
+    case SKIND_STRING: return sizeof(gc_str_t *); break;
+    case SKIND_OBJECT: return sizeof(smrec_t *); break;
+    case SKIND_ODREF: return sizeof(srid_t) + sizeof(smrec_t *); break;
+    case SKIND_CLASS: return sizeof(sclass_t *); break;
+  }
+  return 0;
 }
 
 /*************************************************************************************************/
@@ -720,12 +756,20 @@ err_r * sclass_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 
   c->id = va_arg(ap, srid_t);
   c->meta = va_arg(ap, smrec_t *);
+  if (c->meta) {
+    gc_barrier(&s->g, GC_OBJ(s), GC_HDR(c->meta));
+  }
   c->fcnt = va_arg(ap, int);
 
   uint8_t * p = va_arg(ap, uint8_t *);
 
+  uint16_t offset = 0;
+
   for (uint16_t k = 0; k < c->fcnt; k++) {
-    c->flds[k].kind = sdisk_u16_read(&p);
+    skind_t kind = sdisk_u16_read(&p);
+    c->flds[k].kind = kind;
+    c->flds[k].offset = offset;
+    offset += smem_size(kind);
     srid_t mid = sdisk_u32_read(&p);
     if (mid != SRID_NIL) {
       e_smrec_t e = store_get_object(s, mid);
@@ -733,6 +777,7 @@ err_r * sclass_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         return err_return(ERR_CORRUPTION, "could not retreive referred field meta record");
       }
       c->flds[k].meta = e.smrec;
+      gc_barrier(&s->g, GC_OBJ(s), GC_HDR(e.smrec));
     } else {
       c->flds[k].meta = NULL;
     }
@@ -790,6 +835,7 @@ size_t sclass_propagate(gc_global_t * g, gc_obj_t * o)
 }
 
 gc_vtable_t sclass_vtable = {
+  .name = "sclass_t",
   .flag = GC_VT_FLAG_OBJ,
   .gc_init = sclass_init,
   .gc_clear = sclass_clear,
@@ -842,7 +888,8 @@ uint16_t sclass_instargc(sclass_t * c)
 {
   uint16_t r = 0;
   for (uint16_t k = 0; k < c->fcnt; k++) {
-    switch (c->flds[k].kind) {
+    switch ((skind_t) c->flds[k].kind) {
+      case SKIND_NONE: break;
       case SKIND_INT32: r++; break;
       case SKIND_UINT32: r++; break;
       case SKIND_INT64: r++; break;
@@ -850,6 +897,7 @@ uint16_t sclass_instargc(sclass_t * c)
       case SKIND_DOUBLE: r++; break;
       case SKIND_STRING: r += 2; break;
       case SKIND_OBJECT: r++; break;
+      case SKIND_ODREF: r++; break;
       case SKIND_CLASS: r++; break;
     }
   }
@@ -860,54 +908,44 @@ uint16_t sclass_mem_size(sclass_t * c)
 {
   uint16_t sz = 0;
   for (uint16_t k = 0; k < c->fcnt; k++) {
-    switch (c->flds[k].kind) {
-      case SKIND_INT32:
-      case SKIND_UINT32:
-        sz += sizeof(uint32_t); break;
-      case SKIND_INT64:
-      case SKIND_UINT64:
-        sz += sizeof(uint64_t); break;
-      case SKIND_DOUBLE:
-        sz += sizeof(double); break;
-      case SKIND_STRING:
-        sz += sizeof(gc_str_t *); break;
-      case SKIND_OBJECT:
-        sz += sizeof(smrec_t *); break;
-      case SKIND_CLASS:
-        sz += sizeof(sclass_t *); break;
-    }
+    sz += smem_size(c->flds[k].kind);
   }
   return sz;
 }
 
-size_t sclass_walk_propagate(store_t * s, sclass_t * c, void * p)
+size_t sclass_walk_propagate(store_t * s, sclass_t * c, uint8_t * p)
 {
-  size_t k = 0;
+  size_t n = 0;
   for (uint16_t k = 0; k < c->fcnt; k++) {
-    switch (c->flds[k].kind) {
+    switch ((skind_t) c->flds[k].kind) {
+      case SKIND_NONE:
       case SKIND_INT32:
       case SKIND_UINT32:
-        p = (uint8_t *) p + sizeof(uint32_t); break;
       case SKIND_INT64:
       case SKIND_UINT64:
-        p = (uint8_t *) p + sizeof(uint64_t); break;
       case SKIND_DOUBLE:
-        p = (uint8_t *) p + sizeof(double); break;
-      case SKIND_STRING:
-        gc_mark(&s->g, *((gc_hdr_t **) p)); k++;
-        p = (uint8_t *) p + sizeof(gc_str_t *);
         break;
-      case SKIND_OBJECT:
-        gc_mark(&s->g, *((gc_hdr_t **) p)); k++;
-        p = (uint8_t *) p + sizeof(smrec_t *);
-        break;
-      case SKIND_CLASS:
-        gc_mark(&s->g, *((gc_hdr_t **) p)); k++;
-        p = (uint8_t *) p + sizeof(sclass_t *);
-        break;
+      case SKIND_STRING: {
+        gc_str_t * str = *(gc_str_t **) (p + c->flds[k].offset);
+        gc_mark(&s->g, GC_HDR(str)); n++;
+      } break;
+      case SKIND_OBJECT: {
+        smrec_t * rec = *(smrec_t **) (p + c->flds[k].offset);
+        gc_mark(&s->g, GC_HDR(rec)); n++;
+      } break;
+      case SKIND_ODREF: {
+        smrec_t * rec = *(smrec_t **) (p + c->flds[k].offset + sizeof(srid_t));
+        if (rec) {
+          gc_mark(&s->g, GC_HDR(rec)); n++;
+        }
+      } break;
+      case SKIND_CLASS: {
+        sclass_t * cls = *(sclass_t **) (p + c->flds[k].offset);
+        gc_mark(&s->g, GC_HDR(cls)); n++;
+      } break;
     }
   }
-  return k;
+  return n;
 }
 
 /*************************************************************************************************/
@@ -924,6 +962,7 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   }
 
   r->sc = va_arg(ap, sclass_t *);
+  gc_barrier(&s->g, GC_OBJ(r), GC_HDR(r->sc));
   r->id = va_arg(ap, srid_t);
 
   r->sz = sclass_mem_size(r->sc);
@@ -943,7 +982,9 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
   uint8_t * sp = slot;
   uint8_t * dp = r->ptr;
   for (uint16_t k = 0; k < r->sc->fcnt; k++) {
-    switch (r->sc->flds[k].kind) {
+    switch ((skind_t) r->sc->flds[k].kind) {
+      case SKIND_NONE:
+        break;
       case SKIND_INT32:
         dp = smem_i32_write(dp, sdisk_i32_read(&sp)); break;
       case SKIND_UINT32:
@@ -962,6 +1003,7 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         }
         sp += ALIGN2(l);
         dp = smem_ptr_write(dp, e.gc_str);
+        gc_barrier(&s->g, GC_OBJ(r), GC_HDR(e.gc_str));
 #if VERBOSEDEBUG
         fprintf(stdout, "    element of <%p:%u> (string) <%.*s>\n",
           (void *) r, r->id, gc_str_len(e.gc_str), e.gc_str->data);
@@ -976,6 +1018,7 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
             err = err_return(ERR_FAILURE, "could not retreive referred record"); goto out;
           }
           dp = smem_ptr_write(dp, e.smrec);
+          gc_barrier(&s->g, GC_OBJ(r), GC_HDR(e.smrec));
 #if VERBOSEDEBUG
           fprintf(stdout, "    element of <%p:%u> (object) <"PTR_FMT":"SRID_FMT":"CLASS_FMT">\n",
             (void *) r, r->id, (void *) e.smrec, e.smrec->id, e.smrec->sc->id);
@@ -989,6 +1032,10 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         }
         break;
       }
+      case SKIND_ODREF: {
+        dp = smem_u32_write(dp, sdisk_u32_read(&sp)); break;
+        dp = smem_ptr_write(dp, NULL);
+      } break;
       case SKIND_CLASS: {
         srid_t cid = sdisk_u32_read(&sp);
         if (cid != SRID_NIL) {
@@ -997,6 +1044,7 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
             err = err_return(ERR_FAILURE, "could not retreive referred class"); goto out;
           }
           dp = smem_ptr_write(dp, e.sclass);
+          gc_barrier(&s->g, GC_OBJ(r), GC_HDR(e.sclass));
 #if VERBOSEDEBUG
           fprintf(stdout, "    element of <%p:%u> (class) <"PTR_FMT":"CLASS_FMT">\n",
             (void *) r, r->id, (void *) e.sclass, e.sclass->id);
@@ -1042,14 +1090,7 @@ size_t smrec_propagate(gc_global_t * g, gc_obj_t * o)
 {
   store_t * s = (store_t *) g;
   smrec_t * r = (smrec_t *) o;
-  size_t    k = 0;
-
-  if (r->limb) {
-    gc_mark(g, GC_HDR(r->limb)); k++;
-  }
-
-  k += sclass_walk_propagate(s, r->sc, r->ptr);
-
+  size_t    k = sclass_walk_propagate(s, r->sc, r->ptr);
   return k;
 }
 
@@ -1237,28 +1278,32 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
 
   va_start(ap, c);
   for (uint16_t k = 0, v = 0; k < c->fcnt; k++) {
-    switch (c->flds[k].kind) {
+    switch ((skind_t) c->flds[k].kind) {
+      case SKIND_NONE:
+        break;
       case SKIND_INT32:
-        args[v++].i32 = va_arg(ap, int32_t); sz += sizeof(int32_t); break;
+        args[v++].i32 = va_arg(ap, int32_t); sz += sdisk_size(SKIND_INT32); break;
       case SKIND_UINT32:
-        args[v++].u32 = va_arg(ap, uint32_t); sz += sizeof(uint32_t); break;
+        args[v++].u32 = va_arg(ap, uint32_t); sz += sdisk_size(SKIND_UINT32); break;
       case SKIND_INT64:
-        args[v++].i64 = va_arg(ap, int64_t); sz += sizeof(int64_t); break;
+        args[v++].i64 = va_arg(ap, int64_t); sz += sdisk_size(SKIND_INT64); break;
       case SKIND_UINT64:
-        args[v++].u64 = va_arg(ap, uint64_t); sz += sizeof(uint64_t); break;
+        args[v++].u64 = va_arg(ap, uint64_t); sz += sdisk_size(SKIND_UINT64); break;
       case SKIND_DOUBLE:
-        args[v++].dbl = va_arg(ap, double); sz += sizeof(double); break;
+        args[v++].dbl = va_arg(ap, double); sz += sdisk_size(SKIND_DOUBLE); break;
       case SKIND_STRING: {
         uint16_t l = va_arg(ap, int);
         const char * a = va_arg(ap, const char *);
-        args[v++].u16 = l; sz += sizeof(uint16_t);
+        args[v++].u16 = l; sz += sdisk_size(SKIND_STRING);
         args[v++].str = a; sz += (a ? ALIGN2(l) : 0);
         break;
       }
       case SKIND_OBJECT:
-        args[v++].obj = va_arg(ap, smrec_t *); sz += sizeof(srid_t); break;
+        args[v++].obj = va_arg(ap, smrec_t *); sz += sdisk_size(SKIND_OBJECT); break;
+      case SKIND_ODREF:
+        args[v++].u32 = va_arg(ap, srid_t); sz += sdisk_size(SKIND_ODREF); break;
       case SKIND_CLASS:
-        args[v++].cls = va_arg(ap, sclass_t *); sz += sizeof(srid_t); break;
+        args[v++].cls = va_arg(ap, sclass_t *); sz += sdisk_size(SKIND_CLASS); break;
     }
   }
   va_end(ap);
@@ -1282,7 +1327,9 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
   p = sdisk_cls_write(p, c);
 
   for (uint16_t k = 0, v = 0; k < c->fcnt; k++) {
-    switch (c->flds[k].kind) {
+    switch ((skind_t) c->flds[k].kind) {
+      case SKIND_NONE:
+        break;
       case SKIND_INT32:
         p = sdisk_i32_write(p, args[v++].i32); break;
       case SKIND_UINT32:
@@ -1297,6 +1344,8 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
         p = sdisk_str_write(p, args[v].u16, args[v+1].str); v += 2; break;
       case SKIND_OBJECT:
         p = sdisk_obj_write(p, args[v++].obj); break;
+      case SKIND_ODREF:
+        p = sdisk_u32_write(p, args[v++].u32); break;
       case SKIND_CLASS: {
         p = sdisk_cls_write(p, args[v++].cls); break;
       }

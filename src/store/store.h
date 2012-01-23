@@ -115,13 +115,15 @@ e_sdrec_t spman_get(spman_t * pm, srid_t id);
 
 
 typedef enum skind {
+  SKIND_NONE = 0,
   SKIND_INT32,
-  SKIND_INT64,
   SKIND_UINT32,
+  SKIND_INT64,
   SKIND_UINT64,
   SKIND_DOUBLE,
   SKIND_STRING,
   SKIND_OBJECT,
+  SKIND_ODREF,
   SKIND_CLASS,
 } skind_t;
 
@@ -132,7 +134,8 @@ typedef struct sclass sclass_t;
 
 typedef struct scfld {
   skind_t    kind;    /* field kind */
-  smrec_t  * meta;   /* field meta or nil */
+  smrec_t  * meta;    /* field meta or nil */
+  uint16_t   offset;  /* field offset in unpacked record */
 } scfld_t;
 
 /* CLASS META LAYOUT: (string@name) */
@@ -151,7 +154,7 @@ struct smrec {
   sclass_t * sc;    /* pointer unpacked class this data implements */
   srid_t     id;    /* data record id */
   void     * ptr;   /* pointer to unpacked data */
-  smrec_t  * limb;  /* pointer to next data record in chain */
+  uint16_t * otr;   /* pointer offset table in unpacked data (do not free!) */
   uint16_t   sz;    /* size of unpacked data */
 };
 
@@ -183,5 +186,22 @@ e_sclass_t store_get_class(store_t * s, srid_t id);
 /* tuple */ typedef struct { err_r * err; smrec_t * smrec; } e_smrec_t;
 e_smrec_t store_add_object(store_t * s, sclass_t * c, ...);
 e_smrec_t store_get_object(store_t * s, srid_t id);
+
+typedef struct svalue {
+  skind_t kind;
+  union {
+    uint16_t     u16;
+    int32_t      i32;
+    uint32_t     u32;
+    int64_t      i64;
+    uint64_t     u64;
+    double       dbl;
+    const char * str;
+    smrec_t    * obj;
+    sclass_t   * cls;
+  } u;
+} svalue_t;
+
+svalue_t store_rec_getf(store_t * s, smrec_t * r, uint16_t f);
 
 #endif /* _STORE_H */
