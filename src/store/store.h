@@ -32,7 +32,7 @@ typedef uint32_t srid_t;
 #define STORE_SLOTMASK (~((srid_t) 0) >> STORE_PAGEBITS)
 
 /* maximal slots per page */
-#define STORE_SLOTSMAX ((1 << STORE_SLOTBITS) - 1)
+#define STORE_SLOTSMAX ((1 << STORE_SLOTBITS))
 
 /* maximal amount of pges to keep alive */
 #define STORE_LIVEPAGES 16
@@ -80,6 +80,7 @@ struct spmap {
   off_t      poff;    /* page offset in store */
   uint16_t   sfree;   /* 1 if there are free slots < scount */
   uint16_t   sfhdr;   /* first free slot if sfree == 1 */
+  uint16_t   live;
 };
 
 /* volatile record data tuple */
@@ -158,6 +159,11 @@ struct smrec {
   uint16_t   sz;    /* size of unpacked data */
 };
 
+typedef struct sodref {
+  srid_t    rid;
+  smrec_t * ref;
+} soref_t;
+
 typedef struct store {
   gc_global_t  g;      /* gc must go first for upcasts to work! */
   spman_t      pm;     /* page manager */
@@ -187,21 +193,6 @@ e_sclass_t store_get_class(store_t * s, srid_t id);
 e_smrec_t store_add_object(store_t * s, sclass_t * c, ...);
 e_smrec_t store_get_object(store_t * s, srid_t id);
 
-typedef struct svalue {
-  skind_t kind;
-  union {
-    uint16_t     u16;
-    int32_t      i32;
-    uint32_t     u32;
-    int64_t      i64;
-    uint64_t     u64;
-    double       dbl;
-    const char * str;
-    smrec_t    * obj;
-    sclass_t   * cls;
-  } u;
-} svalue_t;
-
-svalue_t store_rec_getf(store_t * s, smrec_t * r, uint16_t f);
+err_r * store_follow_ref(store_t * s, smrec_t * r, soref_t * o);
 
 #endif /* _STORE_H */

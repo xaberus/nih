@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
+#include <stddef.h>
 #ifdef TESTPROF
 # include <google/profiler.h>
 #endif
@@ -581,34 +582,71 @@ BT_TEST_DEF(store, defer, object, "tests for deferred object references")
   scfld_t v[] = {
     {SKIND_UINT32, NULL, 0},
     {SKIND_ODREF, NULL, 0},
+    {SKIND_OBJECT, NULL, 0},
   };
-  e_sclass_t e = store_add_class(test->s, NULL, 2, v); bt_chkerr(e.err);
+  e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
   sclass_t * ctuple = e.sclass;
 
-  e_smrec_t val0 = store_add_object(test->s, ctuple, 0, SRID_NIL); bt_chkerr(val0.err);
-  e_smrec_t val1 = store_add_object(test->s, ctuple, 1, val0.smrec->id); bt_chkerr(val0.err);
-  e_smrec_t val2 = store_add_object(test->s, ctuple, 2, val1.smrec->id); bt_chkerr(val0.err);
-  e_smrec_t val3 = store_add_object(test->s, ctuple, 3, val2.smrec->id); bt_chkerr(val0.err);
+//#define NN 10000
+#define NN 5000
 
-  srid_t head = val3.smrec->id;
+  srand(777);
+
+  smrec_t * crosslink[NN] = {NULL};
+
+  srid_t head = SRID_NIL;
+  for (uint32_t k = 0; k < NN; k++) {
+    e_smrec_t val = store_add_object(test->s, ctuple,
+      k+1, head, k ? crosslink[rand()%k] : NULL); bt_chkerr(val.err);
+    head = val.smrec->id;
+    crosslink[k] = val.smrec;
+    bt_assert_int_equal(head - ctuple->id, k + 1);
+  }
 
   const uint8_t ccmp[] =
     "\xff\xff\xff\xff" // meta = nil
-    "\x02\x00" // fcnt = 2
+    "\x03\x00" // fcnt = 2
     "\x02\x00" "\xff\xff\xff\xff" // (SKIND_UINT32, nil)
     "\x08\x00" "\xff\xff\xff\xff" // (SKIND_ODREF, nil)
+    "\x07\x00" "\xff\xff\xff\xff" // (SKIND_OBJECT, nil)
   ;
 
   {
     e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-    bt_assert_int_equal(er.sdrec.size, 18);
-    bt_assert(memcmp(er.sdrec.slot, ccmp, 18) == 0);
+    bt_assert_int_equal(er.sdrec.size, 24);
+    bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
   }
 
   printf("[store] force discard\n"); gc_collect(&test->s->g, 1);
 
-  e_smrec_t er = store_get_object(test->s, head); bt_chkerr(er.err);
+  struct tstruct {
+    uint32_t n;
+    soref_t  next;
+  } * p;
 
+  e_smrec_t er = store_get_object(test->s, head); bt_chkerr(er.err);
+  p = er.smrec->ptr;
+
+  for (uint32_t k = 0; k < NN; k++) {
+    bt_assert_int_equal(p->n, NN - k);
+    if (k != (NN-1)) {
+      bt_chkerr(store_follow_ref(test->s, er.smrec, &p->next));
+      p = p->next.ref->ptr;
+      bt_assert_ptr_not_equal(p, NULL);
+    } else {
+      bt_assert_int_equal(p->next.rid, SRID_NIL);
+    }
+  }
+
+  printf("[store] going to check gc (locking record & forced discard)\n");
+  gc_add_root(&test->s->g, GC_OBJ(er.smrec));
+  gc_collect(&test->s->g, 1);
+
+  e_smrec_t en = store_get_object(test->s, head); bt_chkerr(en.err);
+  bt_assert_ptr_equal(er.smrec, en.smrec);
+  printf("[store] unlocking record & forced discard\n");
+  gc_del_root(&test->s->g, GC_OBJ(er.smrec));
+  gc_collect(&test->s->g, 1);
   return BT_RESULT_OK;
 }
 
