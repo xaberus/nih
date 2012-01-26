@@ -1,0 +1,59 @@
+<protocol>
+  <sequence name="store">
+    <reference name="shdr"/>
+    <sequenceof name="pages" count="${shdr.pcnt}">
+      <sequence name="spage">
+        <reference name="sphdr"/>
+        <sequenceof name="slots" count="${sphdr.scount}">
+          <choice name="slot">
+            <reference name="sclass"/>
+            <reference name="slot"/>
+            <reference name="uslot"/>
+          </choice>
+        </sequenceof>
+        <field length="8*4096*${sphdr.sn}-len{slots}-len{sphdr}" type="hex"/>
+      </sequence>
+    </sequenceof>
+  </sequence>
+
+  <common>
+    <choice name="oref">
+      <field name="nil" length="32" type="integer" encoding="little endian" value="4294967295"/>
+      <field name="ref" length="32" type="integer" encoding="little endian"/>
+    </choice>
+    <sequence name="shdr">
+      <field name="signature" length="64" type="text"/>
+      <field name="pcnt" length="32" type="integer" encoding="little endian"/>
+      <field length="8*(4096-8-4)" type="binary" encoding="little endian"/>
+    </sequence>
+    <sequence name="sphdr">
+      <field name="sn" length="16" type="integer" encoding="little endian"/>
+      <field name="scount" length="16" type="integer" encoding="little endian"/>
+    </sequence>
+    <sequence name="sclass">
+      <field length="16" type="integer" encoding="little endian" value="20"/>
+      <field length="16" type="integer" encoding="little endian"/>
+      <reference name="meta" type="oref"/>
+      <field name="fnum" length="16" type="integer" encoding="little endian"/>
+      <sequenceof name="kinds" count="${fnum}">
+        <sequence name="field">
+          <field name="fkind" length="16" type="integer" encoding="little endian"/>
+          <reference name="meta" type="oref"/>
+        </sequence>
+      </sequenceof>
+    </sequence>
+    <sequence name="slot">
+      <field length="16" type="integer" encoding="little endian" value="36"/>
+      <field name="ssize" length="16" type="integer" encoding="little endian"/>
+      <sequence name="class">
+      <reference name="fclass" type="oref"/>
+      </sequence>
+      <field name="data" length="8*${ssize}-32" type="hex"/>
+    </sequence>
+    <sequence name="uslot">
+      <field name="flag" length="16" type="integer" encoding="little endian"/>
+      <field name="ssize" length="16" type="integer" encoding="little endian"/>
+      <field name="data" length="8*${ssize}" type="hex"/>
+    </sequence>
+  </common>
+</protocol>
