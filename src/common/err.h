@@ -90,9 +90,10 @@ void    err_report(int fd);
   do { \
     err_r * err = (_err); \
     if (err) { \
-      err_report(STDOUT_FILENO); \
-      dprintf(STDOUT_FILENO, "->%s:%s:%d\n", \
+      printf("->%s:%s:%d\n", \
           __FILE__, __FUNCTION__, __LINE__); \
+      fflush(stdout); \
+      err_report(STDOUT_FILENO); \
       err_reset(); \
       return BT_RESULT_FAIL; \
     } \
