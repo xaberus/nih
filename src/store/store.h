@@ -117,6 +117,8 @@ e_sdrec_t spman_get(spman_t * pm, srid_t id);
 
 typedef enum skind {
   SKIND_NONE = 0,
+	SKIND_UINT8,
+	SKIND_UINT16,
   SKIND_INT32,
   SKIND_UINT32,
   SKIND_INT64,

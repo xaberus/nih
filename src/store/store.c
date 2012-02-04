@@ -64,6 +64,8 @@ uint16_t smem_size(skind_t kind)
 {
   switch (kind) {
     case SKIND_NONE: return 0;
+		case SKIND_UINT8: return sizeof(uint8_t); break;
+		case SKIND_UINT16: return sizeof(uint16_t); break;
     case SKIND_INT32: return sizeof(int32_t); break;
     case SKIND_UINT32: return sizeof(uint32_t); break;
     case SKIND_INT64: return sizeof(int64_t); break;
@@ -80,6 +82,8 @@ uint16_t smem_size(skind_t kind)
 inline static
 uint16_t smem_align(uint16_t offset, skind_t kind)
 {
+	struct au8 {uint8_t a; uint8_t val;};
+	struct au16 {uint8_t a; uint16_t val;};
   struct ai32 {uint8_t a; int32_t val;};
   struct au32 {uint8_t a; uint32_t val;};
   struct ai64 {uint8_t a; int64_t val;};
@@ -90,6 +94,8 @@ uint16_t smem_align(uint16_t offset, skind_t kind)
   uint16_t pos = 0;
   switch (kind) {
     case SKIND_NONE: pos = 0; break;
+		case SKIND_UINT8: pos = offsetof(struct au8, val); break;
+		case SKIND_UINT16: pos = offsetof(struct au16, val); break;
     case SKIND_INT32: pos = offsetof(struct ai32, val); break;
     case SKIND_UINT32: pos = offsetof(struct au32, val); break;
     case SKIND_INT64: pos = offsetof(struct ai64, val); break;
@@ -799,6 +805,8 @@ uint16_t sclass_instargc(sclass_t * c)
   for (uint16_t k = 0; k < c->fcnt; k++) {
     switch ((skind_t) c->flds[k].kind) {
       case SKIND_NONE: break;
+			case SKIND_UINT8: r++; break;
+			case SKIND_UINT16: r++; break;
       case SKIND_INT32: r++; break;
       case SKIND_UINT32: r++; break;
       case SKIND_INT64: r++; break;
@@ -829,6 +837,8 @@ size_t sclass_walk_propagate(store_t * s, sclass_t * c, uint8_t * p)
   for (uint16_t k = 0; k < c->fcnt; k++) {
     switch ((skind_t) c->flds[k].kind) {
       case SKIND_NONE:
+			case SKIND_UINT8:
+			case SKIND_UINT16:
       case SKIND_INT32:
       case SKIND_UINT32:
       case SKIND_INT64:
@@ -898,6 +908,10 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
     switch ((skind_t) d->kind) {
       case SKIND_NONE:
         break;
+			case SKIND_UINT8:
+				ELEMENT(uint8_t, dp) = sdisk_u8_read(&sp); break;
+			case SKIND_UINT16:
+				ELEMENT(uint16_t, dp) = sdisk_u16_read(&sp); break;
       case SKIND_INT32:
         ELEMENT(int32_t, dp) = sdisk_i32_read(&sp); break;
       case SKIND_UINT32:
@@ -1192,6 +1206,7 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
   uint32_t sz = sizeof(srid_t);
 
   union {
+		uint8_t      u8;
     uint16_t     u16;
     int32_t      i32;
     uint32_t     u32;
@@ -1209,6 +1224,10 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
     switch ((skind_t) c->flds[k].kind) {
       case SKIND_NONE:
         break;
+      case SKIND_UINT8:
+        args[v++].u8 = va_arg(ap, int); sz += sdisk_size(SKIND_UINT8); break;
+      case SKIND_UINT16:
+        args[v++].u16 = va_arg(ap, int); sz += sdisk_size(SKIND_UINT16); break;
       case SKIND_INT32:
         args[v++].i32 = va_arg(ap, int32_t); sz += sdisk_size(SKIND_INT32); break;
       case SKIND_UINT32:
@@ -1260,6 +1279,10 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
     switch ((skind_t) c->flds[k].kind) {
       case SKIND_NONE:
         break;
+			case SKIND_UINT8:
+        p = sdisk_u8_write(p, args[v++].u8); break;
+      case SKIND_UINT16:
+        p = sdisk_u16_write(p, args[v++].u16); break;
       case SKIND_INT32:
         p = sdisk_i32_write(p, args[v++].i32); break;
       case SKIND_UINT32:
