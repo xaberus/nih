@@ -253,10 +253,10 @@ do_alloc:
   };
 }
 
-spmap_t * spman_pget(spman_t * pm, uint32_t pnum)
+spmap_t * spman_pget(spman_t * pm, srid_t pnum)
 {
   if (pnum < pm->cnt) {
-    uint32_t  hash = hash32(pnum) & STORE_LIVEMASK;
+    srid_t hash = hash32(pnum) & STORE_LIVEMASK;
     spmap_t * c = pm->map[hash];
     while (c) {
       if (c->pnum == pnum) {
@@ -268,7 +268,7 @@ spmap_t * spman_pget(spman_t * pm, uint32_t pnum)
   return NULL;
 }
 
-e_spmap_t spman_load(spman_t * pm, uint32_t pnum)
+e_spmap_t spman_load(spman_t * pm, srid_t pnum)
 {
   if (pnum >= pm->cnt) {
     /* no page in file */
@@ -276,7 +276,7 @@ e_spmap_t spman_load(spman_t * pm, uint32_t pnum)
   }
 
   { /* try to find loaded page */
-    uint32_t  hash = hash32(pnum) & STORE_LIVEMASK;
+    srid_t  hash = hash32(pnum) & STORE_LIVEMASK;
     spmap_t * c = pm->map[hash];
     while (c) {
       if (c->pnum == pnum) {
@@ -342,7 +342,7 @@ e_spmap_t spman_load(spman_t * pm, uint32_t pnum)
   off_t off = pm->offset;
   uint8_t phdr[SPAGE_HDRSIZE], * h;
   uint16_t pn;
-  for (uint32_t k = 0; k <= pnum; k++) {
+  for (srid_t k = 0; k <= pnum; k++) {
     if (lseek(pm->fd, off, SEEK_SET) == (off_t) -1) {
       return (e_spmap_t) {err_return(ERR_INVALID, "could not lseek to page start"), NULL};
     }
@@ -552,9 +552,9 @@ out:
 
 e_sdrec_t spman_get(spman_t * pm, srid_t id)
 {
-  uint32_t pnum = SRID_TO_PAGE(id);
+  srid_t pnum = SRID_TO_PAGE(id);
   uint16_t snum = SRID_TO_SLOT(id);
-  uint32_t hash = hash32(pnum) & STORE_LIVEMASK;
+  srid_t hash = hash32(pnum) & STORE_LIVEMASK;
   spmap_t * m = pm->map[hash];
   err_r * err = NULL;
 

@@ -68,7 +68,7 @@ typedef struct sslot {
 
 typedef struct spmap spmap_t;
 struct spmap {
-  uint32_t   pnum;    /* page number */
+  srid_t     pnum;    /* page number */
   uint32_t   inuse;   /* number of live objects from this page */
   uint32_t   ref;     /* references count */
   spmap_t ** rev;     /* pointer to pointer to this spmap */
@@ -105,7 +105,7 @@ err_r *   spman_init(spman_t * pm, int fd, off_t offset, uint32_t cnt);
 int       spman_clear(spman_t * pm);
 
 /* tuple */ typedef struct { err_r * err; spmap_t * spmap; } e_spmap_t;
-e_spmap_t spman_load(spman_t * pm, uint32_t pnum);
+e_spmap_t spman_load(spman_t * pm, srid_t pnum);
 spmap_t * spman_ref(spman_t * pm, spmap_t * m);
 void      spman_unref(spman_t * pm, spmap_t * m);
 err_r   * spman_truncate(spman_t * pm, spmap_t * m, uint32_t psize);
