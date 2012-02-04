@@ -191,17 +191,26 @@ BT_TEST_DEF(store, type_i32, object, "type tests for the storage engine")
   );
   bt_chkerr(val2.err);
 
-  const uint8_t ccmp[] =
-    "\xff\xff\xff\xff" // meta = nil
-    "\x03\x00" // fcnt = 3
-    "\x01\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT32, nil, nil)
-    "\x01\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT32, nil, nil)
-    "\x01\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT32, nil, nil)
-  ;
+	e_sdrec_t er;
+	{
+		uint8_t ccmp[36], * c = ccmp;
+    c = sdisk_u32_write(c, SRID_NIL);  // class meta = nil
+    c = sdisk_u16_write(c, 3);         // field count = 3
 
-  e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-  bt_assert_int_equal(er.sdrec.size, 36);
-  bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
+    c = sdisk_u16_write(c, SKIND_INT32);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_u16_write(c, SKIND_INT32);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_u16_write(c, SKIND_INT32);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+
+		er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
+		bt_assert_int_equal(er.sdrec.size, 36);
+		bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
+	}
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -253,17 +262,26 @@ BT_TEST_DEF(store, type_u32, object, "type tests for the storage engine")
   );
   bt_chkerr(val2.err);
 
-  const uint8_t ccmp[] =
-    "\xff\xff\xff\xff" // meta = nil
-    "\x03\x00" // fcnt = 3
-    "\x02\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT32, nil, nil)
-    "\x02\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT32, nil, nil)
-    "\x02\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT32, nil, nil)
-  ;
+	e_sdrec_t er;
+	{
+		uint8_t ccmp[36], * c = ccmp;
+    c = sdisk_u32_write(c, SRID_NIL);  // class meta = nil
+    c = sdisk_u16_write(c, 3);         // field count = 3
 
-  e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-  bt_assert_int_equal(er.sdrec.size, 36);
-  bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
+    c = sdisk_u16_write(c, SKIND_UINT32);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_u16_write(c, SKIND_UINT32);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_u16_write(c, SKIND_UINT32);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+
+		er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
+		bt_assert_int_equal(er.sdrec.size, 36);
+		bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
+	}
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -314,17 +332,26 @@ BT_TEST_DEF(store, type_i64, object, "type tests for the storage engine")
   );
   bt_chkerr(val2.err);
 
-  const uint8_t ccmp[] =
-    "\xff\xff\xff\xff" // meta = nil
-    "\x03\x00" // fcnt = 3
-    "\x03\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT64, nil, nil)
-    "\x03\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT64, nil, nil)
-    "\x03\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT64, nil, nil)
-  ;
+	e_sdrec_t er;
+	{
+		uint8_t ccmp[36], * c = ccmp;
+    c = sdisk_u32_write(c, SRID_NIL);  // class meta = nil
+    c = sdisk_u16_write(c, 3);         // field count = 3
 
-  e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-  bt_assert_int_equal(er.sdrec.size, 36);
-  bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
+    c = sdisk_u16_write(c, SKIND_INT64);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_u16_write(c, SKIND_INT64);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_u16_write(c, SKIND_INT64);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+
+		er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
+		bt_assert_int_equal(er.sdrec.size, 36);
+		bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
+	}
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -375,17 +402,26 @@ BT_TEST_DEF(store, type_u64, object, "type tests for the storage engine")
   );
   bt_chkerr(val2.err);
 
-  const uint8_t ccmp[] =
-    "\xff\xff\xff\xff" // meta = nil
-    "\x03\x00" // fcnt = 3
-    "\x04\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT64, nil, nil)
-    "\x04\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT64, nil, nil)
-    "\x04\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT64, nil, nil)
-  ;
+	e_sdrec_t er;
+	{
+		uint8_t ccmp[36], * c = ccmp;
+    c = sdisk_u32_write(c, SRID_NIL);  // class meta = nil
+    c = sdisk_u16_write(c, 3);         // field count = 3
 
-  e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-  bt_assert_int_equal(er.sdrec.size, 36);
-  bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
+    c = sdisk_u16_write(c, SKIND_UINT64);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_u16_write(c, SKIND_UINT64);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_u16_write(c, SKIND_UINT64);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+
+		er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
+		bt_assert_int_equal(er.sdrec.size, 36);
+		bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
+	}
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -442,17 +478,26 @@ BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
   );
   bt_chkerr(val2.err);
 
-  const uint8_t ccmp[] =
-    "\xff\xff\xff\xff" // meta = nil
-    "\x03\x00" // fcnt = 3
-    "\x06\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_STRING, nil, nil)
-    "\x06\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_STRING, nil, nil)
-    "\x06\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_STRING, nil, nil)
-  ;
+	e_sdrec_t er;
+	{
+		uint8_t ccmp[36], * c = ccmp;
+    c = sdisk_u32_write(c, SRID_NIL);  // class meta = nil
+    c = sdisk_u16_write(c, 3);         // field count = 3
 
-  e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-  bt_assert_int_equal(er.sdrec.size, 36);
-  bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
+    c = sdisk_u16_write(c, SKIND_STRING);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_u16_write(c, SKIND_STRING);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_u16_write(c, SKIND_STRING);
+		c = sdisk_rid_write(c, SRID_NIL);
+		c = sdisk_rid_write(c, SRID_NIL);
+
+		er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
+		bt_assert_int_equal(er.sdrec.size, 36);
+		bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
+	}
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -612,15 +657,15 @@ BT_TEST_DEF(store, defer, object, "tests for deferred object references")
     c = sdisk_u32_write(c, SRID_NIL);
     c = sdisk_u16_write(c, 3);
 
-    c = sdisk_u16_write(c, 2);
+    c = sdisk_u16_write(c, SKIND_UINT32);
     c = sdisk_rid_write(c, SRID_NIL);
     c = sdisk_rid_write(c, SRID_NIL);
 
-    c = sdisk_u16_write(c, 8);
+    c = sdisk_u16_write(c, SKIND_ODREF);
     c = sdisk_rid_write(c, SRID_NIL);
     c = sdisk_rid_write(c, SRID_NIL);
 
-    c = sdisk_u16_write(c, 7);
+    c = sdisk_u16_write(c, SKIND_OBJECT);
     c = sdisk_rid_write(c, SRID_NIL);
     c = sdisk_rid_write(c, SRID_NIL);
 
