@@ -12,7 +12,7 @@
  */
 
 typedef uint32_t srid_t;
-#define SRID_NIL ~((srid_t) 0)
+#define SRID_NIL ((srid_t) -1)
 
 /* namespace partition in small pages */
 #define STORE_SLOTBITS 8 /*12*/
@@ -131,10 +131,11 @@ typedef enum skind {
 typedef struct smrec smrec_t;
 typedef struct sclass sclass_t;
 
-/* FIELD META LAYOUT: (string@name) (sclass@class | nil) */
+/* FIELD META LAYOUT: (string@name) */
 
 typedef struct scfld {
   skind_t    kind;    /* field kind */
+  sclass_t * cls;
   smrec_t  * meta;    /* field meta or nil */
   uint16_t   offset;  /* field offset in unpacked record */
 } scfld_t;
@@ -159,7 +160,7 @@ struct smrec {
   uint16_t   sz;    /* size of unpacked data */
 };
 
-typedef struct sodref {
+typedef struct soref {
   srid_t    rid;
   smrec_t * ref;
 } soref_t;
@@ -167,7 +168,6 @@ typedef struct sodref {
 typedef struct store {
   gc_global_t  g;      /* gc must go first for upcasts to work! */
   spman_t      pm;     /* page manager */
-  gc_stack_t * limbs;  /* allocated array of limbs */
   trie_t       i2r;    /* map of ids to corresponding unpacked representation */
   uint8_t    * hdr;    /* mapped header of store */
 } store_t;

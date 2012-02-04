@@ -38,6 +38,7 @@
       <sequenceof name="kinds" count="${fnum}">
         <sequence name="field">
           <field name="fkind" length="16" type="integer" encoding="little endian"/>
+          <reference name="cls" type="oref"/>
           <reference name="meta" type="oref"/>
         </sequence>
       </sequenceof>

@@ -56,155 +56,8 @@ uint32_t ihash32(uint32_t a)
 
 #define ELEMENT(_t, _p) (*((_t *) (_p)))
 
-/*************************************************************************************************/
+#include "store/sdisk.h"
 
-#define ALIGN2(_size) (((_size) + 1L) & ~1L)
-#define ALIGNDATA(_size) (((_size) + (STORE_DATACHUNK-1)) & ~(STORE_DATACHUNK-1))
-
-/* on disk format */
-
-inline static
-uint8_t * sdisk_u16_write(uint8_t * dst, uint16_t value)
-{
-  *((uint16_t *) dst) = value;
-  return dst + 2;
-}
-
-inline static
-uint16_t sdisk_u16_read(uint8_t ** dstp)
-{
-  uint16_t value = *((uint16_t *) *dstp);
-  *dstp += 2;
-  return value;
-}
-
-inline static
-uint8_t * sdisk_i32_write(uint8_t * dst, int32_t value)
-{
-  *((int32_t *) dst) = value;
-  return dst + 4;
-}
-
-inline static
-int32_t sdisk_i32_read(uint8_t ** dstp)
-{
-  int32_t value = *((int32_t *) *dstp);
-  *dstp += 4;
-  return value;
-}
-
-inline static
-uint8_t * sdisk_u32_write(uint8_t * dst, uint32_t value)
-{
-  *((uint32_t *) dst) = value;
-  return dst + 4;
-}
-
-inline static
-uint32_t sdisk_u32_read(uint8_t ** dstp)
-{
-  uint32_t value = *((uint32_t *) *dstp);
-  *dstp += 4;
-  return value;
-}
-
-inline static
-uint8_t * sdisk_i64_write(uint8_t * dst, int64_t value)
-{
-  *((int64_t *) dst) = value;
-  return dst + 8;
-}
-
-inline static
-int64_t sdisk_i64_read(uint8_t ** dstp)
-{
-  int64_t value = *((int64_t *) *dstp);
-  *dstp += 8;
-  return value;
-}
-
-inline static
-uint8_t * sdisk_u64_write(uint8_t * dst, uint64_t value)
-{
-  *((uint64_t *) dst) = value;
-  return dst + 8;
-}
-
-inline static
-uint64_t sdisk_u64_read(uint8_t ** dstp)
-{
-  uint64_t value = *((uint64_t *) *dstp);
-  *dstp += 8;
-  return value;
-}
-
-inline static
-uint8_t * sdisk_dbl_write(uint8_t * dst, double value)
-{
-  *((double *) dst) = value;
-  return dst + 8;
-}
-
-inline static
-double sdisk_dbl_read(uint8_t ** dstp)
-{
-  double value = *((double *) *dstp);
-  *dstp += 8;
-  return value;
-}
-
-inline static
-uint8_t * sdisk_str_write(uint8_t * dst, uint16_t len, const char value[len])
-{
-  uint32_t skip = ALIGN2(len) - len;
-  dst = sdisk_u16_write(dst, len);
-  memcpy(dst, value, len);
-  dst += len;
-  if (skip) {
-    memset(dst, 0, skip);
-  }
-  return dst + skip;
-}
-
-inline static
-uint8_t * sdisk_obj_write(uint8_t * dst, smrec_t * o)
-{
-  if (o) {
-    return sdisk_u32_write(dst, o->id);
-  } else {
-    return sdisk_u32_write(dst, SRID_NIL);
-  }
-}
-
-inline static
-uint8_t * sdisk_cls_write(uint8_t * dst, sclass_t * c)
-{
-  if (c) {
-    return sdisk_u32_write(dst, c->id);
-  } else {
-    return sdisk_u32_write(dst, SRID_NIL);
-  }
-}
-
-inline static
-uint16_t sdisk_size(skind_t kind)
-{
-  switch (kind) {
-    case SKIND_NONE: return 0; break;
-    case SKIND_INT32: return 4; break;
-    case SKIND_UINT32: return 4; break;
-    case SKIND_INT64: return 8; break;
-    case SKIND_UINT64: return 8; break;
-    case SKIND_DOUBLE: return 8; break;
-    case SKIND_STRING: return 2; break;
-    case SKIND_OBJECT: return 4; break;
-    case SKIND_ODREF: return 4; break;
-    case SKIND_CLASS: return 4; break;
-  }
-  return 0;
-}
-
-/*************************************************************************************************/
 
 inline static
 uint16_t smem_size(skind_t kind)
@@ -806,27 +659,37 @@ err_r * sclass_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 
   uint16_t offset = 0;
 
+  /* register cid here to make recursive definitions work */
+  if (srid_insert(&s->i2r, c->id, c, 0)) {
+    return err_return(ERR_FAILURE, "could not add id to live objects map");
+  }
+
   for (uint16_t k = 0; k < c->fcnt; k++) {
-    skind_t kind = sdisk_u16_read(&p);
-    c->flds[k].kind = kind;
-    offset = smem_align(offset, kind);
-    c->flds[k].offset = offset;
-    offset += smem_size(kind);
-    srid_t mid = sdisk_u32_read(&p);
+    scfld_t * fr = &c->flds[k];
+    fr->kind = sdisk_u16_read(&p);
+    offset = smem_align(offset, fr->kind);
+    fr->offset = offset;
+    offset += smem_size(fr->kind);
+    srid_t cid = sdisk_rid_read(&p);
+    if (cid != SRID_NIL) {
+      e_sclass_t e = store_get_class(s, cid);
+      if (e.err) {
+        return err_return(ERR_CORRUPTION, "could not retreive referred field class record");
+      }
+      fr->cls = e.sclass; /* nobarrier: init */
+    } else {
+      fr->cls = NULL;
+    }
+    srid_t mid = sdisk_rid_read(&p);
     if (mid != SRID_NIL) {
       e_smrec_t e = store_get_object(s, mid);
       if (e.err) {
         return err_return(ERR_CORRUPTION, "could not retreive referred field meta record");
       }
-      c->flds[k].meta = e.smrec;
-      gc_barrier(&s->g, GC_OBJ(s), GC_HDR(e.smrec));
+      fr->meta = e.smrec;
     } else {
-      c->flds[k].meta = NULL;
+      fr->meta = NULL;
     }
-  }
-
-  if (srid_insert(&s->i2r, c->id, c, 0)) {
-    return err_return(ERR_FAILURE, "could not add id to live objects map");
   }
 
   spmap_t * m = spman_pget(&s->pm, SRID_TO_PAGE(c->id));
@@ -906,7 +769,7 @@ e_sclass_t store_get_class(store_t * s, srid_t id)
     uint8_t * p = e.sdrec.slot;
     smrec_t * meta = NULL;
 
-    srid_t mid = sdisk_u32_read(&p);
+    srid_t mid = sdisk_rid_read(&p);
     uint16_t fcnt = sdisk_u16_read(&p);
 
     if (mid != SRID_NIL) {
@@ -1060,7 +923,7 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         break;
       }
       case SKIND_OBJECT: {
-        srid_t rid = sdisk_u32_read(&sp);
+        srid_t rid = sdisk_rid_read(&sp);
         if (rid != SRID_NIL) {
           e_smrec_t e = store_get_object(s, rid);
           if (e.err) {
@@ -1081,10 +944,10 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         break;
       }
       case SKIND_ODREF: {
-        ELEMENT(soref_t, dp) = (soref_t) {sdisk_u32_read(&sp), NULL};
+        ELEMENT(soref_t, dp) = (soref_t) {sdisk_rid_read(&sp), NULL};
       } break;
       case SKIND_CLASS: {
-        srid_t cid = sdisk_u32_read(&sp);
+        srid_t cid = sdisk_rid_read(&sp);
         if (cid != SRID_NIL) {
           e_sclass_t e = store_get_class(s, cid);
           if (e.err) {
@@ -1270,8 +1133,6 @@ err_r * store_init(store_t * s, const char path[])
     return err_return(ERR_FAILURE, "could not initialize trie");
   }
 
-  s->limbs = NULL;
-
   return NULL;
 }
 
@@ -1279,7 +1140,6 @@ void store_clear(store_t * s)
 {
   gc_clear(&s->g);
   trie_clear(&s->i2r);
-  s->limbs = NULL;
 
   if (s->hdr) {
     sdisk_u32_write(s->hdr + 8, s->pm.cnt);
@@ -1294,7 +1154,9 @@ void store_clear(store_t * s)
 
 e_sclass_t store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t flds[fcnt])
 {
-  uint32_t sz = sizeof(srid_t) + sizeof(uint16_t) + fcnt * (sizeof(uint16_t) + sizeof(srid_t));
+  // TODO: on-disk format
+  uint32_t sz = sizeof(srid_t) + sizeof(uint16_t) +
+    fcnt * (sizeof(uint16_t) + sizeof(srid_t) + sizeof(srid_t));
   if (sz >= STORE_DATAMAX) {
     return (e_sclass_t) {err_return(ERR_OVERFLOW, "attempted to create a class lager than DATASIZE"), NULL};
   }
@@ -1316,6 +1178,7 @@ e_sclass_t store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t f
 
   for (uint16_t k = 0; k < fcnt; k++) {
     p = sdisk_u16_write(p, flds[k].kind);
+    p = sdisk_cls_write(p, flds[k].cls);
     p = sdisk_obj_write(p, flds[k].meta);
   }
 
@@ -1334,6 +1197,7 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
     uint32_t     u32;
     int64_t      i64;
     uint64_t     u64;
+    srid_t       rid;
     double       dbl;
     const char * str;
     smrec_t    * obj;
@@ -1365,7 +1229,7 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
       case SKIND_OBJECT:
         args[v++].obj = va_arg(ap, smrec_t *); sz += sdisk_size(SKIND_OBJECT); break;
       case SKIND_ODREF:
-        args[v++].u32 = va_arg(ap, srid_t); sz += sdisk_size(SKIND_ODREF); break;
+        args[v++].rid = va_arg(ap, srid_t); sz += sdisk_size(SKIND_ODREF); break;
       case SKIND_CLASS:
         args[v++].cls = va_arg(ap, sclass_t *); sz += sdisk_size(SKIND_CLASS); break;
     }
@@ -1411,7 +1275,7 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
       case SKIND_OBJECT:
         p = sdisk_obj_write(p, args[v++].obj); break;
       case SKIND_ODREF:
-        p = sdisk_u32_write(p, args[v++].u32); break;
+        p = sdisk_rid_write(p, args[v++].rid); break;
       case SKIND_CLASS: {
         p = sdisk_cls_write(p, args[v++].cls); break;
       }

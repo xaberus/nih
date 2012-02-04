@@ -20,6 +20,8 @@
 # include <google/profiler.h>
 #endif
 
+#include "store/sdisk.h"
+
 BT_SUITE_DEF(spman, "storage engine page manager tests");
 
 struct spman_test {
@@ -144,6 +146,8 @@ struct store_test {
   store_t s[1];
 };
 
+#define SCFLDDEF(_k, _c) (scfld_t){(_k), (_c), NULL, 0}
+
 BT_SUITE_DEF(store, "storage engine tests");
 
 static const char store_test_path[] = BROOT "/src/store/store-tests.txt";
@@ -165,9 +169,9 @@ BT_TEST_DEF(store, type_i32, object, "type tests for the storage engine")
   struct store_test * test = object;
 
   scfld_t v[] = {
-    {SKIND_INT32, NULL, 0},
-    {SKIND_INT32, NULL, 0},
-    {SKIND_INT32, NULL, 0},
+    SCFLDDEF(SKIND_INT32, NULL),
+    SCFLDDEF(SKIND_INT32, NULL),
+    SCFLDDEF(SKIND_INT32, NULL),
   };
   e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
   sclass_t * ctuple = e.sclass;
@@ -190,14 +194,14 @@ BT_TEST_DEF(store, type_i32, object, "type tests for the storage engine")
   const uint8_t ccmp[] =
     "\xff\xff\xff\xff" // meta = nil
     "\x03\x00" // fcnt = 3
-    "\x01\x00" "\xff\xff\xff\xff" // (SKIND_INT32, nil)
-    "\x01\x00" "\xff\xff\xff\xff" // (SKIND_INT32, nil)
-    "\x01\x00" "\xff\xff\xff\xff" // (SKIND_INT32, nil)
+    "\x01\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT32, nil, nil)
+    "\x01\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT32, nil, nil)
+    "\x01\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT32, nil, nil)
   ;
 
   e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-  bt_assert_int_equal(er.sdrec.size, 24);
-  bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
+  bt_assert_int_equal(er.sdrec.size, 36);
+  bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -227,9 +231,9 @@ BT_TEST_DEF(store, type_u32, object, "type tests for the storage engine")
   struct store_test * test = object;
 
   scfld_t v[] = {
-    {SKIND_UINT32, NULL, 0},
-    {SKIND_UINT32, NULL, 0},
-    {SKIND_UINT32, NULL, 0},
+    SCFLDDEF(SKIND_UINT32, NULL),
+    SCFLDDEF(SKIND_UINT32, NULL),
+    SCFLDDEF(SKIND_UINT32, NULL),
   };
   e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
   sclass_t * ctuple = e.sclass;
@@ -252,14 +256,14 @@ BT_TEST_DEF(store, type_u32, object, "type tests for the storage engine")
   const uint8_t ccmp[] =
     "\xff\xff\xff\xff" // meta = nil
     "\x03\x00" // fcnt = 3
-    "\x02\x00" "\xff\xff\xff\xff" // (SKIND_UINT32, nil)
-    "\x02\x00" "\xff\xff\xff\xff" // (SKIND_UINT32, nil)
-    "\x02\x00" "\xff\xff\xff\xff" // (SKIND_UINT32, nil)
+    "\x02\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT32, nil, nil)
+    "\x02\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT32, nil, nil)
+    "\x02\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT32, nil, nil)
   ;
 
   e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-  bt_assert_int_equal(er.sdrec.size, 24);
-  bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
+  bt_assert_int_equal(er.sdrec.size, 36);
+  bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -288,9 +292,9 @@ BT_TEST_DEF(store, type_i64, object, "type tests for the storage engine")
   struct store_test * test = object;
 
   scfld_t v[] = {
-    {SKIND_INT64, NULL, 0},
-    {SKIND_INT64, NULL, 0},
-    {SKIND_INT64, NULL, 0},
+    SCFLDDEF(SKIND_INT64, NULL),
+    SCFLDDEF(SKIND_INT64, NULL),
+    SCFLDDEF(SKIND_INT64, NULL),
   };
   e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
   sclass_t * ctuple = e.sclass;
@@ -313,14 +317,14 @@ BT_TEST_DEF(store, type_i64, object, "type tests for the storage engine")
   const uint8_t ccmp[] =
     "\xff\xff\xff\xff" // meta = nil
     "\x03\x00" // fcnt = 3
-    "\x03\x00" "\xff\xff\xff\xff" // (SKIND_INT64, nil)
-    "\x03\x00" "\xff\xff\xff\xff" // (SKIND_INT64, nil)
-    "\x03\x00" "\xff\xff\xff\xff" // (SKIND_INT64, nil)
+    "\x03\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT64, nil, nil)
+    "\x03\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT64, nil, nil)
+    "\x03\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_INT64, nil, nil)
   ;
 
   e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-  bt_assert_int_equal(er.sdrec.size, 24);
-  bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
+  bt_assert_int_equal(er.sdrec.size, 36);
+  bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -349,9 +353,9 @@ BT_TEST_DEF(store, type_u64, object, "type tests for the storage engine")
   struct store_test * test = object;
 
   scfld_t v[] = {
-    {SKIND_UINT64, NULL, 0},
-    {SKIND_UINT64, NULL, 0},
-    {SKIND_UINT64, NULL, 0},
+    SCFLDDEF(SKIND_UINT64, NULL),
+    SCFLDDEF(SKIND_UINT64, NULL),
+    SCFLDDEF(SKIND_UINT64, NULL),
   };
   e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
   sclass_t * ctuple = e.sclass;
@@ -374,14 +378,14 @@ BT_TEST_DEF(store, type_u64, object, "type tests for the storage engine")
   const uint8_t ccmp[] =
     "\xff\xff\xff\xff" // meta = nil
     "\x03\x00" // fcnt = 3
-    "\x04\x00" "\xff\xff\xff\xff" // (SKIND_UINT64, nil)
-    "\x04\x00" "\xff\xff\xff\xff" // (SKIND_UINT64, nil)
-    "\x04\x00" "\xff\xff\xff\xff" // (SKIND_UINT64, nil)
+    "\x04\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT64, nil, nil)
+    "\x04\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT64, nil, nil)
+    "\x04\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_UINT64, nil, nil)
   ;
 
   e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-  bt_assert_int_equal(er.sdrec.size, 24);
-  bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
+  bt_assert_int_equal(er.sdrec.size, 36);
+  bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -410,9 +414,9 @@ BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
   struct store_test * test = object;
 
   scfld_t v[] = {
-    {SKIND_STRING, NULL, 0},
-    {SKIND_STRING, NULL, 0},
-    {SKIND_STRING, NULL, 0},
+    SCFLDDEF(SKIND_STRING, NULL),
+    SCFLDDEF(SKIND_STRING, NULL),
+    SCFLDDEF(SKIND_STRING, NULL),
   };
   e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
   sclass_t * ctuple = e.sclass;
@@ -441,14 +445,14 @@ BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
   const uint8_t ccmp[] =
     "\xff\xff\xff\xff" // meta = nil
     "\x03\x00" // fcnt = 3
-    "\x06\x00" "\xff\xff\xff\xff" // (SKIND_STRING, nil)
-    "\x06\x00" "\xff\xff\xff\xff" // (SKIND_STRING, nil)
-    "\x06\x00" "\xff\xff\xff\xff" // (SKIND_STRING, nil)
+    "\x06\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_STRING, nil, nil)
+    "\x06\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_STRING, nil, nil)
+    "\x06\x00" "\xff\xff\xff\xff" "\xff\xff\xff\xff" // (SKIND_STRING, nil, nil)
   ;
 
   e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-  bt_assert_int_equal(er.sdrec.size, 24);
-  bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
+  bt_assert_int_equal(er.sdrec.size, 36);
+  bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
 
   const uint8_t cmp[] =
     "\x00\x00\x00\x00" // class = 0
@@ -481,9 +485,9 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
     sclass_t * ctuple;
     {
       scfld_t v[] = {
-        {SKIND_OBJECT, NULL, 0},
-        {SKIND_OBJECT, NULL, 0},
-        {SKIND_OBJECT, NULL, 0},
+        SCFLDDEF(SKIND_OBJECT, NULL),
+        SCFLDDEF(SKIND_OBJECT, NULL),
+        SCFLDDEF(SKIND_OBJECT, NULL),
       };
       e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
       ctuple = e.sclass;
@@ -492,7 +496,7 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
     sclass_t * cvalue;
     {
       scfld_t v[] = {
-        {SKIND_UINT32, NULL, 0},
+        SCFLDDEF(SKIND_UINT32, NULL),
       };
       e_sclass_t e = store_add_class(test->s, NULL, 1, v); bt_chkerr(e.err);
       cvalue = e.sclass;
@@ -521,8 +525,8 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
     sclass_t * clist;
     {
       scfld_t v[] = {
-        {SKIND_UINT32, NULL, 0},
-        {SKIND_OBJECT, NULL, 0},
+        SCFLDDEF(SKIND_UINT32, NULL),
+        SCFLDDEF(SKIND_OBJECT, NULL),
       };
       e_sclass_t e = store_add_class(test->s, NULL, 2, v); bt_chkerr(e.err);
       clist = e.sclass;
@@ -547,8 +551,8 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
     sclass_t * clist;
     {
       scfld_t v[] = {
-        {SKIND_OBJECT, NULL, 0},
-        {SKIND_STRING, NULL, 0},
+        SCFLDDEF(SKIND_OBJECT, NULL),
+        SCFLDDEF(SKIND_STRING, NULL),
       };
       e_sclass_t e = store_add_class(test->s, NULL, 2, v); bt_chkerr(e.err);
       clist = e.sclass;
@@ -580,9 +584,9 @@ BT_TEST_DEF(store, defer, object, "tests for deferred object references")
   struct store_test * test = object;
 
   scfld_t v[] = {
-    {SKIND_UINT32, NULL, 0},
-    {SKIND_ODREF, NULL, 0},
-    {SKIND_OBJECT, NULL, 0},
+    SCFLDDEF(SKIND_UINT32, NULL),
+    SCFLDDEF(SKIND_ODREF, NULL),
+    SCFLDDEF(SKIND_OBJECT, NULL),
   };
   e_sclass_t e = store_add_class(test->s, NULL, 3, v); bt_chkerr(e.err);
   sclass_t * ctuple = e.sclass;
@@ -603,18 +607,26 @@ BT_TEST_DEF(store, defer, object, "tests for deferred object references")
     bt_assert_int_equal(head - ctuple->id, k + 1);
   }
 
-  const uint8_t ccmp[] =
-    "\xff\xff\xff\xff" // meta = nil
-    "\x03\x00" // fcnt = 2
-    "\x02\x00" "\xff\xff\xff\xff" // (SKIND_UINT32, nil)
-    "\x08\x00" "\xff\xff\xff\xff" // (SKIND_ODREF, nil)
-    "\x07\x00" "\xff\xff\xff\xff" // (SKIND_OBJECT, nil)
-  ;
-
   {
+    uint8_t ccmp[36], * c = ccmp;
+    c = sdisk_u32_write(c, SRID_NIL);
+    c = sdisk_u16_write(c, 3);
+
+    c = sdisk_u16_write(c, 2);
+    c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_rid_write(c, SRID_NIL);
+
+    c = sdisk_u16_write(c, 8);
+    c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_rid_write(c, SRID_NIL);
+
+    c = sdisk_u16_write(c, 7);
+    c = sdisk_rid_write(c, SRID_NIL);
+    c = sdisk_rid_write(c, SRID_NIL);
+
     e_sdrec_t er = spman_get(&test->s->pm, ctuple->id); bt_chkerr(er.err);
-    bt_assert_int_equal(er.sdrec.size, 24);
-    bt_assert(memcmp(er.sdrec.slot, ccmp, 24) == 0);
+    bt_assert_int_equal(er.sdrec.size, 36);
+    bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
   }
 
   printf("[store] force discard\n"); gc_collect(&test->s->g, 1);
@@ -649,6 +661,46 @@ BT_TEST_DEF(store, defer, object, "tests for deferred object references")
   gc_collect(&test->s->g, 1);
   return BT_RESULT_OK;
 }
+
+/*************************************************************************************************/
+#if 0
+
+#include "store/dexpr.h"
+
+BT_TEST_DEF(store, expr, object, "tests for expr")
+{
+  struct store_test * test = object;
+
+  e_sclass_t e;
+
+  e = store_add_class(test->s, NULL, 2, (scfld_t []) {
+    SCFLDDEF(SKIND_UINT32, NULL),
+    SCFLDDEF(SKIND_UINT32, NULL),
+  });
+  bt_chkerr(e.err);
+  sclass_t * carg = e.sclass;
+
+  e = store_add_class(test->s, NULL, 1, (scfld_t []) {
+    SCFLDDEF(SKIND_UINT32, NULL),
+  });
+  bt_chkerr(e.err);
+  sclass_t * cres = e.sclass;
+
+  e_smrec_t earg = store_add_object(test->s, carg, 1, 1);
+  bt_chkerr(earg.err);
+
+  e_smrec_t eops = dexpr_create_ops(test->s, 5, DEXK_ADD, DEXK_INDEX, 0, DEXK_INDEX, 1);
+  bt_chkerr(eops.err);
+
+  e_smrec_t eres = dexpr_eval(test->s, earg.smrec, eops.smrec);
+  bt_chkerr(eres.err);
+
+  return BT_RESULT_OK;
+}
+
+#endif
+
+/*************************************************************************************************/
 
 BT_SUITE_TEARDOWN_DEF(store, objectref)
 {
