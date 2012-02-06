@@ -147,6 +147,11 @@ struct store_test {
 };
 
 #define SCFLDDEF(_k, _c) (scfld_t){(_k), (_c), NULL, 0}
+#define STAIN(_r) \
+  do { \
+    smrec_t * r = (_r); \
+    r->flag = r->flag & ~SMREC_FLAG_SYNC; \
+  } while(0)
 
 BT_SUITE_DEF(store, "storage engine tests");
 
@@ -180,16 +185,19 @@ BT_TEST_DEF(store, type_i32, object, "type tests for the storage engine")
     -559038737, -559038737, -559038737
   );
   bt_chkerr(val0.err);
+  STAIN(val0.smrec);
 
   e_smrec_t val1 = store_add_object(test->s, ctuple,
     -559038737, -559038737, -559038737
   );
   bt_chkerr(val1.err);
+  STAIN(val1.smrec);
 
   e_smrec_t val2 = store_add_object(test->s, ctuple,
     -559038737, -559038737, -559038737
   );
   bt_chkerr(val2.err);
+  STAIN(val2.smrec);
 
   e_sdrec_t er;
   {
@@ -251,16 +259,19 @@ BT_TEST_DEF(store, type_u32, object, "type tests for the storage engine")
     0xdeadbeef, 0xdeadbeef, 0xdeadbeef
   );
   bt_chkerr(val0.err);
+  STAIN(val0.smrec);
 
   e_smrec_t val1 = store_add_object(test->s, ctuple,
     0xdeadbeef, 0xdeadbeef, 0xdeadbeef
   );
   bt_chkerr(val1.err);
+  STAIN(val1.smrec);
 
   e_smrec_t val2 = store_add_object(test->s, ctuple,
     0xdeadbeef, 0xdeadbeef, 0xdeadbeef
   );
   bt_chkerr(val2.err);
+  STAIN(val2.smrec);
 
   e_sdrec_t er;
   {
@@ -321,16 +332,19 @@ BT_TEST_DEF(store, type_i64, object, "type tests for the storage engine")
     -5764947276981223697, -5764947276981223697, -5764947276981223697
   );
   bt_chkerr(val0.err);
+  STAIN(val0.smrec);
 
   e_smrec_t val1 = store_add_object(test->s, ctuple,
     -5764947276981223697, -5764947276981223697, -5764947276981223697
   );
   bt_chkerr(val1.err);
+  STAIN(val1.smrec);
 
   e_smrec_t val2 = store_add_object(test->s, ctuple,
     -5764947276981223697, -5764947276981223697, -5764947276981223697
   );
   bt_chkerr(val2.err);
+  STAIN(val2.smrec);
 
   e_sdrec_t er;
   {
@@ -391,16 +405,19 @@ BT_TEST_DEF(store, type_u64, object, "type tests for the storage engine")
     0xdeadbeefaffecafe, 0xdeadbeefaffecafe, 0xdeadbeefaffecafe
   );
   bt_chkerr(val0.err);
+  STAIN(val0.smrec);
 
   e_smrec_t val1 = store_add_object(test->s, ctuple,
     0xdeadbeefaffecafe, 0xdeadbeefaffecafe, 0xdeadbeefaffecafe
   );
   bt_chkerr(val1.err);
+  STAIN(val1.smrec);
 
   e_smrec_t val2 = store_add_object(test->s, ctuple,
     0xdeadbeefaffecafe, 0xdeadbeefaffecafe, 0xdeadbeefaffecafe
   );
   bt_chkerr(val2.err);
+  STAIN(val2.smrec);
 
   e_sdrec_t er;
   {
@@ -464,6 +481,7 @@ BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
     8, "CCCCCCCC"
   );
   bt_chkerr(val0.err);
+  STAIN(val0.smrec);
 
   e_smrec_t val1 = store_add_object(test->s, ctuple,
     8, "AAAAAAAA",
@@ -471,6 +489,7 @@ BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
     8, "CCCCCCCC"
   );
   bt_chkerr(val1.err);
+  STAIN(val1.smrec);
 
   e_smrec_t val2 = store_add_object(test->s, ctuple,
     8, "AAAAAAAA",
@@ -478,6 +497,7 @@ BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
     8, "CCCCCCCC"
   );
   bt_chkerr(val2.err);
+  STAIN(val2.smrec);
 
   e_sdrec_t er;
   {
@@ -583,6 +603,7 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
     for (uint16_t k = 0; k < 10; k++) {
       e_smrec_t e = store_add_object(test->s, clist, k, head); bt_chkerr(e.err);
       head = e.smrec;
+      STAIN(head);
     }
 
     srid_t hid = head->id;

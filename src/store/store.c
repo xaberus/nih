@@ -859,6 +859,8 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
 
   r->sz = sclass_mem_size(r->sc);
 
+  r->flag = SMREC_FLAG_DISK | SMREC_FLAG_SYNC;
+
   uint8_t * slot = va_arg(ap, uint8_t *);
 
   r->ptr = malloc(r->sz);
@@ -957,6 +959,39 @@ out:
   return err;
 }
 
+err_r * smrec_sync(store_t * s, smrec_t * r)
+{
+  if (r->flag & SMREC_FLAG_DISK && !(r->flag & SMREC_FLAG_SYNC)) {
+#if VERBOSEDEBUG
+  fprintf(stdout, ">S< sync object <"PTR_FMT":"SRID_FMT">\n", (void *) r, r->id);
+#endif
+    e_sdrec_t e = spman_get(&s->pm, r->id);
+    if (e.err) {
+      return err_return(ERR_CORRUPTION, "could not get record slot to sync");
+    }
+    uint8_t * dp = e.sdrec.slot + sdisk_size(SKIND_CLASS);
+    uint8_t * sp = r->ptr;
+    for (uint16_t k = 0; k < r->sc->fcnt; k++) {
+      scfld_t * d = &r->sc->flds[k];
+      uint8_t * sptr = sp + d->offset;
+      switch ((skind_t) d->kind) {
+        case SKIND_NONE: break;
+        case SKIND_UINT8:  dp = sdisk_u8_write(dp, ELEMENT(uint8_t, sptr)); break;
+        case SKIND_UINT16: dp = sdisk_u16_write(dp, ELEMENT(uint16_t, sptr)); break;
+        case SKIND_INT32:  dp = sdisk_i32_write(dp, ELEMENT(int32_t, sptr)); break;
+        case SKIND_UINT32: dp = sdisk_u32_write(dp, ELEMENT(uint32_t, sptr)); break;
+        case SKIND_INT64:  dp = sdisk_i64_write(dp, ELEMENT(int64_t, sptr)); break;
+        case SKIND_UINT64: dp = sdisk_u64_write(dp, ELEMENT(uint64_t, sptr)); break;
+        case SKIND_DOUBLE: dp = sdisk_dbl_write(dp, ELEMENT(double, sptr)); break;
+        case SKIND_OBJECT: dp = sdisk_obj_write(dp, ELEMENT(smrec_t *, sptr)); break;
+        case SKIND_ODREF:  dp = sdisk_rid_write(dp, ELEMENT(srid_t, sptr)); break;
+        case SKIND_CLASS:  dp = sdisk_cls_write(dp, ELEMENT(sclass_t *, sptr)); break;
+      }
+    }
+  }
+  return NULL;
+}
+
 static
 size_t smrec_clear(gc_global_t * g, gc_hdr_t * o)
 {
@@ -966,6 +1001,12 @@ size_t smrec_clear(gc_global_t * g, gc_hdr_t * o)
 #if VERBOSEDEBUG > 1
   fprintf(stdout, "<M> deleting object <"PTR_FMT":"SRID_FMT">\n", (void *) r, r->id);
 #endif
+
+  err_r * err = smrec_sync(s, r);
+  if (err) {
+    assert(!err);
+    err_reset();
+  }
 
   spmap_t * m = spman_pget(&s->pm, SRID_TO_PAGE(r->id));
   if (m) {
@@ -1022,7 +1063,8 @@ e_smrec_t store_get_object(store_t * s, srid_t id)
 
     /* pin the page (map) so it does not vanish in the heat of the moment */
     spman_ref(&s->pm, e.sdrec.map);
-    ee = gc_new(&s->g, &smrec_vtable, sizeof(smrec_t), 3, eee.sclass, id, e.sdrec.slot + sizeof(srid_t));
+    ee = gc_new(&s->g, &smrec_vtable, sizeof(smrec_t), 3,
+      eee.sclass, id, e.sdrec.slot + sdisk_size(SKIND_CLASS));
     if (ee.err) {
       spman_unref(&s->pm, e.sdrec.map);
       return (e_smrec_t) {err_return(ERR_FAILURE, "could not unpack record"), NULL};
@@ -1202,7 +1244,7 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
   p = sdisk_cls_write(p, c);
 
   va_start(ap, c);
-  for (uint16_t k = 0, v = 0; k < cfcnt; k++) {
+  for (uint16_t k = 0; k < cfcnt; k++) {
     switch ((skind_t) c->flds[k].kind) {
       case SKIND_NONE:
         break;

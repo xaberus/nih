@@ -152,6 +152,8 @@ struct sclass {
   scfld_t   flds[];
 };
 
+#define SMREC_FLAG_DISK 0x01 /* record is real on disk-instance */
+#define SMREC_FLAG_SYNC 0x02 /* record is up to date */
 
 struct smrec {
   gc_obj_t   gco;
@@ -160,6 +162,7 @@ struct smrec {
   void     * ptr;   /* pointer to unpacked data */
   uint16_t * otr;   /* pointer offset table in unpacked data (do not free!) */
   uint16_t   sz;    /* size of unpacked data */
+  uint16_t   flag;
 };
 
 typedef struct soref {
