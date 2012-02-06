@@ -125,7 +125,6 @@ typedef enum skind {
   SKIND_INT64,
   SKIND_UINT64,
   SKIND_DOUBLE,
-  SKIND_STRING,
   SKIND_OBJECT,
   SKIND_ODREF,
   SKIND_CLASS,
@@ -134,7 +133,7 @@ typedef enum skind {
 typedef struct smrec smrec_t;
 typedef struct sclass sclass_t;
 
-/* FIELD META LAYOUT: (string@name) */
+/* FIELD META LAYOUT: (u8[]@name) */
 
 typedef struct scfld {
   skind_t    kind;    /* field kind */
@@ -143,7 +142,7 @@ typedef struct scfld {
   uint16_t   offset;  /* field offset in unpacked record */
 } scfld_t;
 
-/* CLASS META LAYOUT: (string@name) */
+/* CLASS META LAYOUT: (u8[]@name) */
 
 struct sclass {
   gc_obj_t  gch;
@@ -186,23 +185,21 @@ e_sclass_t store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t f
 e_sclass_t store_get_class(store_t * s, srid_t id);
 
 typedef union {
-	uint8_t      u8;
-	uint16_t     u16;
-	int32_t      i32;
-	uint32_t     u32;
-	int64_t      i64;
-	uint64_t     u64;
-	srid_t       rid;
-	double       dbl;
-	const char * str;
-	smrec_t    * obj;
-	sclass_t   * cls;
+  uint8_t    u8;
+  uint16_t   u16;
+  int32_t    i32;
+  uint32_t   u32;
+  int64_t    i64;
+  uint64_t   u64;
+  srid_t     rid;
+  double     dbl;
+  smrec_t  * obj;
+  sclass_t * cls;
 } svalue_t;
 
 /* OBJECT SLOT: class@sc field<sc.fields[0].kind> ... field<sc.fields[sc.cnt].kind> */
 
 /* field<xINTyy>: xyy@value */
-/* field<STRING>: u16@len (u8[ALIGN2(len)])@value */
 /* field<OBJECT>: rec@value */
 /* field<CLASS>: class@value */
 

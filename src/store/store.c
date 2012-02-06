@@ -71,7 +71,6 @@ uint16_t smem_size(skind_t kind)
     case SKIND_INT64: return sizeof(int64_t); break;
     case SKIND_UINT64: return sizeof(uint64_t); break;
     case SKIND_DOUBLE: return sizeof(double); break;
-    case SKIND_STRING: return sizeof(gc_str_t *); break;
     case SKIND_OBJECT: return sizeof(smrec_t *); break;
     case SKIND_ODREF: return sizeof(soref_t); break;
     case SKIND_CLASS: return sizeof(sclass_t *); break;
@@ -101,7 +100,6 @@ uint16_t smem_align(uint16_t offset, skind_t kind)
     case SKIND_INT64: pos = offsetof(struct ai64, val); break;
     case SKIND_UINT64: pos = offsetof(struct au64, val); break;
     case SKIND_DOUBLE: pos = offsetof(struct adbl, val); break;
-    case SKIND_STRING: pos = offsetof(struct aptr, val); break;
     case SKIND_OBJECT: pos = offsetof(struct aptr, val); break;
     case SKIND_ODREF: pos = offsetof(struct aref, val); break;
     case SKIND_CLASS: pos = offsetof(struct aptr, val); break;
@@ -798,29 +796,6 @@ e_sclass_t store_get_class(store_t * s, srid_t id)
   return (e_sclass_t) {NULL, ee.value};
 }
 
-inline static
-uint16_t sclass_instargc(sclass_t * c)
-{
-  uint16_t r = 0;
-  for (uint16_t k = 0; k < c->fcnt; k++) {
-    switch ((skind_t) c->flds[k].kind) {
-      case SKIND_NONE: break;
-      case SKIND_UINT8: r++; break;
-      case SKIND_UINT16: r++; break;
-      case SKIND_INT32: r++; break;
-      case SKIND_UINT32: r++; break;
-      case SKIND_INT64: r++; break;
-      case SKIND_UINT64: r++; break;
-      case SKIND_DOUBLE: r++; break;
-      case SKIND_STRING: r += 2; break;
-      case SKIND_OBJECT: r++; break;
-      case SKIND_ODREF: r++; break;
-      case SKIND_CLASS: r++; break;
-    }
-  }
-  return r;
-}
-
 uint16_t sclass_mem_size(sclass_t * c)
 {
   uint16_t sz = 0;
@@ -845,10 +820,6 @@ size_t sclass_walk_propagate(store_t * s, sclass_t * c, uint8_t * p)
       case SKIND_UINT64:
       case SKIND_DOUBLE:
         break;
-      case SKIND_STRING: {
-        gc_str_t * str = *(gc_str_t **) (p + c->flds[k].offset);
-        gc_mark(&s->g, GC_HDR(str)); n++;
-      } break;
       case SKIND_OBJECT: {
         smrec_t * rec = *(smrec_t **) (p + c->flds[k].offset);
         if (rec) {
@@ -922,20 +893,6 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
         ELEMENT(uint64_t, dp) = sdisk_u64_read(&sp); break;
       case SKIND_DOUBLE:
         ELEMENT(double, dp) = sdisk_dbl_read(&sp); break;
-      case SKIND_STRING: {
-        uint16_t l = sdisk_u16_read(&sp);
-        e_gc_str_t e = gc_new_str(&s->g, l, (char *) sp);
-        if (e.err) {
-          err = err_return(ERR_FAILURE, "could not allocate unpacked string"); goto out;
-        }
-        sp += ALIGN2(l);
-        ELEMENT(gc_str_t *, dp) = e.gc_str; /* nobarrier: init */
-#if VERBOSEDEBUG
-        fprintf(stdout, "    element of <%p:%u> (string) <%.*s>\n",
-          (void *) r, r->id, gc_str_len(e.gc_str), e.gc_str->data);
-#endif
-        break;
-      }
       case SKIND_OBJECT: {
         srid_t rid = sdisk_rid_read(&sp);
         if (rid != SRID_NIL) {
@@ -1207,53 +1164,22 @@ e_sclass_t store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t f
   return ee;
 }
 
+inline static
+uint32_t sclass_inst_size(sclass_t * c)
+{
+  uint32_t sz = sdisk_size(SKIND_CLASS);
+  for (uint16_t k = 0; k < c->fcnt; k++) {
+    sz += sdisk_size(c->flds[k].kind);
+  }
+  return sz;
+}
+
 e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
 {
   va_list ap;
 
-  uint32_t sz = sizeof(srid_t);
-
-  uint16_t cfcnt = sclass_instargc(c);
-
-  svalue_t args[cfcnt];
-
-  memset(args, 0, sizeof(args[0]) * cfcnt);
-
-  va_start(ap, c);
-  for (uint16_t k = 0, v = 0; k < cfcnt; k++) {
-    switch ((skind_t) c->flds[k].kind) {
-      case SKIND_NONE:
-        break;
-      case SKIND_UINT8:
-        args[v++].u8 = va_arg(ap, int); sz += sdisk_size(SKIND_UINT8); break;
-      case SKIND_UINT16:
-        args[v++].u16 = va_arg(ap, int); sz += sdisk_size(SKIND_UINT16); break;
-      case SKIND_INT32:
-        args[v++].i32 = va_arg(ap, int32_t); sz += sdisk_size(SKIND_INT32); break;
-      case SKIND_UINT32:
-        args[v++].u32 = va_arg(ap, uint32_t); sz += sdisk_size(SKIND_UINT32); break;
-      case SKIND_INT64:
-        args[v++].i64 = va_arg(ap, int64_t); sz += sdisk_size(SKIND_INT64); break;
-      case SKIND_UINT64:
-        args[v++].u64 = va_arg(ap, uint64_t); sz += sdisk_size(SKIND_UINT64); break;
-      case SKIND_DOUBLE:
-        args[v++].dbl = va_arg(ap, double); sz += sdisk_size(SKIND_DOUBLE); break;
-      case SKIND_STRING: {
-        uint16_t l = va_arg(ap, int);
-        const char * a = va_arg(ap, const char *);
-        args[v++].u16 = l; sz += sdisk_size(SKIND_STRING);
-        args[v++].str = a; sz += (a ? ALIGN2(l) : 0);
-        break;
-      }
-      case SKIND_OBJECT:
-        args[v++].obj = va_arg(ap, smrec_t *); sz += sdisk_size(SKIND_OBJECT); break;
-      case SKIND_ODREF:
-        args[v++].rid = va_arg(ap, srid_t); sz += sdisk_size(SKIND_ODREF); break;
-      case SKIND_CLASS:
-        args[v++].cls = va_arg(ap, sclass_t *); sz += sdisk_size(SKIND_CLASS); break;
-    }
-  }
-  va_end(ap);
+  uint32_t sz = sclass_inst_size(c);
+  uint16_t cfcnt = c->fcnt;
 
   if (sz >= STORE_DATAMAX) {
     return (e_smrec_t) {err_return(ERR_OVERFLOW, "attempted to create a record lager than DATASIZE"), NULL};
@@ -1275,35 +1201,35 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
   /* write class reference first */
   p = sdisk_cls_write(p, c);
 
+  va_start(ap, c);
   for (uint16_t k = 0, v = 0; k < cfcnt; k++) {
     switch ((skind_t) c->flds[k].kind) {
       case SKIND_NONE:
         break;
       case SKIND_UINT8:
-        p = sdisk_u8_write(p, args[v++].u8); break;
+        p = sdisk_u8_write(p, va_arg(ap, int)); break;
       case SKIND_UINT16:
-        p = sdisk_u16_write(p, args[v++].u16); break;
+        p = sdisk_u16_write(p, va_arg(ap, int)); break;
       case SKIND_INT32:
-        p = sdisk_i32_write(p, args[v++].i32); break;
+        p = sdisk_i32_write(p, va_arg(ap, int32_t)); break;
       case SKIND_UINT32:
-        p = sdisk_u32_write(p, args[v++].u32); break;
+        p = sdisk_u32_write(p, va_arg(ap, uint32_t)); break;
       case SKIND_INT64:
-        p = sdisk_i64_write(p, args[v++].i64); break;
+        p = sdisk_i64_write(p, va_arg(ap, int64_t)); break;
       case SKIND_UINT64:
-        p = sdisk_u64_write(p, args[v++].u64); break;
+        p = sdisk_u64_write(p, va_arg(ap, uint64_t)); break;
       case SKIND_DOUBLE:
-        p = sdisk_dbl_write(p, args[v++].dbl); break;
-      case SKIND_STRING:
-        p = sdisk_str_write(p, args[v].u16, args[v+1].str); v += 2; break;
+        p = sdisk_dbl_write(p, va_arg(ap, double)); break;
       case SKIND_OBJECT:
-        p = sdisk_obj_write(p, args[v++].obj); break;
+        p = sdisk_obj_write(p, va_arg(ap, smrec_t *)); break;
       case SKIND_ODREF:
-        p = sdisk_rid_write(p, args[v++].rid); break;
+        p = sdisk_rid_write(p, va_arg(ap, srid_t)); break;
       case SKIND_CLASS: {
-        p = sdisk_cls_write(p, args[v++].cls); break;
+        p = sdisk_cls_write(p, va_arg(ap, sclass_t *)); break;
       }
     }
   }
+  va_end(ap);
 
   {
     e_smrec_t er = store_get_object(s, e.sdrec.id);

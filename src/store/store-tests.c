@@ -445,6 +445,7 @@ BT_TEST_DEF(store, type_u64, object, "type tests for the storage engine")
   return BT_RESULT_OK;
 }
 
+#if 0
 BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
 {
   struct store_test * test = object;
@@ -521,6 +522,7 @@ BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
   return BT_RESULT_OK;
 }
 #endif
+#endif
 
 BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
 {
@@ -592,6 +594,7 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
 
   printf("[store] force discard\n"); gc_collect(&test->s->g, 1);
 
+#if 0
   {
     sclass_t * clist;
     {
@@ -620,6 +623,7 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
     e_smrec_t e = store_get_object(test->s, hid); bt_chkerr(e.err);
     bt_assert_int_equal(e.smrec->id, hid);
   }
+#endif
 
   return BT_RESULT_OK;
 }
