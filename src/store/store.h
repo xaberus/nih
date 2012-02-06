@@ -48,6 +48,7 @@ typedef uint32_t srid_t;
 /* slot usage */
 #define SSLOT_USAGE_NONE   0x0000
 #define SSLOT_USAGE_CLASS  0x0010
+#define SSLOT_USAGE_ARRAY  0x0030
 #define SSLOT_USAGE_OBJECT 0x0020
 #define SSLOT_USAGEMASK    0xfff0
 
@@ -174,15 +175,29 @@ typedef struct store {
   uint8_t    * hdr;    /* mapped header of store */
 } store_t;
 
-
 err_r * store_init(store_t * s, const char path[]);
 void    store_clear(store_t * s);
 
 /* CLASS SLOT:  rec@cmeta u16@fcnt (kind@fkind rec@fmeta)[fcnt] */
+/* ARRAY SLOT:  rec@cmeta u16@fcnt (kind@fkind rec@fmeta)[1] */
 
 /* tuple */ typedef struct { err_r * err; sclass_t * sclass; } e_sclass_t;
 e_sclass_t store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t flds[fcnt]);
 e_sclass_t store_get_class(store_t * s, srid_t id);
+
+typedef union {
+	uint8_t      u8;
+	uint16_t     u16;
+	int32_t      i32;
+	uint32_t     u32;
+	int64_t      i64;
+	uint64_t     u64;
+	srid_t       rid;
+	double       dbl;
+	const char * str;
+	smrec_t    * obj;
+	sclass_t   * cls;
+} svalue_t;
 
 /* OBJECT SLOT: class@sc field<sc.fields[0].kind> ... field<sc.fields[sc.cnt].kind> */
 

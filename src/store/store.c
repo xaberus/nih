@@ -64,8 +64,8 @@ uint16_t smem_size(skind_t kind)
 {
   switch (kind) {
     case SKIND_NONE: return 0;
-		case SKIND_UINT8: return sizeof(uint8_t); break;
-		case SKIND_UINT16: return sizeof(uint16_t); break;
+    case SKIND_UINT8: return sizeof(uint8_t); break;
+    case SKIND_UINT16: return sizeof(uint16_t); break;
     case SKIND_INT32: return sizeof(int32_t); break;
     case SKIND_UINT32: return sizeof(uint32_t); break;
     case SKIND_INT64: return sizeof(int64_t); break;
@@ -82,8 +82,8 @@ uint16_t smem_size(skind_t kind)
 inline static
 uint16_t smem_align(uint16_t offset, skind_t kind)
 {
-	struct au8 {uint8_t a; uint8_t val;};
-	struct au16 {uint8_t a; uint16_t val;};
+  struct au8 {uint8_t a; uint8_t val;};
+  struct au16 {uint8_t a; uint16_t val;};
   struct ai32 {uint8_t a; int32_t val;};
   struct au32 {uint8_t a; uint32_t val;};
   struct ai64 {uint8_t a; int64_t val;};
@@ -94,8 +94,8 @@ uint16_t smem_align(uint16_t offset, skind_t kind)
   uint16_t pos = 0;
   switch (kind) {
     case SKIND_NONE: pos = 0; break;
-		case SKIND_UINT8: pos = offsetof(struct au8, val); break;
-		case SKIND_UINT16: pos = offsetof(struct au16, val); break;
+    case SKIND_UINT8: pos = offsetof(struct au8, val); break;
+    case SKIND_UINT16: pos = offsetof(struct au16, val); break;
     case SKIND_INT32: pos = offsetof(struct ai32, val); break;
     case SKIND_UINT32: pos = offsetof(struct au32, val); break;
     case SKIND_INT64: pos = offsetof(struct ai64, val); break;
@@ -805,8 +805,8 @@ uint16_t sclass_instargc(sclass_t * c)
   for (uint16_t k = 0; k < c->fcnt; k++) {
     switch ((skind_t) c->flds[k].kind) {
       case SKIND_NONE: break;
-			case SKIND_UINT8: r++; break;
-			case SKIND_UINT16: r++; break;
+      case SKIND_UINT8: r++; break;
+      case SKIND_UINT16: r++; break;
       case SKIND_INT32: r++; break;
       case SKIND_UINT32: r++; break;
       case SKIND_INT64: r++; break;
@@ -837,8 +837,8 @@ size_t sclass_walk_propagate(store_t * s, sclass_t * c, uint8_t * p)
   for (uint16_t k = 0; k < c->fcnt; k++) {
     switch ((skind_t) c->flds[k].kind) {
       case SKIND_NONE:
-			case SKIND_UINT8:
-			case SKIND_UINT16:
+      case SKIND_UINT8:
+      case SKIND_UINT16:
       case SKIND_INT32:
       case SKIND_UINT32:
       case SKIND_INT64:
@@ -908,10 +908,10 @@ err_r * smrec_init(gc_global_t * g, gc_hdr_t * o, int argc, va_list ap)
     switch ((skind_t) d->kind) {
       case SKIND_NONE:
         break;
-			case SKIND_UINT8:
-				ELEMENT(uint8_t, dp) = sdisk_u8_read(&sp); break;
-			case SKIND_UINT16:
-				ELEMENT(uint16_t, dp) = sdisk_u16_read(&sp); break;
+      case SKIND_UINT8:
+        ELEMENT(uint8_t, dp) = sdisk_u8_read(&sp); break;
+      case SKIND_UINT16:
+        ELEMENT(uint16_t, dp) = sdisk_u16_read(&sp); break;
       case SKIND_INT32:
         ELEMENT(int32_t, dp) = sdisk_i32_read(&sp); break;
       case SKIND_UINT32:
@@ -1168,9 +1168,13 @@ void store_clear(store_t * s)
 
 e_sclass_t store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t flds[fcnt])
 {
-  // TODO: on-disk format
-  uint32_t sz = sizeof(srid_t) + sizeof(uint16_t) +
-    fcnt * (sizeof(uint16_t) + sizeof(srid_t) + sizeof(srid_t));
+  uint32_t sz = 0;
+  {
+    const uint16_t fsz = sdisk_size(SKIND_UINT16) + sdisk_size(SKIND_OBJECT) + sdisk_size(SKIND_OBJECT);
+    sz += sdisk_size(SKIND_OBJECT);
+    sz += sdisk_size(SKIND_UINT16);
+    sz += fsz * fcnt;
+  }
   if (sz >= STORE_DATAMAX) {
     return (e_sclass_t) {err_return(ERR_OVERFLOW, "attempted to create a class lager than DATASIZE"), NULL};
   }
@@ -1196,7 +1200,11 @@ e_sclass_t store_add_class(store_t * s, smrec_t * meta, uint16_t fcnt, scfld_t f
     p = sdisk_obj_write(p, flds[k].meta);
   }
 
-  return store_get_class(s, e.sdrec.id);
+  e_sclass_t ee = store_get_class(s, e.sdrec.id);
+  if (e.err) {
+    return (e_sclass_t) {err_return(ERR_MEM_ALLOC, "could not unpack class"), NULL};
+  }
+  return ee;
 }
 
 e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
@@ -1205,22 +1213,14 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
 
   uint32_t sz = sizeof(srid_t);
 
-  union {
-		uint8_t      u8;
-    uint16_t     u16;
-    int32_t      i32;
-    uint32_t     u32;
-    int64_t      i64;
-    uint64_t     u64;
-    srid_t       rid;
-    double       dbl;
-    const char * str;
-    smrec_t    * obj;
-    sclass_t   * cls;
-  } args[sclass_instargc(c)];
+  uint16_t cfcnt = sclass_instargc(c);
+
+  svalue_t args[cfcnt];
+
+  memset(args, 0, sizeof(args[0]) * cfcnt);
 
   va_start(ap, c);
-  for (uint16_t k = 0, v = 0; k < c->fcnt; k++) {
+  for (uint16_t k = 0, v = 0; k < cfcnt; k++) {
     switch ((skind_t) c->flds[k].kind) {
       case SKIND_NONE:
         break;
@@ -1269,17 +1269,17 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
 
 #if VERBOSEDEBUG > 1
   fprintf(stdout, "{D} writing object "SRID_FMT" of class "CLASS_FMT" with {%u elements, %u bytes}\n",
-    e.sdrec.id, c->id, c->fcnt, sz);
+    e.sdrec.id, c->id, cfcnt, sz);
 #endif
 
   /* write class reference first */
   p = sdisk_cls_write(p, c);
 
-  for (uint16_t k = 0, v = 0; k < c->fcnt; k++) {
+  for (uint16_t k = 0, v = 0; k < cfcnt; k++) {
     switch ((skind_t) c->flds[k].kind) {
       case SKIND_NONE:
         break;
-			case SKIND_UINT8:
+      case SKIND_UINT8:
         p = sdisk_u8_write(p, args[v++].u8); break;
       case SKIND_UINT16:
         p = sdisk_u16_write(p, args[v++].u16); break;
