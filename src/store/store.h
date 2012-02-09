@@ -152,7 +152,7 @@ struct sclass {
   scfld_t   flds[];
 };
 
-#define SMREC_FLAG_DISK 0x01 /* record is real on disk-instance */
+#define SMREC_FLAG_DISK 0x01 /* record is real on-disk instance */
 #define SMREC_FLAG_SYNC 0x02 /* record is up to date */
 
 struct smrec {

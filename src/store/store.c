@@ -965,27 +965,31 @@ err_r * smrec_sync(store_t * s, smrec_t * r)
 #if VERBOSEDEBUG
   fprintf(stdout, ">S< sync object <"PTR_FMT":"SRID_FMT">\n", (void *) r, r->id);
 #endif
-    e_sdrec_t e = spman_get(&s->pm, r->id);
-    if (e.err) {
-      return err_return(ERR_CORRUPTION, "could not get record slot to sync");
-    }
-    uint8_t * dp = e.sdrec.slot + sdisk_size(SKIND_CLASS);
-    uint8_t * sp = r->ptr;
-    for (uint16_t k = 0; k < r->sc->fcnt; k++) {
-      scfld_t * d = &r->sc->flds[k];
-      uint8_t * sptr = sp + d->offset;
-      switch ((skind_t) d->kind) {
-        case SKIND_NONE: break;
-        case SKIND_UINT8:  dp = sdisk_u8_write(dp, ELEMENT(uint8_t, sptr)); break;
-        case SKIND_UINT16: dp = sdisk_u16_write(dp, ELEMENT(uint16_t, sptr)); break;
-        case SKIND_INT32:  dp = sdisk_i32_write(dp, ELEMENT(int32_t, sptr)); break;
-        case SKIND_UINT32: dp = sdisk_u32_write(dp, ELEMENT(uint32_t, sptr)); break;
-        case SKIND_INT64:  dp = sdisk_i64_write(dp, ELEMENT(int64_t, sptr)); break;
-        case SKIND_UINT64: dp = sdisk_u64_write(dp, ELEMENT(uint64_t, sptr)); break;
-        case SKIND_DOUBLE: dp = sdisk_dbl_write(dp, ELEMENT(double, sptr)); break;
-        case SKIND_OBJECT: dp = sdisk_obj_write(dp, ELEMENT(smrec_t *, sptr)); break;
-        case SKIND_ODREF:  dp = sdisk_rid_write(dp, ELEMENT(srid_t, sptr)); break;
-        case SKIND_CLASS:  dp = sdisk_cls_write(dp, ELEMENT(sclass_t *, sptr)); break;
+    // we can only sync read objects
+    if (r->id != SRID_NIL) {
+      e_sdrec_t e = spman_get(&s->pm, r->id);
+      if (e.err) {
+        return err_return(ERR_CORRUPTION, "could not get record slot to sync");
+      }
+      uint8_t * dp = e.sdrec.slot;
+      sdisk_rid_read(&dp);
+      uint8_t * sp = r->ptr;
+      for (uint16_t k = 0; k < r->sc->fcnt; k++) {
+        scfld_t * d = &r->sc->flds[k];
+        uint8_t * sptr = sp + d->offset;
+        switch ((skind_t) d->kind) {
+          case SKIND_NONE: break;
+          case SKIND_UINT8:  dp = sdisk_u8_write(dp, ELEMENT(uint8_t, sptr)); break;
+          case SKIND_UINT16: dp = sdisk_u16_write(dp, ELEMENT(uint16_t, sptr)); break;
+          case SKIND_INT32:  dp = sdisk_i32_write(dp, ELEMENT(int32_t, sptr)); break;
+          case SKIND_UINT32: dp = sdisk_u32_write(dp, ELEMENT(uint32_t, sptr)); break;
+          case SKIND_INT64:  dp = sdisk_i64_write(dp, ELEMENT(int64_t, sptr)); break;
+          case SKIND_UINT64: dp = sdisk_u64_write(dp, ELEMENT(uint64_t, sptr)); break;
+          case SKIND_DOUBLE: dp = sdisk_dbl_write(dp, ELEMENT(double, sptr)); break;
+          case SKIND_OBJECT: dp = sdisk_obj_write(dp, ELEMENT(smrec_t *, sptr)); break;
+          case SKIND_ODREF:  dp = sdisk_rid_write(dp, ELEMENT(srid_t, sptr)); break;
+          case SKIND_CLASS:  dp = sdisk_cls_write(dp, ELEMENT(sclass_t *, sptr)); break;
+        }
       }
     }
   }
@@ -1056,7 +1060,10 @@ e_smrec_t store_get_object(store_t * s, srid_t id)
       return (e_smrec_t) {err_return(ERR_IN_INVALID, "slot s not a record"), NULL};
     }
 
-    e_sclass_t eee = store_get_class(s, *((srid_t *) e.sdrec.slot));
+    uint8_t * slot = e.sdrec.slot;
+    srid_t cid = sdisk_rid_read(&slot);
+
+    e_sclass_t eee = store_get_class(s, cid);
     if (eee.err) {
       return (e_smrec_t) {err_return(ERR_CORRUPTION, "could not retreive record class"), NULL};
     }
@@ -1064,7 +1071,7 @@ e_smrec_t store_get_object(store_t * s, srid_t id)
     /* pin the page (map) so it does not vanish in the heat of the moment */
     spman_ref(&s->pm, e.sdrec.map);
     ee = gc_new(&s->g, &smrec_vtable, sizeof(smrec_t), 3,
-      eee.sclass, id, e.sdrec.slot + sdisk_size(SKIND_CLASS));
+      eee.sclass, id, slot);
     if (ee.err) {
       spman_unref(&s->pm, e.sdrec.map);
       return (e_smrec_t) {err_return(ERR_FAILURE, "could not unpack record"), NULL};
