@@ -43,7 +43,7 @@ uint32_t ihash32(uint32_t a)
 #define SRID_TO_PAGE(_srid) (((_srid) & STORE_PAGEMASK) >> STORE_SLOTBITS)
 #define SRID_TO_SLOT(_srid) ((_srid) & STORE_SLOTMASK)
 
-#define VERBOSEDEBUG 1
+#define VERBOSEDEBUG 0
 
 #define CLASS_FMT "[1;35m%u[0;m"
 #define PTR_FMT "[1;33m%p[0;m"
@@ -203,7 +203,7 @@ sdrec_t spmap_alloc(spman_t * pm, spmap_t * m, uint16_t ssize, uint16_t usage)
     }
     uint32_t needed = sz + SSLOT_HDRSIZE;
     uint32_t npsize = off + needed;
-    //printf("TRY for sid %u {%u %u}\n", sid, needed, m->psize);
+    // printf("TRY for sid %u {%u %u}\n", sid, needed, m->psize);
     if (npsize > m->psize) {
       if (spman_truncate(pm, m, npsize)) {
         err_reset();
@@ -961,7 +961,7 @@ out:
 err_r * smrec_sync(store_t * s, smrec_t * r)
 {
   if (r->flag & SMREC_FLAG_DISK && !(r->flag & SMREC_FLAG_SYNC)) {
-#if VERBOSEDEBUG
+#if VERBOSEDEBUG > 1
   fprintf(stdout, ">S< sync object <"PTR_FMT":"SRID_FMT">\n", (void *) r, r->id);
 #endif
     // we can only sync read objects
@@ -973,8 +973,9 @@ err_r * smrec_sync(store_t * s, smrec_t * r)
       uint8_t * dp = e.sdrec.slot;
       sdisk_rid_read(&dp);
       uint8_t * sp = r->ptr;
-      for (uint16_t k = 0; k < r->sc->fcnt; k++) {
-        scfld_t * d = &r->sc->flds[k];
+      sclass_t * c = r->sc;
+      for (uint16_t k = 0; k < c->fcnt; k++) {
+        scfld_t * d = &c->flds[k];
         uint8_t * sptr = sp + d->offset;
         switch ((skind_t) d->kind) {
           case SKIND_NONE: break;
@@ -1268,8 +1269,19 @@ e_smrec_t store_add_object(store_t * s, sclass_t * c, ...)
         p = sdisk_u64_write(p, va_arg(ap, uint64_t)); break;
       case SKIND_DOUBLE:
         p = sdisk_dbl_write(p, va_arg(ap, double)); break;
-      case SKIND_OBJECT:
-        p = sdisk_obj_write(p, va_arg(ap, smrec_t *)); break;
+      case SKIND_OBJECT: {
+        smrec_t * o = va_arg(ap, smrec_t *);
+        if (o) {
+          if (o->id != SRID_NIL) {
+            p = sdisk_obj_write(p, va_arg(ap, smrec_t *));
+          } else {
+            return (e_smrec_t) {err_return(ERR_INVALID, "attmpted to reference a virtual record"), NULL};
+          }
+        } else {
+          p = sdisk_obj_write(p, NULL);
+        }
+        break;
+      }
       case SKIND_ODREF:
         p = sdisk_rid_write(p, va_arg(ap, srid_t)); break;
       case SKIND_CLASS: {
@@ -1299,4 +1311,129 @@ err_r * store_follow_ref(store_t * s, smrec_t * r, soref_t * o)
     gc_barrier(&s->g, GC_OBJ(r), GC_HDR(e.smrec));
   }
   return NULL;
+}
+
+skval_t smrec_get(store_t * s, smrec_t * r, uint16_t f)
+{
+  sclass_t * c = r->sc;
+  if (f < c->fcnt) {
+    scfld_t * d = &c->flds[f];
+    uint8_t * sptr = (uint8_t *) r->ptr + d->offset;
+    switch ((skind_t) d->kind) {
+      case SKIND_NONE:
+        return (skval_t) {.skind = SKIND_NONE};
+      case SKIND_UINT8:
+        return (skval_t) {.skind = d->kind, .svalue.u8 = ELEMENT(uint8_t, sptr)};
+      case SKIND_UINT16:
+        return (skval_t) {.skind = d->kind, .svalue.u16 = ELEMENT(uint16_t, sptr)};
+      case SKIND_INT32:
+        return (skval_t) {.skind = d->kind, .svalue.i32 = ELEMENT(int32_t, sptr)};
+      case SKIND_UINT32:
+        return (skval_t) {.skind = d->kind, .svalue.u32 = ELEMENT(uint32_t, sptr)};
+      case SKIND_INT64:
+        return (skval_t) {.skind = d->kind, .svalue.i64 = ELEMENT(int64_t, sptr)};
+      case SKIND_UINT64:
+        return (skval_t) {.skind = d->kind, .svalue.u64 = ELEMENT(uint64_t, sptr)};
+      case SKIND_DOUBLE:
+        return (skval_t) {.skind = d->kind, .svalue.dbl = ELEMENT(double, sptr)};
+      case SKIND_OBJECT:
+        return (skval_t) {.skind = SKIND_OBJECT, .svalue.obj = ELEMENT(smrec_t *, sptr)};
+      case SKIND_ODREF: {
+        soref_t * ref = &ELEMENT(soref_t, sptr);
+        if (ref->rid != SRID_NIL) {
+          if (store_follow_ref(s, r, ref)) {
+            err_reset();
+          } else {
+            return (skval_t) {.skind = SKIND_OBJECT, .svalue.obj = ref->ref};
+          }
+        }
+        return (skval_t) {.skind = SKIND_OBJECT, .svalue.obj = NULL};
+      }
+      case SKIND_CLASS:
+        return (skval_t) {.skind = d->kind, .svalue.cls = ELEMENT(sclass_t *, sptr)};
+    }
+  }
+  return (skval_t) {.skind = SKIND_NONE};
+}
+
+err_r * smrec_set(store_t * s, smrec_t * r, uint16_t f, skval_t v)
+{
+  (void) s;
+  sclass_t * c = r->sc;
+  if (f < c->fcnt) {
+    scfld_t * d = &c->flds[f];
+    uint8_t * sptr = (uint8_t *) r->ptr + d->offset;
+    if (v.skind == d->kind) {
+      switch ((skind_t) d->kind) {
+        case SKIND_ODREF:
+          return err_return(ERR_INVALID, "referred references have no value representation");
+        case SKIND_NONE:
+          return NULL;
+        case SKIND_UINT8:
+          ELEMENT(uint8_t, sptr) = v.svalue.u8;
+          r->flag = r->flag & ~SMREC_FLAG_SYNC;
+          return NULL;
+        case SKIND_UINT16:
+          ELEMENT(uint16_t, sptr) = v.svalue.u16;
+          r->flag = r->flag & ~SMREC_FLAG_SYNC;
+          return NULL;
+        case SKIND_INT32:
+          ELEMENT(int32_t, sptr) = v.svalue.i32;
+          r->flag = r->flag & ~SMREC_FLAG_SYNC;
+          return NULL;
+        case SKIND_UINT32:
+          ELEMENT(uint32_t, sptr) = v.svalue.u32;
+          r->flag = r->flag & ~SMREC_FLAG_SYNC;
+          return NULL;
+        case SKIND_INT64:
+          ELEMENT(int64_t, sptr) = v.svalue.i64;
+          r->flag = r->flag & ~SMREC_FLAG_SYNC;
+          return NULL;
+        case SKIND_UINT64:
+          ELEMENT(uint64_t, sptr) = v.svalue.u64;
+          r->flag = r->flag & ~SMREC_FLAG_SYNC;
+          return NULL;
+        case SKIND_DOUBLE:
+          ELEMENT(double, sptr) = v.svalue.dbl;
+          r->flag = r->flag & ~SMREC_FLAG_SYNC;
+          return NULL;
+        case SKIND_OBJECT:
+          if (v.svalue.obj) {
+            if (v.svalue.obj->id != SRID_NIL) {
+              ELEMENT(smrec_t *, sptr) = v.svalue.obj;
+              r->flag = r->flag & ~SMREC_FLAG_SYNC;
+              return NULL;
+            }
+            return err_return(ERR_INVALID, "attmpted to reference a virtual record");
+          }
+          ELEMENT(smrec_t *, sptr) = NULL;
+          r->flag = r->flag & ~SMREC_FLAG_SYNC;
+          return NULL;
+        case SKIND_CLASS:
+          ELEMENT(sclass_t *, sptr) = v.svalue.cls;
+          r->flag = r->flag & ~SMREC_FLAG_SYNC;
+          return NULL;
+      }
+    } else if (v.skind == SKIND_OBJECT && d->kind == SKIND_ODREF) {
+      if (v.svalue.obj) {
+        if (v.svalue.obj->id != SRID_NIL) {
+          soref_t * ref = &ELEMENT(soref_t, sptr);
+          ref->rid = v.svalue.obj->id;
+          ref->ref = v.svalue.obj;
+          r->flag = r->flag & ~SMREC_FLAG_SYNC;
+          return NULL;
+        }
+        return err_return(ERR_INVALID, "attmpted to reference a virtual record");
+      } else {
+        soref_t * ref = &ELEMENT(soref_t, sptr);
+        ref->rid = SRID_NIL;
+        ref->ref = NULL;
+        r->flag = r->flag & ~SMREC_FLAG_SYNC;
+        return NULL;
+      }
+    } else {
+      return err_return(ERR_INVALID, "attempted to assign field from wrong type");
+    }
+  }
+  return err_return(ERR_NOT_FOUND, "record has no such field");
 }

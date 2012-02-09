@@ -671,7 +671,9 @@ BT_TEST_DEF(store, defer, object, "tests for deferred object references")
   srid_t head = SRID_NIL;
   for (uint32_t k = 0; k < NN; k++) {
     e_smrec_t val = store_add_object(test->s, ctuple,
-      k+1, head, k ? crosslink[rand()%k] : NULL); bt_chkerr(val.err);
+      k+1, head, NULL); bt_chkerr(val.err);
+    bt_chkerr(smrec_set(test->s, val.smrec, 2,
+      (skval_t) {SKIND_OBJECT, .svalue.obj = k ? crosslink[rand()%k] : NULL}));
     head = val.smrec->id;
     crosslink[k] = val.smrec;
     bt_assert_int_equal(head - ctuple->id, k + 1);
@@ -699,24 +701,23 @@ BT_TEST_DEF(store, defer, object, "tests for deferred object references")
     bt_assert(memcmp(er.sdrec.slot, ccmp, 36) == 0);
   }
 
-  printf("[store] force discard\n"); gc_collect(&test->s->g, 1);
-
-  struct tstruct {
-    uint32_t n;
-    soref_t  next;
-  } * p;
-
-  e_smrec_t er = store_get_object(test->s, head); bt_chkerr(er.err);
-  p = er.smrec->ptr;
+  printf("[store] force discard, going to check refs\n"); gc_collect(&test->s->g, 1);
+  e_smrec_t er;
+  skval_t valn, valnext;
+  er = store_get_object(test->s, head); bt_chkerr(er.err);
+  smrec_t * cur = er.smrec;
 
   for (uint32_t k = 0; k < NN; k++) {
-    bt_assert_int_equal(p->n, NN - k);
+    valn = smrec_get(test->s, cur, 0);
+    bt_assert(valn.skind == SKIND_UINT32);
+    bt_assert_int_equal(valn.svalue.u32, NN - k);
+    valnext = smrec_get(test->s, cur, 1);
+    bt_assert(valnext.skind == SKIND_OBJECT);
     if (k != (NN-1)) {
-      bt_chkerr(store_follow_ref(test->s, er.smrec, &p->next));
-      p = p->next.ref->ptr;
-      bt_assert_ptr_not_equal(p, NULL);
+      bt_assert_ptr_not_equal(valnext.svalue.obj, NULL);
+      cur = valnext.svalue.obj;
     } else {
-      bt_assert_int_equal(p->next.rid, SRID_NIL);
+      bt_assert_ptr_equal(valnext.svalue.obj, NULL);
     }
   }
 
@@ -729,6 +730,49 @@ BT_TEST_DEF(store, defer, object, "tests for deferred object references")
   printf("[store] unlocking record & forced discard\n");
   gc_del_root(&test->s->g, GC_OBJ(er.smrec));
   gc_collect(&test->s->g, 1);
+  return BT_RESULT_OK;
+}
+
+BT_TEST_DEF(store, perf, object, "perf for expr")
+{
+  struct store_test * test = object;
+
+  e_sclass_t e;
+
+  e = store_add_class(test->s, NULL, 7, (scfld_t []) {
+    SCFLDDEF(SKIND_UINT32, NULL),
+    SCFLDDEF(SKIND_UINT32, NULL),
+    SCFLDDEF(SKIND_UINT32, NULL),
+    SCFLDDEF(SKIND_UINT32, NULL),
+    SCFLDDEF(SKIND_UINT32, NULL),
+    SCFLDDEF(SKIND_UINT32, NULL),
+    SCFLDDEF(SKIND_OBJECT, NULL),
+  });
+  bt_chkerr(e.err);
+  sclass_t * ctuple = e.sclass;
+
+  smrec_t * head = NULL;
+  e_smrec_t val;
+
+  for (uint32_t m = 1000, k = 0; k < m; k++) {
+    val = store_add_object(test->s, ctuple, 0, 0, 0, 0, 0, 0, NULL); bt_chkerr(val.err);
+    bt_chkerr(smrec_set(test->s, val.smrec, 0,
+      (skval_t) {SKIND_UINT32, .svalue.u32 = 1}));
+    bt_chkerr(smrec_set(test->s, val.smrec, 1,
+      (skval_t) {SKIND_UINT32, .svalue.u32 = 2}));
+    bt_chkerr(smrec_set(test->s, val.smrec, 2,
+      (skval_t) {SKIND_UINT32, .svalue.u32 = 3}));
+    bt_chkerr(smrec_set(test->s, val.smrec, 3,
+      (skval_t) {SKIND_UINT32, .svalue.u32 = 4}));
+    bt_chkerr(smrec_set(test->s, val.smrec, 4,
+      (skval_t) {SKIND_UINT32, .svalue.u32 = 5}));
+    bt_chkerr(smrec_set(test->s, val.smrec, 5,
+      (skval_t) {SKIND_UINT32, .svalue.u32 = 6}));
+    bt_chkerr(smrec_set(test->s, val.smrec, 6,
+      (skval_t) {SKIND_OBJECT, .svalue.obj = head}));
+    head = val.smrec;
+  }
+
   return BT_RESULT_OK;
 }
 

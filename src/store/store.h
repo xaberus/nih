@@ -212,4 +212,8 @@ e_smrec_t store_get_object(store_t * s, srid_t id);
 
 err_r * store_follow_ref(store_t * s, smrec_t * r, soref_t * o);
 
+/* tuple */ typedef struct { skind_t skind; svalue_t svalue; } skval_t;
+skval_t smrec_get(store_t * s, smrec_t * r, uint16_t f);
+err_r * smrec_set(store_t * s, smrec_t * r, uint16_t f, skval_t v);
+
 #endif /* _STORE_H */
