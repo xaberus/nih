@@ -205,18 +205,16 @@ sdrec_t spmap_alloc(spman_t * pm, spmap_t * m, uint16_t ssize, uint16_t usage)
     uint32_t npsize = off + needed;
     //printf("TRY for sid %u {%u %u}\n", sid, needed, m->psize);
     if (npsize > m->psize) {
-      /* check for overflow */
-      if (npsize > m->psize) {
-        if (spman_truncate(pm, m, npsize)) {
-          err_reset();
-        } else {
-          if (off + sz + SSLOT_HDRSIZE <= m->psize) {
-            goto do_alloc;
-          }
+      if (spman_truncate(pm, m, npsize)) {
+        err_reset();
+      } else {
+        if (off + needed <= m->psize) {
+          goto do_alloc;
         }
       }
+    } else {
+      goto do_alloc;
     }
-    goto do_alloc;
   }
   return (sdrec_t) {
     .id = SRID_NIL,
@@ -225,6 +223,7 @@ sdrec_t spmap_alloc(spman_t * pm, spmap_t * m, uint16_t ssize, uint16_t usage)
     .slot = NULL,
     .map = NULL,
   };
+  /* from here on nothing should fail */
 do_alloc:
   p = (uint8_t *) m->page + off;
   sflag = SSLOT_FLAG_DATA | (usage & SSLOT_USAGEMASK);
