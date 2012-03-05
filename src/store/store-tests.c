@@ -22,15 +22,14 @@
 
 #include "store/sdisk.h"
 
-BT_SUITE_DEF(spman, "storage engine page manager tests");
-
 struct spman_test {
   spman_t     pm[1];
   int         fd;
   uint32_t    num;
 };
 
-BT_TEST_DEF_PLAIN(spman, page, "page manager tests ")
+
+BT_TEST(spman, page)
 {
   struct spman_test * test = malloc(sizeof(struct spman_test));
 
@@ -153,12 +152,11 @@ struct store_test {
     r->flag = r->flag & ~SMREC_FLAG_SYNC; \
   } while(0)
 
-BT_SUITE_DEF(store, "storage engine tests");
-
 static const char store_test_path[] = BROOT "/src/store/store-tests.txt";
 
-BT_SUITE_SETUP_DEF(store, objectref)
+int store_test_setup(void * object, void ** objectref)
 {
+  UNUSED_PARAM(object);
   struct store_test * test = malloc(sizeof(struct store_test));
   bt_assert_ptr_not_equal(test, NULL);
 
@@ -169,7 +167,22 @@ BT_SUITE_SETUP_DEF(store, objectref)
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(store, type_i32, object, "type tests for the storage engine")
+int store_test_teardown(void * object, void ** objectref)
+{
+  struct store_test * test = object;
+
+  store_clear(test->s);
+
+  free(test);
+
+  //unlink(store_test_path);
+
+  bt_chkerr(err_pop());
+  *objectref = NULL;
+  return BT_RESULT_OK;
+}
+
+BT_TEST_FIXTURE(store, type_i32, store_test_setup, store_test_teardown, object)
 {
   struct store_test * test = object;
 
@@ -243,7 +256,7 @@ BT_TEST_DEF(store, type_i32, object, "type tests for the storage engine")
 }
 
 #if 1
-BT_TEST_DEF(store, type_u32, object, "type tests for the storage engine")
+BT_TEST_FIXTURE(store, type_u32, store_test_setup, store_test_teardown, object)
 {
   struct store_test * test = object;
 
@@ -316,7 +329,7 @@ BT_TEST_DEF(store, type_u32, object, "type tests for the storage engine")
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(store, type_i64, object, "type tests for the storage engine")
+BT_TEST_FIXTURE(store, type_i64, store_test_setup, store_test_teardown, object)
 {
   struct store_test * test = object;
 
@@ -389,7 +402,7 @@ BT_TEST_DEF(store, type_i64, object, "type tests for the storage engine")
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(store, type_u64, object, "type tests for the storage engine")
+BT_TEST_FIXTURE(store, type_u64, store_test_setup, store_test_teardown, object)
 {
   struct store_test * test = object;
 
@@ -544,7 +557,7 @@ BT_TEST_DEF(store, type_str, object, "type tests for the storage engine")
 #endif
 #endif
 
-BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
+BT_TEST_FIXTURE(store, simple, store_test_setup, store_test_teardown, object)
 {
   struct store_test * test = object;
 
@@ -649,7 +662,7 @@ BT_TEST_DEF(store, simple, object, "simple tests for the storage engine")
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(store, defer, object, "tests for deferred object references")
+BT_TEST_FIXTURE(store, defer, store_test_setup, store_test_teardown, object)
 {
   struct store_test * test = object;
 
@@ -733,7 +746,7 @@ BT_TEST_DEF(store, defer, object, "tests for deferred object references")
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(store, perf, object, "perf for expr")
+BT_TEST_FIXTURE(store, perf, store_test_setup, store_test_teardown, object)
 {
   struct store_test * test = object;
 
@@ -815,20 +828,5 @@ BT_TEST_DEF(store, expr, object, "tests for expr")
 #endif
 
 /*************************************************************************************************/
-
-BT_SUITE_TEARDOWN_DEF(store, objectref)
-{
-  struct store_test * test = *objectref;
-
-  store_clear(test->s);
-
-  free(test);
-
-  //unlink(store_test_path);
-
-  bt_chkerr(err_pop());
-
-  return BT_RESULT_OK;
-}
 
 #endif /* TEST */

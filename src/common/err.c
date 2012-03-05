@@ -169,7 +169,7 @@ void err_report(int fd)
 #include <sys/stat.h>
 #include <fcntl.h>
 
-BT_SUITE_DEF(error, "error handling tests");
+BT_EXPORT();
 
 static
 err_r * test_function_5()
@@ -221,7 +221,7 @@ err_r * test_function_1()
   return NULL;
 }
 
-BT_TEST_DEF_PLAIN(error, plain, "simple tests")
+BT_TEST(error, plain)
 {
   printf("[err] calling failing functions\n");
   err_r * e = test_function_1();

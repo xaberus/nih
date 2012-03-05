@@ -882,10 +882,9 @@ e_number_t number_shr(gc_global_t * g, number_t * a, uint32_t s)
 # include <string.h>
 # include <stdlib.h>
 
-BT_SUITE_DEF(number, "number (big int) tests");
-
-BT_SUITE_SETUP_DEF(number, objectref)
+int number_test_setup(void * object, void ** objectref)
 {
+  UNUSED_PARAM(object);
   gc_global_t   * g = malloc(sizeof(gc_global_t));
 
   bt_assert_ptr_not_equal(g, NULL);
@@ -897,16 +896,17 @@ BT_SUITE_SETUP_DEF(number, objectref)
   return BT_RESULT_OK;
 }
 
-BT_SUITE_TEARDOWN_DEF(number, objectref)
+int number_test_teardown(void * object, void ** objectref)
 {
-  gc_global_t * g = *objectref;
+  gc_global_t * g = object;
 
   gc_clear(g);
   free(g);
+  *objectref = NULL;
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(number, plain, object, "simple tests")
+BT_TEST_FIXTURE(number, plain, number_test_setup, number_test_teardown, object)
 {
   gc_global_t * g = object;
 

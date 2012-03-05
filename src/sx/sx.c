@@ -996,10 +996,9 @@ e_sx_t sxb_read(gc_global_t * g, sxb_t * b, gc_str_t * s)
 
 #include <stdlib.h>
 
-BT_SUITE_DEF(sx, "new sx");
-
-BT_SUITE_SETUP_DEF(sx, objectref)
+int sx_test_setup(void * object, void ** objectref)
 {
+  UNUSED_PARAM(object);
   gc_global_t * g = malloc(sizeof(gc_global_t));
   bt_assert_ptr_not_equal(g, NULL);
 
@@ -1010,15 +1009,16 @@ BT_SUITE_SETUP_DEF(sx, objectref)
   return BT_RESULT_OK;
 }
 
-BT_SUITE_TEARDOWN_DEF(sx, objectref)
+int sx_test_teardown(void * object, void ** objectref)
 {
-  gc_global_t * g = *objectref;
+  gc_global_t * g = object;
   gc_clear(g);
   free(g);
+  *objectref = NULL;
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(sx, plain, object, "simple tests")
+BT_TEST_FIXTURE(sx, plain, sx_test_setup, sx_test_teardown, object)
 {
   gc_global_t * g = object;
 

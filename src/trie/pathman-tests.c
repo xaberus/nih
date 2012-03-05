@@ -16,8 +16,6 @@
 #include <fcntl.h>
 #include <libgen.h>
 
-BT_SUITE_DEF(pathman, "pathman tests");
-
 struct pathman_test {
   pathman_t   pman[1];
   size_t      num;
@@ -25,8 +23,9 @@ struct pathman_test {
   char     ** strv;
 };
 
-BT_SUITE_SETUP_DEF(pathman, objectref)
+int pathman_test_setup(void * object, void ** objectref)
 {
+  UNUSED_PARAM(object);
   struct pathman_test * test = malloc(sizeof(struct pathman_test));
   char                  buf[128];
   FILE                * fp;
@@ -80,7 +79,26 @@ BT_SUITE_SETUP_DEF(pathman, objectref)
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(pathman, border, object, "border cases")
+int pathman_test_teardown(void * object, void ** objectref)
+{
+  struct pathman_test * test = object;
+
+  pathman_clear(test->pman);
+
+  for (unsigned k = 0; k < test->num; k++) {
+    free(test->strv[k]);
+  }
+  free(test->strv);
+  free(test->flag);
+
+  free(test);
+
+  bt_chkerr(err_pop());
+  *objectref = NULL;
+  return BT_RESULT_OK;
+}
+
+BT_TEST_FIXTURE(pathman, border, pathman_test_setup, pathman_test_teardown, object)
 {
   struct pathman_test * test = object;
   e_pdir_t dlup;
@@ -96,7 +114,7 @@ BT_TEST_DEF(pathman, border, object, "border cases")
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
+BT_TEST_FIXTURE(pathman, insert_and_find, pathman_test_setup, pathman_test_teardown, object)
 {
   struct pathman_test * test = object;
   e_pdir_t dlup = {NULL, NULL};
@@ -176,25 +194,5 @@ BT_TEST_DEF(pathman, insert_and_find, object, "insert and find")
 
   return BT_RESULT_OK;
 }
-
-BT_SUITE_TEARDOWN_DEF(pathman, objectref)
-{
-  struct pathman_test * test = *objectref;
-
-  pathman_clear(test->pman);
-
-  for (unsigned k = 0; k < test->num; k++) {
-    free(test->strv[k]);
-  }
-  free(test->strv);
-  free(test->flag);
-
-  free(test);
-
-  bt_chkerr(err_pop());
-
-  return BT_RESULT_OK;
-}
-
 
 #endif /* TEST */

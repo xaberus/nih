@@ -92,9 +92,7 @@ gc_vtable_t testobj_vtable = {
     (_o ? ((*((__typeof(testobj_vtable) **) _o) == &testobj_vtable) ? _o : (NULL)) \
        : (NULL))
 
-BT_SUITE_DEF(gc_stack, "tests garbage collected stack (gc:vector, gc:barrier, gc:str, etc.)");
-
-BT_TEST_DEF_PLAIN(gc_stack, plain, "plain")
+BT_TEST(gc_stack, plain)
 {
   gc_global_t     g[1];
   gc_stack_t    * st;

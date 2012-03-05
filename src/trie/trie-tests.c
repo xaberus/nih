@@ -18,8 +18,6 @@
 
 //#include <google/profiler.h>
 
-BT_SUITE_DEF(trie, "trie tests");
-
 struct trie_test {
   trie_t      trie[1];
   size_t      num;
@@ -27,8 +25,9 @@ struct trie_test {
   char     ** strv;
 };
 
-BT_SUITE_SETUP_DEF(trie, objectref)
+int trie_test_setup(void * object, void ** objectref)
 {
+  UNUSED_PARAM(object);
   struct trie_test * test = malloc(sizeof(struct trie_test));
   char               buf[512];
   FILE             * fp;
@@ -86,7 +85,27 @@ BT_SUITE_SETUP_DEF(trie, objectref)
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(trie, str, object, "str mode")
+int trie_test_teardown(void * object, void ** objectref)
+{
+  struct trie_test * test = *objectref;
+
+  trie_clear(test->trie);
+
+  for (size_t j = 0; j < test->num; j++) {
+    free(test->strv[j]);
+  }
+
+  free(test->strv);
+  free(test->flag);
+
+  free(test);
+
+  bt_chkerr(err_pop());
+
+  return BT_RESULT_OK;
+}
+
+BT_TEST_FIXTURE(trie, str, trie_test_setup, trie_test_teardown, object)
 {
   struct trie_test * test = object;
   trie_t           * trie = test->trie;
@@ -212,7 +231,7 @@ BT_TEST_DEF(trie, str, object, "str mode")
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
+BT_TEST_FIXTURE(trie, insert_and_find, trie_test_setup, trie_test_teardown, object)
 {
   struct trie_test * test = object;
 
@@ -301,7 +320,7 @@ BT_TEST_DEF(trie, insert_and_find, object, "insert and find")
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(trie, insert_delete_insert, object, "insert delete insert")
+BT_TEST_FIXTURE(trie, insert_delete_insert, trie_test_setup, trie_test_teardown, object)
 {
   struct trie_test * test = object;
 
@@ -394,26 +413,5 @@ BT_TEST_DEF(trie, insert_delete_insert, object, "insert delete insert")
 
   return BT_RESULT_OK;
 }
-
-BT_SUITE_TEARDOWN_DEF(trie, objectref)
-{
-  struct trie_test * test = *objectref;
-
-  trie_clear(test->trie);
-
-  for (size_t j = 0; j < test->num; j++) {
-    free(test->strv[j]);
-  }
-
-  free(test->strv);
-  free(test->flag);
-
-  free(test);
-
-  bt_chkerr(err_pop());
-
-  return BT_RESULT_OK;
-}
-
 
 #endif /* TEST */

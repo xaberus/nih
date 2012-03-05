@@ -11,8 +11,6 @@
 #include <bt.h>
 #include <stdio.h>
 
-BT_SUITE_DEF(gc, "garbage collection tests");
-
 struct gc_test {
   gc_global_t g[1];
 };
@@ -73,8 +71,9 @@ gc_vtable_t testobj_vtable = {
   .gc_propagate = testobj_propagate,
 };
 
-BT_SUITE_SETUP_DEF(gc, objectref)
+int gc_test_setup(void * object, void ** objectref)
 {
+  UNUSED_PARAM(object);
   struct gc_test * test = malloc(sizeof(struct gc_test));
 
   bt_assert_ptr_not_equal(test, NULL);
@@ -86,20 +85,21 @@ BT_SUITE_SETUP_DEF(gc, objectref)
   return BT_RESULT_OK;
 }
 
-BT_SUITE_TEARDOWN_DEF(gc, objectref)
+int gc_test_teardown(void * object, void ** objectref)
 {
-  struct gc_test * test = *objectref;
+  UNUSED_PARAM(object);
+  struct gc_test * test = object;
 
   gc_clear(test->g);
 
   free(test);
 
   bt_chkerr(err_pop());
-
+  *objectref = NULL;
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(gc, str, object, "string tests")
+BT_TEST_FIXTURE(gc, str, gc_test_setup, gc_test_teardown, object)
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;
@@ -155,7 +155,7 @@ BT_TEST_DEF(gc, str, object, "string tests")
 
 #define obj_barrier(g, o, v) gc_barrier_back(g, &o->gco, GC_HDR(v))
 
-BT_TEST_DEF(gc, pressure, object, "tests behaviour unter collect pressure")
+BT_TEST_FIXTURE(gc, pressure, gc_test_setup, gc_test_teardown, object)
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;
@@ -205,7 +205,7 @@ BT_TEST_DEF(gc, pressure, object, "tests behaviour unter collect pressure")
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(gc, cycles, object, "cycles should not matter at all")
+BT_TEST_FIXTURE(gc, cycles, gc_test_setup, gc_test_teardown, object)
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;
@@ -230,7 +230,7 @@ BT_TEST_DEF(gc, cycles, object, "cycles should not matter at all")
   return BT_RESULT_OK;
 }
 
-BT_TEST_DEF(gc, misuse, object, "tests behaviour under collection misuse")
+BT_TEST_FIXTURE(gc, misuse, gc_test_setup, gc_test_teardown, object)
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;
@@ -289,7 +289,7 @@ gc_vtable_t testobj_genvtable = {
   .gc_propagate = testobj_genpropagate,
 };
 
-BT_TEST_DEF(gc, general, object, "tests generalized behaviour")
+BT_TEST_FIXTURE(gc, general, gc_test_setup, gc_test_teardown, object)
 {
   struct gc_test * test = object;
   gc_global_t    * g = test->g;
